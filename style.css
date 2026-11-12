@@ -238,11 +238,13 @@ body:not(.tabMu) #muView { display: none; }
 .mvpRow:hover { background: rgba(255,239,215,0.09); }
 .mvpRow.on { background: rgba(255,239,215,0.16); }
 .mvpRow .place { font-family: var(--oracle); font-weight: 700; font-size: 24px; text-align: center; opacity: 0.8; }
-.pt, .big, .mini { position: relative; display: inline-block; border-radius: 50%; overflow: hidden; background: var(--coin); flex: none; }
-.pt img, .big img, .mini img { position: absolute; left: 50%; top: -6%; width: 118%; transform: translateX(-50%); }
-.pt { width: 46px; height: 46px; box-shadow: 0 0 0 2px var(--tc); }
-.big { width: 84px; height: 84px; box-shadow: 0 0 0 3px var(--tc); }
-.mini { width: 22px; height: 22px; margin-left: 6px; vertical-align: middle; }
+/* Round portraits work like the native top bar: the masked card art (open top, round bottom) sits on the team coin,
+   so the head rises above the circle instead of being cropped by it. --s is the coin size; the art is 72:98. */
+.pt, .big, .mini { --s: 46px; --ring: 2px; position: relative; display: inline-block; flex: none; width: var(--s); height: calc(var(--s) * 98 / 72); margin-top: calc(var(--s) * -26 / 72); }
+.pt::before, .big::before, .mini::before { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: var(--s); border-radius: 50%; background: var(--coin); box-shadow: 0 0 0 var(--ring) var(--tc); }
+.pt img, .big img, .mini img { position: absolute; left: 0; bottom: 0; width: 100%; height: 100%; }
+.big { --s: 84px; --ring: 3px; }
+.mini { --s: 22px; --ring: 0px; margin-left: 6px; vertical-align: middle; }
 .mvpRow .who { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; }
 .mvpRow .hn { font-family: var(--oracle); font-weight: 700; font-size: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mvpRow .rank { font-size: 13px; opacity: 0.85; }
@@ -364,8 +366,9 @@ button.muRow:hover { background: rgba(255,239,215,0.06); }
 .muRow .laneTag { flex: none; }
 .muRow .v { font-family: var(--oracle); font-weight: 700; font-size: 16px; text-align: right; }
 .muRow.world { opacity: 0.6; }
-.pt.sm { width: 28px; height: 28px; box-shadow: 0 0 0 2px var(--tc); }
-.pt.noimg { background: rgba(255,239,215,0.12); box-shadow: none; }
+.pt.sm { --s: 28px; }
+.pt.noimg { height: var(--s); margin-top: 0; }
+.pt.noimg::before { background: rgba(255,239,215,0.12); box-shadow: none; }
 .muBar { display: flex; height: 12px; background: rgba(255,239,215,0.06); border-radius: 2px; overflow: hidden; }
 .muBar i { display: block; height: 100%; }
 .muBar i + i { box-shadow: inset 1px 0 0 #0006; }
@@ -427,3 +430,4 @@ button.muRow:hover { background: rgba(255,239,215,0.06); }
 /* A hidden first button (Me + Lane when the game doesn't say who you are) must not leave the next one without a left edge. */
 .graphOption .graphOptionButton[hidden] + .graphOptionButton { border-left: 1px solid rgba(255,239,215,0.53); border-radius: 3px 0 0 3px; }
 .graphOption .graphOptionButton.on[hidden] + .graphOptionButton, .graphOption .graphOptionButton[hidden] + .graphOptionButton.on { border-left-color: var(--offWhite); }
+.mvpWhy .whyHead { padding-top: 10px; } /* room for the big portrait's head above its coin */
