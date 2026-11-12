@@ -716,7 +716,7 @@ function drawItems(buyers, X, top, right) {
     for (const it of itemsOf(p)) {
       const x = Math.max(X(it.t), lastX + 25);
       lastX = x;
-      const i = el("i", "item" + (it.sold ? " sold" : ""));
+      const i = el("i", "itemIcon" + (it.sold ? " sold" : ""));
       i.style.left = x + "px";
       i.style.setProperty("--sc", ITEM_SLOTS[it.slot].c);
       i.style.backgroundImage = `url("assets/items/${it.icon}.webp")`;
@@ -733,7 +733,7 @@ function boughtHtml(buyers, t0, t1) {
   if (!rows.length) return "";
   rows.sort((a, b) => a.it.t - b.it.t);
   return `<div class="bought"><div class="bh">Bought since ${fmtTime(Math.max(0, t0))}</div>` + rows.map(({ p, it }) =>
-    `<div class="row"><span class="sw" style="background:${p.color}"></span><i class="item sm" style="--sc:${ITEM_SLOTS[it.slot].c};background-image:url('assets/items/${it.icon}.webp')"></i><span class="n">${esc(it.name)}${buyers.length > 1 ? ` <small>${esc(p.hero)}</small>` : ""}</span><span class="v t">${fmtTime(it.t)}</span></div>`).join("") + `</div>`;
+    `<div class="row"><span class="sw" style="background:${p.color}"></span><i class="itemIcon sm" style="--sc:${ITEM_SLOTS[it.slot].c};background-image:url('assets/items/${it.icon}.webp')"></i><span class="n">${esc(it.name)}${buyers.length > 1 ? ` <small>${esc(p.hero)}</small>` : ""}</span><span class="v t">${fmtTime(it.t)}</span></div>`).join("") + `</div>`;
 }
 
 function renderLines(series, g) {
