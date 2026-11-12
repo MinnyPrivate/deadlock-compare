@@ -41,7 +41,7 @@ function muParse(mi) {
   const types = dm.source_details.stat_type || [], names = dm.source_details.source_name || [];
   const team = {};
   for (const p of state.players) team[p.slot] = p.team;
-  const out = { times, dmg: {}, cc: {}, src: {}, world: {} };
+  const out = { times, dmg: {}, cc: {}, src: {}, srcTo: {}, world: {} };
   const put = (o, a, b, k, arr) => { ((o[a] = o[a] || {})[b] = o[a][b] || {})[k] = arr; };
   for (const d of dm.damage_dealers) {
     const a = Number(d.dealer_player_slot);
@@ -56,7 +56,10 @@ function muParse(mi) {
         }
         if (!(b in team) || team[a] === team[b]) continue; // enemy heroes only
         if (t === 0 && MU_CATS.some(c => c.id === n)) put(out.dmg, a, b, n, arr);
-        else if (t === 0) { const o = (out.src[a] = out.src[a] || {}); (o[n] = o[n] || []).push(arr); }
+        else if (t === 0) {
+          const o = (out.src[a] = out.src[a] || {}); (o[n] = o[n] || []).push(arr);
+          const to = ((out.srcTo[b] = out.srcTo[b] || {})[a] = out.srcTo[b][a] || {}); (to[n] = to[n] || []).push(arr); // who hit b with what
+        }
         else if (t === 6) put(out.cc, a, b, n.replace(/^Citadel_Graph_CrowdControl_/, ""), arr);
       }
     }
@@ -113,6 +116,27 @@ function muSourceName(n) {
   else if (!name && /^citadel_weapon_/.test(k)) name = "Gun";
   if (!name) name = k.replace(/^(citadel_)?(ability_|upgrade_)?/, "").replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
   return crit ? name + " (headshots)" : name;
+}
+
+// Damage by source, merged under the game's names. by: { dealerSlot: { sourceName: [arrays] } }.
+function muSources(mu, by) {
+  const m = {};
+  for (const [a, srcs] of Object.entries(by || {})) for (const [n, arrs] of Object.entries(srcs)) {
+    const name = muSourceName(n), k = a + "|" + name;
+    const v = arrs.reduce((x, arr) => x + muVal(mu, arr), 0);
+    if (!m[k]) m[k] = { slot: Number(a), n: name, v: 0 };
+    m[k].v += v;
+  }
+  return Object.values(m).filter(r => r.v > 0).sort((x, y) => y.v - x.v);
+}
+function muSrcList(title, rows, opts) {
+  if (!rows.length) return `<div class="muSrc"><div class="wr th"><span>${title}</span></div><div class="muNone">None.</div></div>`;
+  const all = rows.reduce((x, r) => x + r.v, 0) || 1, top = rows.slice(0, opts.n || 5);
+  return `<div class="muSrc"><div class="wr th"><span>${title}</span><span class="r">Share</span></div>` + top.map(r => {
+    const p = opts.who ? state.players.find(q => q.slot === r.slot) : null;
+    return `<div class="muSrcRow" title="${p ? esc(p.hero) + ": " : ""}${esc(r.n)}, ${muFmt(r.v)}"><i class="fill" style="width:${(r.v / top[0].v) * 100}%"></i>` +
+      `<span class="n">${p ? portrait(p, "mini") : ""}<span>${esc(r.n)}</span></span><span class="v">${muFmt(r.v)}</span><span class="pc">${Math.round((r.v / all) * 100)}%</span></div>`;
+  }).join("") + `</div>`;
 }
 
 window.renderMatchups = function renderMatchups() {
@@ -212,15 +236,9 @@ function muHeroPanel(mu, p) {
     ${muLegend()}
     <div class="muCols">${list(dealt, verb[0], sd)}${list(took, verb[1], st)}</div>`;
   if (state.muStat === "dmg") {
-    const srcs = Object.entries(mu.src[p.slot] || {}).map(([n, arrs]) => ({ n: muSourceName(n), v: arrs.reduce((a, arr) => a + muVal(mu, arr), 0) }));
-    const merged = {};
-    for (const s of srcs) merged[s.n] = (merged[s.n] || 0) + s.v;
-    const top = Object.entries(merged).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 5);
-    const all = Object.values(merged).reduce((a, v) => a + v, 0) || 1;
-    if (top.length) {
-      h += `<div class="muSrc"><div class="wr th"><span>Top damage sources</span><span class="r">Share</span></div>` +
-        top.map(([n, v]) => `<div class="muSrcRow"><span class="n">${esc(n)}</span><span class="track"><i style="width:${(v / top[0][1]) * 100}%"></i></span><span class="v">${muFmt(v)}</span><span class="pc">${Math.round((v / all) * 100)}%</span></div>`).join("") + `</div>`;
-    }
+    // Left: what this hero hit enemies with. Right: which enemy hero hit them, and with what.
+    const own = muSources(mu, { [p.slot]: mu.src[p.slot] }).map(r => Object.assign(r, { slot: p.slot }));
+    h += `<div class="muCols">${muSrcList("Top damage sources", own, {})}${muSrcList("What hit them", muSources(mu, mu.srcTo[p.slot]), { who: true })}</div>`;
   }
   h += `<div class="whyFoot">Click a cell in the grid for a head-to-head. ${state.muStat === "dmg" ? "From Valve's damage matrix; totals match the scoreboard." : "From Valve's damage matrix. Effects can overlap, so seconds can add up to more than the time spent stunned."}</div></div>`;
   return h;
@@ -243,6 +261,7 @@ function muPairPanel(mu, pair) {
     </div>
     <p class="summary">${esc(MU_WINDOWS[state.muWin].name)}: ${esc(sa || sb ? (Math.min(sa, sb) ? lead : (sa > sb ? a : b).hero + " was the only one to land any") : "Neither landed any on the other")}.</p>
     <div class="muH2H">${pa.map((x, i) => `<div class="h2hRow"><span class="v">${muFmt(x.v)}</span><span class="track l"><i style="width:${(x.v / scale) * 100}%;background:${x.c}"></i></span><span class="n">${esc(x.label)}</span><span class="track"><i style="width:${(pb[i].v / scale) * 100}%;background:${pb[i].c}"></i></span><span class="v r">${muFmt(pb[i].v)}</span></div>`).filter((_, i) => pa[i].v || pb[i].v).join("") || `<div class="muNone">Nothing to compare.</div>`}</div>
+    ${state.muStat === "dmg" ? `<div class="muCols">${muSrcList(esc(a.hero) + " hit with", muSources(mu, { [a.slot]: (mu.srcTo[b.slot] || {})[a.slot] }), { n: 4 })}${muSrcList(esc(b.hero) + " hit with", muSources(mu, { [b.slot]: (mu.srcTo[a.slot] || {})[b.slot] }), { n: 4 })}</div>` : ""}
     ${muSpark(mu, a, b)}
     <button class="graphOptionButton allBtn" id="muBack">Back to ${esc(state.players.find(p => p.slot === state.mvpPick).hero)}</button>
     <div class="whyFoot">From Valve's damage matrix, sampled every 3 minutes.${state.muStat === "dmg" ? "" : " Effects can overlap, so seconds can add up to more than the time spent stunned."}</div></div>`;
