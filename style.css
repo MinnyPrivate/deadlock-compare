@@ -318,3 +318,8 @@ body.noMatch .topPanel, body.noMatch .tabs, body.noMatch .mainCol, body.noMatch 
 .graphOption + .graphOption .optionLabel { margin-left: 22px; }
 .teamAvg { left: auto; right: calc(50% + 6px); width: auto; padding: 0; }
 .teamAvg.right { right: auto; left: calc(50% + 6px); padding: 0; }
+/* Native bar: a selected hero's coin lights up in the team color; unselected coins stay dark. */
+.player .heroImg::before { transition: background 0.15s; }
+.player.sel .heroImg::before { background: var(--tc); filter: brightness(1.12) saturate(1.1); }
+body.tabMvp .player.sel:not(.pick) .heroImg::before { background: var(--coin); filter: none; }
+body.tabMvp .player.pick .heroImg::before { background: var(--tc); filter: brightness(1.12) saturate(1.1); }

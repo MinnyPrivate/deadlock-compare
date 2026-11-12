@@ -229,12 +229,13 @@ function buildEvents(mi) {
 
 // ---------- ranks ----------
 // Valve's packed badge: tens = tier (0 Obscurus .. 11 Eternus), ones = subrank 1-6.
-const RANK_NAMES = ["Obscurus", "Initiate", "Seeker", "Alchemist", "Arcanist", "Ritualist", "Emissary", "Archon", "Oracle", "Phantom", "Ascendant", "Eternus"];
+// Names and badges from the ranked overhaul (Citadel_ranks_N strings, ranked/badges/rankNN_sm art). The badge art has no subrank variants.
+const RANK_NAMES = ["Obscurus", "Initiate", "Seeker", "Acolyte", "Sentinel", "Mystic", "Ritualist", "Emissary", "Oracle", "Phantom", "Ascendant", "Eternus"];
 function rankOf(badge) {
   if (!badge) return null;
   const tier = Math.floor(badge / 10), sub = badge % 10;
   if (!RANK_NAMES[tier]) return null;
-  return { tier, sub, name: tier === 0 ? RANK_NAMES[0] : `${RANK_NAMES[tier]} ${sub}`, img: `assets/ranks/${tier}_${tier === 0 ? 0 : Math.min(6, Math.max(1, sub))}.png` };
+  return { tier, sub, name: tier === 0 ? RANK_NAMES[0] : `${RANK_NAMES[tier]} ${sub}`, img: `assets/ranks/${tier}.png` };
 }
 // Average as steps (tier * 6 + subrank), then back to a badge.
 function avgBadge(badges) {
