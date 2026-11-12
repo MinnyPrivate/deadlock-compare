@@ -80,7 +80,9 @@ body.standalone #stage { height: 1080px; }
   content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 72px; border-radius: 50%;
   background: var(--coin);
 }
-.player .heroImg img { position: absolute; left: 50%; bottom: 0; width: 100px; height: 100px; transform: translateX(-50%); }
+/* Valve's painted card art, pre-masked with hero_image_mask (open top, round bottom), sitting on the team coin like the native bar. */
+.player .heroImg { overflow: visible; }
+.player .heroImg img { position: absolute; left: 0; bottom: 0; width: 72px; height: 98px; }
 .player .souls {
   position: absolute; left: 50%; top: 96px; transform: translateX(-50%);
   min-width: 44px; padding: 3px 6px 2px; border-radius: 0 0 3px 3px; text-align: center;
@@ -165,7 +167,7 @@ body.standalone #stage { height: 1080px; }
 .tooltip .ev div { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
 .tooltip .ev b { width: 9px; height: 9px; border-radius: 50%; flex: none; }
 .tooltip .row { display: flex; align-items: center; gap: 8px; margin-top: 3px; }
-.tooltip .row img { width: 24px; height: 24px; border-radius: 50%; background: var(--coin); object-fit: cover; object-position: top; flex: none; }
+.tooltip .row img { width: 24px; height: 24px; border-radius: 50%; background: var(--coin); object-fit: cover; object-position: 50% 28%; flex: none; }
 .tooltip .row .sw { width: 14px; height: 3px; flex: none; }
 .tooltip .row .n { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tooltip .row .n small { opacity: 0.55; font-size: 13px; }
@@ -235,7 +237,7 @@ body:not(.tabMvp) #mvpView { display: none; }
 .mvpRow.on { background: rgba(255,239,215,0.16); }
 .mvpRow .place { font-family: var(--oracle); font-weight: 700; font-size: 24px; text-align: center; opacity: 0.8; }
 .pt, .big, .mini { position: relative; display: inline-block; border-radius: 50%; overflow: hidden; background: var(--coin); flex: none; }
-.pt img, .big img, .mini img { position: absolute; left: 50%; bottom: 0; width: 135%; transform: translateX(-50%); }
+.pt img, .big img, .mini img { position: absolute; left: 50%; top: -6%; width: 118%; transform: translateX(-50%); }
 .pt { width: 46px; height: 46px; box-shadow: 0 0 0 2px var(--tc); }
 .big { width: 84px; height: 84px; box-shadow: 0 0 0 3px var(--tc); }
 .mini { width: 22px; height: 22px; margin-left: 6px; vertical-align: middle; }
@@ -275,3 +277,26 @@ body:not(.tabMvp) #mvpView { display: none; }
 .wr .track i { display: block; height: 100%; }
 .wr .pb em { font-style: normal; font-family: var(--oracle); font-weight: 600; font-size: 14px; opacity: 0.8; }
 .whyFoot { margin-top: 8px; font-size: 13px; opacity: 0.4; }
+.whyTable.compact { flex: none; }
+.whyTable.compact .wr { flex: none; height: 32px; }
+.wr.th.sec { margin-top: 10px; }
+.allBtn { align-self: flex-start; margin-top: 12px; }
+.mvpWhy .whyFoot { margin-top: auto; padding-top: 8px; }
+.leftTag { font-family: var(--sans); font-size: 11px; font-weight: 700; letter-spacing: 0.5px; padding: 1px 5px; border-radius: 3px; background: #ff8a7a33; color: #ffb3a8; vertical-align: middle; }
+
+/* ---------- no match loaded / failed load ---------- */
+body.noMatch .topPanel, body.noMatch .tabs, body.noMatch .mainCol, body.noMatch #mvpView { display: none; }
+.status .retry { pointer-events: auto; margin-top: 14px; color: var(--offWhite); }
+
+/* ---------- full hover readout ---------- */
+.tooltip { max-width: 640px; }
+.tooltip .cols.two { display: grid; grid-template-columns: repeat(2, minmax(220px, 1fr)); column-gap: 18px; }
+.tooltip .grp + .grp { margin-top: 0; }
+.tooltip .cols:not(.two) .grp + .grp { margin-top: 8px; }
+.tooltip .row.gh .n { font-weight: 600; }
+.tooltip .row.sub { margin-top: 1px; padding-left: 32px; font-size: 14px; }
+.tooltip .row.sub svg { width: 22px; height: 6px; flex: none; }
+.tooltip .row.sub .v { font-size: 15px; }
+
+/* ---------- experimental tag on the MVP score ---------- */
+.expTag { margin-left: 14px; padding: 2px 7px; border-radius: 3px; border: 1px solid rgba(255,239,215,0.35); font-size: 12px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; opacity: 0.75; }
