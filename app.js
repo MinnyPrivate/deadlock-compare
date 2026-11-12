@@ -62,7 +62,11 @@ const state = {
   graph: "souls",
   mode: "value",
   diff: false,
+  hiddenCats: {},   // graph id -> Set of hidden category indexes
 };
+
+function hiddenFor(graph) { return state.hiddenCats[graph.id] || (state.hiddenCats[graph.id] = new Set()); }
+function visibleCats(graph) { const h = hiddenFor(graph); return graph.series.map((s, i) => i).filter(i => !h.has(i)); }
 
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -188,12 +192,19 @@ function seriesFor(graph) {
     if (state.diff && lines.length === 2) {
       const [a, b] = lines;
       const pts = a.pts.map(([t, v]) => [t, v - (valueAt(b.pts, t) ?? 0)]);
-      out.push({ label: `${a.label} minus ${b.label}`, color: a.color, dash: "", pts, diff: true, other: b.color });
+      out.push({ label: `${a.label} minus ${b.label}`, aName: a.label, bName: b.label, color: a.color, dash: "", pts, diff: true });
     } else out.push(...lines);
   } else {
-    for (const p of sel) graph.series.forEach((ser, i) => out.push({
-      player: p, label: `${p.hero}: ${ser.label}`, sub: ser.label, color: p.color, dash: DASHES[i % DASHES.length], pts: build(p, ser.get),
-    }));
+    const cats = visibleCats(graph);
+    if (state.diff && sel.length === 2 && cats.length === 1) {
+      const ser = graph.series[cats[0]];
+      const [a, b] = sel.map(p => build(p, ser.get));
+      out.push({ label: `${sel[0].hero} minus ${sel[1].hero} (${ser.label})`, aName: sel[0].hero, bName: sel[1].hero, color: sel[0].color, dash: "", diff: true,
+        pts: a.map(([t, v]) => [t, v - (valueAt(b, t) ?? 0)]) });
+    } else for (const p of sel) for (const i of cats) {
+      const ser = graph.series[i];
+      out.push({ player: p, label: `${p.hero}: ${ser.label}`, sub: ser.label, color: p.color, dash: DASHES[i % DASHES.length], pts: build(p, ser.get) });
+    }
   }
   return out;
 }
@@ -209,10 +220,10 @@ function render() {
   if (!state.match) return;
   const graph = GRAPHS.find(g => g.id === state.graph);
   const sel = state.players.filter(p => state.selected.has(p.slot));
-  $("diffCtl").hidden = !(graph.kind === "general" && sel.length === 2);
+  $("diffCtl").hidden = !(sel.length === 2 && (graph.kind === "general" || visibleCats(graph).length === 1));
   $("modeCtl").style.opacity = graph.ratio || graph.level ? 0.4 : 1;
   $("hint").textContent = graph.kind === "breakdown"
-    ? "Color = player, line style = category. Pick 2 players to compare them."
+    ? "Color = player, line style = category. Click a category below to hide it. Ctrl+Click shows only that one."
     : "Click heroes to show or hide them. Ctrl+Click shows only that hero.";
   const series = seriesFor(graph);
   drawChart(series, graph);
@@ -282,15 +293,24 @@ function drawLegend(series, graph) {
   const lg = $("legend");
   lg.innerHTML = "";
   if (graph.kind === "breakdown") {
+    const h = hiddenFor(graph);
+    lg.append(el("span", "lgLabel", "Lines"));
     graph.series.forEach((ser, i) => {
-      const it = el("span", "item");
+      const it = el("button", "item cat" + (h.has(i) ? " off" : ""));
       it.innerHTML = `<svg width="30" height="8"><line x1="0" x2="30" y1="4" y2="4" stroke="#ece4d6" stroke-width="2" stroke-dasharray="${DASHES[i % DASHES.length]}"/></svg>${esc(ser.label)}`;
+      it.title = "Click to show or hide. Ctrl+Click shows only this line type.";
+      it.onclick = ev => {
+        if (ev.ctrlKey || ev.metaKey) { h.clear(); graph.series.forEach((_, j) => { if (j !== i) h.add(j); }); }
+        else if (h.has(i)) h.delete(i); else h.add(i);
+        render();
+      };
       lg.append(it);
     });
+    if (h.size) { const all = el("button", "item", "Show all"); all.onclick = () => { h.clear(); render(); }; lg.append(all); }
   }
   if (!series.length) lg.textContent = "No players selected. Click a hero above.";
   const d = series.find(s => s.diff);
-  if (d) lg.append(el("span", "item", `Above zero = ${d.label.split(" minus ")[0]} ahead. Below zero = ${d.label.split(" minus ")[1]} ahead.`));
+  if (d) lg.append(el("span", "item", `Above zero = ${d.aName} ahead. Below zero = ${d.bName} ahead.`));
 }
 
 // ---------- helpers ----------
