@@ -3,7 +3,7 @@
 // The footer gets a Compare icon next to the native screen icons. Clicking it shows the Compare page
 // (a CitadelHTMLPanel) above the footer. Clicking it again, any native screen icon, or ESC hides it.
 (function () {
-    var PAGE = "https://minnyprivate.github.io/deadlock-compare/";
+    var PAGE = "https://deadlock-compare.minnymods.workers.dev/";
     var wired = false;
     var tries = 0;
     var isOpen = false;
