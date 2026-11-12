@@ -359,8 +359,8 @@ function drawChart(series, g) {
   for (const se of series) {
     if (!se.pts.length) continue;
     const d = se.pts.map(([t, v], i) => `${i ? "L" : "M"}${X(t).toFixed(1)} ${Y(v).toFixed(1)}`).join("");
-    s += `<path d="${d}" fill="none" stroke="#000" stroke-opacity="0.35" stroke-width="5.5" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="${se.dash}"/>`;
-    s += `<path d="${d}" fill="none" stroke="${se.color}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="${se.dash}"/>`;
+    s += `<path d="${d}" fill="none" stroke="#000" stroke-opacity="0.3" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="${se.dash}"/>`;
+    s += `<path d="${d}" fill="none" stroke="${se.color}" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="${se.dash}"/>`;
   }
   s += `</g><line id="hoverLine" y1="${m.t}" y2="${H - m.b}" stroke="#FFEFD7" stroke-opacity="0" />`;
   svg.innerHTML = s;
