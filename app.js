@@ -82,6 +82,7 @@ const state = {
   objPref: {}, hiddenCats: {},
   leftTeam: 0, me: null,
   tab: "graphs", mvpPick: null, mvpMode: "impact",
+  muStat: "dmg", muWin: "all", muPair: null,
 };
 const $ = id => document.getElementById(id);
 const graphNow = () => GRAPHS.find(g => g.id === state.graph);
@@ -102,6 +103,14 @@ function hiddenFor(g) {
 }
 function visibleCats(g) { const h = hiddenFor(g); return g.series.map((s, i) => i).filter(i => !h.has(i)); }
 function objOn(g) { return state.objPref[g.id] ?? !!g.obj; }
+// View As: Value and Per Minute work on most graphs; % of Team, Teams and Lanes only on the General graphs that add up.
+function modeNow(g) {
+  const m = state.mode;
+  if (g.ratio || g.level || g.kind === "lead") return "value";
+  if (g.kind !== "general" && m !== "permin") return "value";
+  return m;
+}
+const grouped = g => ["team", "lane"].includes(modeNow(g));
 
 // ---------- layout scaling: Deadlock lays out in 1080p units ----------
 function fit() {
@@ -252,8 +261,8 @@ function rankHtml(badge, cls) {
 
 // ---------- top bar ----------
 function renderTop() {
-  const mvp = state.tab === "mvp";
-  const leadG = !mvp && graphNow().kind === "lead";
+  const mvp = state.tab === "mvp" || state.tab === "matchups"; // tabs that focus one hero
+  const leadG = !mvp && (graphNow().kind === "lead" || grouped(graphNow())); // views where hero picks don't apply
   const sel = mvp || leadG ? new Set(state.players.map(p => p.slot)) : selNow();
   for (const side of ["Left", "Right"]) {
     const team = side === "Left" ? state.leftTeam : 1 - state.leftTeam;
@@ -275,7 +284,7 @@ function renderTop() {
       if (p.mvp === 1) d.append(el("div", "badge", "MVP"));
       else if (p.mvp > 1) d.append(el("div", "badge key", "KEY"));
       d.onclick = ev => {
-        if (mvp) { state.mvpPick = p.slot; renderAll(); return; }
+        if (mvp) { state.mvpPick = p.slot; state.muPair = null; renderAll(); return; }
         if (leadG) return;
         const s = new Set(selNow());
         if (ev.ctrlKey || ev.metaKey) { setSel(new Set([p.slot])); }
@@ -350,7 +359,7 @@ function lanePick() {
 function renderPicks() {
   const g = graphNow();
   const box = $("optPick");
-  box.hidden = g.kind === "lead";
+  box.hidden = g.kind === "lead" || grouped(g);
   const lane = lanePick();
   const sel = selNow();
   const same = arr => arr && arr.length === sel.size && arr.every(x => sel.has(x));
@@ -371,9 +380,13 @@ function renderOptions() {
   const g = graphNow(), sel = selNow();
   renderPicks();
   const modeOk = !g.ratio && !g.level && g.kind !== "lead";
-  seg("optMode", modeOk ? state.mode : "value", v => { state.mode = v; renderAll(); });
-  $("optMode").querySelectorAll("button").forEach(b => { b.disabled = !modeOk; });
-  const canDiff = g.kind !== "lead" && sel.size === 2 && (g.kind === "general" || visibleCats(g).length === 1);
+  const okFor = v => v === "value" || (modeOk && (v === "permin" || g.kind === "general"));
+  seg("optMode", modeNow(g), v => { state.mode = v; renderAll(); });
+  $("optMode").querySelectorAll("button").forEach(b => {
+    b.disabled = !okFor(b.dataset.v);
+    if (b.disabled) b.title = g.kind === "breakdown" ? "Only for the General graphs" : "Not for this graph";
+  });
+  const canDiff = g.kind !== "lead" && !grouped(g) && sel.size === 2 && (g.kind === "general" || visibleCats(g).length === 1);
   if (!canDiff) state.diff = false;
   $("optDiff").hidden = !canDiff;
   seg("optDiff", state.diff ? "on" : "off", v => { state.diff = v === "on"; renderAll(); });
@@ -388,10 +401,12 @@ function seriesFor(g) {
   const sel = g.kind === "breakdown"
     ? [...state.selBrk].map(s => state.players.find(p => p.slot === s)).filter(Boolean)
     : state.players.filter(p => selNow().has(p.slot));
-  const perMin = state.mode === "permin" && !g.ratio && !g.level;
+  const mode = modeNow(g);
+  if (mode === "team" || mode === "lane") return groupLines(g, mode);
+  const perMin = mode === "permin";
   const build = (p, get) => {
     const pts = [];
-    if (!g.ratio && !g.level) pts.push([0, 0]);
+    if (!g.ratio && !g.level && mode !== "share") pts.push([0, 0]);
     for (const s of p.stats) {
       let v = get(s);
       if (v == null) continue;
@@ -403,7 +418,8 @@ function seriesFor(g) {
   };
   const diffOk = state.diff && sel.length === 2;
   if (g.kind === "general") {
-    const lines = sel.map(p => ({ player: p, label: p.hero, color: colorOf(p), dash: "", pts: build(p, g.get) }));
+    const get = mode === "share" ? shareGet(g) : g.get;
+    const lines = sel.map(p => ({ player: p, label: p.hero, color: colorOf(p), dash: "", pts: build(p, get) }));
     if (diffOk) return [diffLine(lines[0], lines[1], null)];
     return lines;
   }
@@ -419,6 +435,45 @@ function seriesFor(g) {
     out.push({ player: p, label: p.hero, sub: ser.label, color: colorOf(p), dash: DASHES[i % DASHES.length], pts: build(p, ser.get) });
   }
   return out;
+}
+// % of Team: a hero's value over the sum of their team's values at the same snapshot.
+function shareGet(g) {
+  const tot = {};
+  for (const p of state.players) for (const s of p.stats) {
+    const k = p.team + ":" + s.time_stamp_s;
+    tot[k] = (tot[k] || 0) + (Number(g.get(s)) || 0);
+  }
+  return function (s) {
+    const p = state.players.find(q => q.stats.includes(s));
+    const t = p ? tot[p.team + ":" + s.time_stamp_s] : 0;
+    return t ? (100 * (Number(g.get(s)) || 0)) / t : null;
+  };
+}
+const LANE_COLORS = { Yellow: "#FFD23F", Green: "#58D86A", Blue: "#5C9DFF" };
+// Teams and Lanes: heroes added together at each snapshot. Lanes pair each team's two heroes in the same lane.
+function groupLines(g, mode) {
+  const times = [...new Set(state.players.flatMap(p => p.stats.map(s => s.time_stamp_s)))].sort((a, b) => a - b);
+  const at = (p, t) => { const s = p.stats.find(x => x.time_stamp_s === t); return s ? Number(g.get(s)) || 0 : null; };
+  const groups = [];
+  for (const team of [state.leftTeam, 1 - state.leftTeam]) {
+    const T = TEAMS[team], ps = state.players.filter(p => p.team === team);
+    if (mode === "team") groups.push({ label: T.color, color: T.c, dash: "", ps, team });
+    else {
+      const lanes = [...new Set(ps.map(p => p.lane))].sort((a, b) => a - b);
+      for (const ln of lanes) {
+        const name = LANES_BY_COLOR[ln] || "No";
+        groups.push({ label: `${T.color} ${name}`, sub: name + " lane", color: LANE_COLORS[name] || T.c, dash: team === state.leftTeam ? "" : "10 6", ps: ps.filter(p => p.lane === ln), team });
+      }
+    }
+  }
+  return groups.map(gr => {
+    const pts = [[0, 0]];
+    for (const t of times) {
+      const vs = gr.ps.map(p => at(p, t)).filter(v => v != null);
+      if (vs.length) pts.push([t, vs.reduce((a, v) => a + v, 0)]);
+    }
+    return { group: gr, label: gr.label, color: gr.color, dash: gr.dash, endLab: gr.label, pts };
+  });
 }
 // Team Souls Lead: the viewer's team (left) minus the other team, at every stats snapshot.
 function leadLine() {
@@ -448,13 +503,17 @@ function renderAll() {
   if (!state.match) return;
   document.querySelectorAll("#tabs .tab").forEach(b => b.classList.toggle("on", b.dataset.tab === state.tab));
   document.body.classList.toggle("tabMvp", state.tab === "mvp");
+  document.body.classList.toggle("tabMu", state.tab === "matchups");
+  document.body.classList.toggle("tabPick", state.tab !== "graphs");
   const lb = avgBadge(state.players.map(p => p.badge));
   $("lobbyRank").innerHTML = lb ? `<span class="lbl">Lobby</span>${rankHtml(lb)}` : "";
   renderTop();
   if (state.tab === "mvp") { window.renderMvp(); return; }
+  if (state.tab === "matchups") { window.renderMatchups(); return; }
   renderOptions();
-  const g = graphNow();
-  const series = seriesFor(g);
+  const g0 = graphNow();
+  const series = seriesFor(g0);
+  const g = modeNow(g0) === "share" ? Object.assign({}, g0, { ratio: true }) : g0; // % of Team reads as a percentage
   drawChart(series, g);
   renderLines(series, g);
 }
@@ -463,8 +522,10 @@ function drawChart(series, g) {
   const ctn = $("graphCtn"), svg = $("chart");
   const W = ctn.offsetWidth, H = ctn.offsetHeight;
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-  const endLabels = g.kind === "breakdown" && series.some(se => se.sub && !se.diff);
+  const endLabels = (g.kind === "breakdown" && series.some(se => se.sub && !se.diff)) || series.some(se => se.endLab);
   const m = { l: 18, r: endLabels ? 250 : 96, t: 34, b: 40 };
+  const buyers = itemBuyers(g);
+  if (buyers) m.b += buyers.length * 32 + 8; // item rows sit between the lines and the time axis
   const dur = state.match.duration_s || Math.max(60, ...series.flatMap(s => s.pts.map(p => p[0])));
   const vals = series.flatMap(s => s.pts.map(p => p[1]));
   let ymin = 0, ymax = 1;
@@ -483,7 +544,7 @@ function drawChart(series, g) {
   }
   const step = dur > 1500 ? 600 : 300;
   for (let t = 0; t <= dur; t += step) {
-    s += `<text x="${X(t)}" y="${H - m.b + 28}" text-anchor="${t === 0 ? "start" : "middle"}">${fmtTime(t)}</text>`;
+    s += `<text x="${X(t)}" y="${H - 12}" text-anchor="${t === 0 ? "start" : "middle"}">${fmtTime(t)}</text>`;
   }
   s += `<line x1="${m.l}" x2="${W - m.r + 8}" y1="${Y(ymin === 0 || ymin < 0 ? 0 : ymin)}" y2="${Y(ymin === 0 || ymin < 0 ? 0 : ymin)}" stroke="#ffffff" stroke-opacity="${ymin < 0 ? 0.35 : 0.12}"/>`;
   const evs = objOn(g) ? state.events : [];
@@ -513,11 +574,12 @@ function drawChart(series, g) {
       return { x: X(t) + 10, y: Y(v) + 5, se };
     }).sort((a, b) => a.y - b.y);
     for (let i = 1; i < labs.length; i++) if (labs[i].y - labs[i - 1].y < 17) labs[i].y = labs[i - 1].y + 17;
-    for (const l of labs) s += `<text class="endLab" x="${l.x}" y="${l.y}" style="fill:${l.se.color}">${esc(l.se.sub)}</text>`;
+    for (const l of labs) s += `<text class="endLab" x="${l.x}" y="${l.y}" style="fill:${l.se.color}">${esc(l.se.endLab || l.se.sub)}</text>`;
   }
   s += `<line id="hoverLine" y1="${m.t}" y2="${H - m.b}" stroke="#FFEFD7" stroke-opacity="0" />`;
   svg.innerHTML = s;
   drawMarkers(evs, X, W);
+  drawItems(buyers, X, H - 40 - (buyers ? buyers.length * 32 : 0), W - m.r);
 
   const emp = $("empty");
   emp.hidden = series.length > 0;
@@ -550,6 +612,7 @@ function drawChart(series, g) {
       html += `<div class="t">${fmtTime(t)}</div>`;
       if (near.length) html += evHtml(near);
       html += readoutHtml(rows, g);
+      if (buyers) html += boughtHtml(buyers, times[times.indexOf(t) - 1] ?? -1, t);
     } else if (near.length) html = evHtml(near);
     if (!html) { tip.hidden = true; return; }
     tip.innerHTML = html;
@@ -588,6 +651,10 @@ function rowHtml(se, v, g) {
     const T = TEAMS[v >= 0 ? state.leftTeam : 1 - state.leftTeam];
     return `<div class="row"><span class="sw" style="background:${T.c}"></span><span class="n">${v === 0 ? "Even" : T.color + " ahead"}</span><span class="v">${fmtNum(Math.abs(v), g)}</span></div>`;
   }
+  if (se.group) {
+    const T = TEAMS[se.group.team];
+    return `<div class="row"><span class="tdot" style="background:${T.c}"></span><svg viewBox="0 0 22 6" class="dsw"><line x1="0" x2="22" y1="3" y2="3" stroke="${se.color}" stroke-width="2.5" stroke-dasharray="${se.dash}"/></svg><span class="n">${esc(se.label)}${se.group.sub ? ` <small>${se.group.ps.map(p => esc(p.hero)).join(" + ")}</small>` : ""}</span><span class="v">${fmtNum(v, g)}</span></div>`;
+  }
   const p = se.player, T = TEAMS[p.team];
   let name = esc(se.label) + (se.sub ? ` <small>${esc(se.sub)}</small>` : "");
   let val = fmtNum(v, g);
@@ -620,6 +687,55 @@ function drawMarkers(evs, X, W) {
   }
 }
 
+// ---------- item purchases (Power graphs) ----------
+// players[].items holds every purchase with its time; item_id is a hash of the item's class name (gamedata.js ITEMS).
+// Shown for 1 to 3 heroes, one row each, so the icons stay readable.
+const ITEM_SLOTS = { w: { name: "Weapon", c: "#E89A3C" }, v: { name: "Vitality", c: "#7FC241" }, s: { name: "Spirit", c: "#B77CF0" } };
+function itemsOf(p) {
+  const I = window.ITEMS || {};
+  return (p.raw.items || []).filter(it => I[it.item_id]).map(it => {
+    const [name, slot, tier, icon] = I[it.item_id];
+    return { t: Number(it.game_time_s) || 0, sold: Number(it.sold_time_s) || 0, name, slot, tier, icon };
+  }).sort((a, b) => a.t - b.t);
+}
+function itemBuyers(g) {
+  if (g.group !== "Power" || state.diff) return null;
+  const sel = state.players.filter(p => state.selGen.has(p.slot));
+  return sel.length >= 1 && sel.length <= 3 ? sel : null;
+}
+function drawItems(buyers, X, top, right) {
+  const box = $("itemRows");
+  box.innerHTML = "";
+  if (!buyers) return;
+  buyers.forEach((p, r) => {
+    const y = top + r * 32;
+    const row = el("div", "itemRow");
+    row.style.top = y + "px";
+    row.innerHTML = `<span class="who" style="left:${right + 14}px;--pc:${p.color}">${portraitImg(p)}</span>`;
+    let lastX = -99;
+    for (const it of itemsOf(p)) {
+      const x = Math.max(X(it.t), lastX + 25);
+      lastX = x;
+      const i = el("i", "item" + (it.sold ? " sold" : ""));
+      i.style.left = x + "px";
+      i.style.setProperty("--sc", ITEM_SLOTS[it.slot].c);
+      i.style.backgroundImage = `url("assets/items/${it.icon}.webp")`;
+      i.title = `${p.hero}: ${it.name} (${ITEM_SLOTS[it.slot].name}, tier ${it.tier})\nBought ${fmtTime(it.t)}${it.sold ? ", sold " + fmtTime(it.sold) : ""}`;
+      row.append(i);
+    }
+    box.append(row);
+  });
+}
+function portraitImg(p) { return `<img src="${p.img}" alt="" style="--coin:${TEAMS[p.team].coin}">`; }
+function boughtHtml(buyers, t0, t1) {
+  const rows = [];
+  for (const p of buyers) for (const it of itemsOf(p)) if (it.t > t0 && it.t <= t1) rows.push({ p, it });
+  if (!rows.length) return "";
+  rows.sort((a, b) => a.it.t - b.it.t);
+  return `<div class="bought"><div class="bh">Bought since ${fmtTime(Math.max(0, t0))}</div>` + rows.map(({ p, it }) =>
+    `<div class="row"><span class="sw" style="background:${p.color}"></span><i class="item sm" style="--sc:${ITEM_SLOTS[it.slot].c};background-image:url('assets/items/${it.icon}.webp')"></i><span class="n">${esc(it.name)}${buyers.length > 1 ? ` <small>${esc(p.hero)}</small>` : ""}</span><span class="v t">${fmtTime(it.t)}</span></div>`).join("") + `</div>`;
+}
+
 function renderLines(series, g) {
   const row = $("lineRow"), box = $("lines");
   box.innerHTML = "";
@@ -631,9 +747,18 @@ function renderLines(series, g) {
     document.body.classList.remove("noLines");
     return;
   }
+  if (grouped(g)) {
+    row.hidden = false;
+    const L = TEAMS[state.leftTeam].color, R = TEAMS[1 - state.leftTeam].color;
+    box.append(el("span", "lineHint", modeNow(g) === "lane" ? `Solid lines: ${L}. Dashed: ${R}. Each line adds up the two heroes in that lane. Hero picks don't change this view.` : `Each line adds up all six heroes on that team. Hero picks don't change this view.`));
+    document.body.classList.remove("noLines");
+    return;
+  }
   if (g.kind !== "breakdown") {
-    row.hidden = !d;
+    const itemHint = g.group === "Power" && !d && !itemBuyers(g);
+    row.hidden = !d && !itemHint;
     if (d) box.append(el("span", "lineHint", `Above the line: ${d.player.hero} ahead. Below: ${d.other.hero} ahead.`));
+    if (itemHint) box.append(el("span", "lineHint", "Pick 1 to 3 heroes to see when they bought each item."));
     document.body.classList.toggle("noLines", row.hidden);
     return;
   }
@@ -688,7 +813,7 @@ fit();
 window.addEventListener("resize", () => { fit(); renderAll(); });
 wireDropDown();
 document.querySelectorAll("#tabs .tab").forEach(b => b.onclick = () => { state.tab = b.dataset.tab; closeMenu(); renderAll(); });
-if (params.get("tab") === "mvp") state.tab = "mvp";
+if (["mvp", "matchups"].includes(params.get("tab"))) state.tab = params.get("tab");
 buildDropDown();
 if (params.get("graph") && GRAPHS.some(g => g.id === params.get("graph"))) state.graph = params.get("graph");
 $("matchForm").onsubmit = ev => {

@@ -26,6 +26,7 @@
 
   <nav id="tabs" class="tabs">
     <button class="tab on" data-tab="graphs">Graphs</button>
+    <button class="tab" data-tab="matchups">Matchups</button>
     <button class="tab" data-tab="mvp">MVP</button>
     <span id="lobbyRank" class="lobbyRank"></span>
   </nav>
@@ -48,7 +49,10 @@
         <div class="graphOption" id="optMode">
           <span class="optionLabel">View As:</span>
           <button class="graphOptionButton" data-v="value">Value</button>
-          <button class="graphOptionButton" data-v="permin" title="Each value divided by minutes played so far">Average per Minute</button>
+          <button class="graphOptionButton" data-v="permin" title="Each value divided by minutes played so far">Per Minute</button>
+          <button class="graphOptionButton" data-v="share" title="Each hero's share of their team's total at that time">% of Team</button>
+          <button class="graphOptionButton" data-v="team" title="One line per team: all six heroes added together">Teams</button>
+          <button class="graphOptionButton" data-v="lane" title="One line per lane pair: the two heroes in each lane added together">Lanes</button>
         </div>
         <div class="graphOption" id="optDiff" hidden>
           <span class="optionLabel">Two Players:</span>
@@ -66,6 +70,7 @@
     <div class="graphCtn" id="graphCtn">
       <svg id="chart" role="img" aria-label="Match graph"></svg>
       <div id="markers" class="markers"></div>
+      <div id="itemRows" class="itemRows"></div>
       <div id="tooltip" class="tooltip" hidden></div>
       <div id="empty" class="empty" hidden></div>
     </div>
@@ -78,6 +83,7 @@
   </main>
 
   <section id="mvpView" class="mvpView"></section>
+  <section id="muView" class="mvpView muView"></section>
 
   <form id="matchForm" class="matchForm">
     <label for="matchInput">Match</label>
@@ -88,7 +94,9 @@
 </div>
 
 <script src="heroes.js"></script>
+<script src="gamedata.js"></script>
 <script src="app.js"></script>
 <script src="mvp.js"></script>
+<script src="matchups.js"></script>
 </body>
 </html>

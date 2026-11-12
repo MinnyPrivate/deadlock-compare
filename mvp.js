@@ -202,7 +202,9 @@ window.renderMvp = function renderMvp() {
       <span class="pb"><span class="track" style="width:${(x.maxPts / maxOf(pick.parts)) * 100}%"><i style="width:${x.maxPts ? (x.pts / x.maxPts) * 100 : 0}%;background:${c}"></i></span><em>${x.on ? x.pts.toFixed(1) : ""}</em></span>
     </div>`;
   }
-  h += `</div><button class="graphOptionButton allBtn" id="mvpAll">${state.mvpAll ? "Show fewer" : `Show all stats (${pick.parts.length})`}</button><div class="whyFoot">${mode === "impact" ? `Deaths count in reverse: fewest deaths in the match gets full points.${mvpSplit() ? "" : " This game was too short to split early and late, so damage and assists count once."}` : "Raw counts each scoreboard stat the same. Deaths count in reverse."} Crowd control is in Valve's data but isn't scored yet.</div></div>`;
+  h += `</div>`;
+  if (!state.mvpAll) h += accoladesHtml(p);
+  h += `<button class="graphOptionButton allBtn" id="mvpAll">${state.mvpAll ? "Show fewer" : `Show all stats (${pick.parts.length})`}</button><div class="whyFoot">${mode === "impact" ? `Deaths count in reverse: fewest deaths in the match gets full points.${mvpSplit() ? "" : " This game was too short to split early and late, so damage and assists count once."}` : "Raw counts each scoreboard stat the same. Deaths count in reverse."} Crowd control isn't scored; see it on the Matchups tab.</div></div>`;
 
   view.innerHTML = h;
   view.querySelectorAll("[data-mode]").forEach(b => b.onclick = () => { state.mvpMode = b.dataset.mode; renderAll(); });
@@ -214,3 +216,32 @@ const LANES_BY_COLOR = { 1: "Yellow", 3: "Green", 4: "Blue", 6: "Green" };
 function maxOf(parts) { return Math.max(...parts.map(x => x.maxPts), 1); }
 function listJoin(a) { return a.length < 2 ? a.join("") : a.slice(0, -1).join(", ") + " and " + a[a.length - 1]; }
 function sayOf(x) { return x.def.say || x.def.label.toLowerCase(); }
+
+// Valve's accolades: Valve's own per-match awards (match_info.players[].accolades), kept apart from our score.
+// accolade_threshold_achieved is -1 when no tier was reached, else the tier reached (0 = first).
+// Names and texts come from the game's accolades.vdata and accolades_english.txt (gamedata.js).
+function accoladesHtml(p) {
+  const A = window.ACCOLADES || {};
+  const best = {};
+  for (const q of state.players) for (const a of q.raw.accolades || []) {
+    const v = Number(a.accolade_stat_value) || 0;
+    if (!best[a.accolade_id] || v > best[a.accolade_id].v) best[a.accolade_id] = { v, p: q };
+  }
+  const mine = (p.raw.accolades || []).filter(a => A[a.accolade_id] && a.accolade_threshold_achieved >= 0)
+    .map(a => ({ a, def: A[a.accolade_id], tier: Math.min(3, a.accolade_threshold_achieved + 1), v: Number(a.accolade_stat_value) || 0, best: best[a.accolade_id] }))
+    .sort((x, y) => y.tier - x.tier || (y.v / (y.best.v || 1)) - (x.v / (x.best.v || 1)));
+  if (!(p.raw.accolades || []).length) return "";
+  const shown = mine.slice(0, 4);
+  let h = `<div class="accHead"><span>Valve's accolades</span><span class="accSub">${mine.length ? `Valve's awards for this match${mine.length > 4 ? `, top 4 of ${mine.length}` : ""}. Not part of our score.` : "None earned this match."}</span></div>`;
+  for (const x of shown) {
+    const txt = (x.v === 1 ? x.def[1] : x.def[2]).replace("{v}", fmtStat(x.v));
+    const top = x.best && x.best.p.slot === p.slot;
+    h += `<div class="accRow" title="Valve's tier ${x.tier} of 3">
+      <span class="pips">${[1, 2, 3].map(i => `<i class="${i <= x.tier ? "on" : ""}"></i>`).join("")}</span>
+      <span class="an">${esc(x.def[0])}</span>
+      <span class="at">${esc(txt)}</span>
+      <span class="ab">${top ? `<span class="topTag">Lobby best</span>` : `Best ${fmtStat(x.best.v)}${portrait(x.best.p, "mini")}`}</span>
+    </div>`;
+  }
+  return `<div class="acc">${h}</div>`;
+}
