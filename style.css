@@ -438,7 +438,8 @@ button.muRow:hover { background: rgba(255,239,215,0.06); }
 .itemRow .who { position: absolute; top: 1px; }
 .itemRow .who img { width: 26px; height: 26px; border-radius: 50%; background: var(--coin); object-fit: cover; object-position: 50% 28%; box-shadow: 0 0 0 2px var(--pc); }
 .itemIcon { position: absolute; top: 2px; width: 24px; height: 24px; transform: translateX(-12px); border-radius: 4px; background: #1a1c17 center / 88% no-repeat; box-shadow: 0 0 0 1.5px var(--sc), 0 1px 3px #000a; pointer-events: auto; }
-.itemIcon.sold { opacity: 0.4; }
+/* Sold later: same full color as the rest, with a small red dot in the corner. */
+.itemIcon.sold::after { content: ""; position: absolute; right: -2px; top: -2px; width: 9px; height: 9px; border-radius: 50%; background: #E8604C; box-shadow: 0 0 0 1.5px #000; }
 .itemIcon:hover { transform: translateX(-12px) scale(1.5); z-index: 2; }
 .tooltip .itemIcon.sm { position: static; transform: none; width: 20px; height: 20px; flex: none; }
 .tooltip .bought { margin-top: 8px; padding-top: 6px; border-top: 1px solid #ffffff22; }
@@ -450,16 +451,17 @@ button.muRow:hover { background: rgba(255,239,215,0.06); }
 .mvpWhy .whyHead { padding-top: 10px; } /* room for the big portrait's head above its coin */
 
 /* ---------- graph hover readout, one hero per row like the game's own ---------- */
-.tooltip.heroTip { min-width: 0; width: 214px; padding: 8px 6px 6px; background: #000000E6; border-radius: 6px; }
-.tooltip.heroTip .t { text-align: center; margin: 0 0 7px; }
-.tooltip.heroTip .ev { margin: 0 4px 6px; }
-.heroRows { display: flex; flex-direction: column; gap: 4px; }
+.tooltip.heroTip { min-width: 0; width: 236px; padding: 0 6px 22px; background: #000; border-radius: 8px; }
+.tooltip.heroTip .t { text-align: center; margin: 0; height: 46px; line-height: 46px; font-size: 18px; color: var(--offWhite); }
+.tooltip.heroTip .ev { margin: 0 4px 8px; }
+.heroRows { display: flex; flex-direction: column; gap: 5px; }
 .heroRows .hr {
-  position: relative; height: 34px; display: flex; align-items: center; gap: 10px; padding-right: 10px; border-radius: 2px;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--tc) 38%, #000) 0%, color-mix(in srgb, var(--tc) 88%, #000) 100%);
+  position: relative; height: 40px; display: flex; align-items: center; gap: 12px; padding-right: 12px; overflow: hidden;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--tc) 30%, #000) 0%, color-mix(in srgb, var(--tc) 92%, #000) 100%);
 }
-.heroRows .hr .sw { width: 6px; align-self: stretch; flex: none; background: var(--pc); border-radius: 2px 0 0 2px; }
-.heroRows .hr .v { flex: 1; font-family: var(--oracle); font-weight: 700; font-size: 18px; color: #FFF3DD; }
-.heroRows .hr .pc { font-size: 14px; font-weight: 600; color: rgba(255,239,215,0.7); }
-.pt.xs { --s: 28px; --ring: 0px; margin-top: calc(var(--s) * -20 / 72); }
-.heroRows .pt.xs::before { background: var(--coin); }
+.heroRows .hr .sw { width: 4px; align-self: stretch; flex: none; background: var(--pc); }
+/* The painted card art, cropped to head and shoulders, filling the row height like the game's portraits. */
+.heroRows .hr .face { position: relative; width: 44px; align-self: stretch; flex: none; overflow: hidden; margin-left: -12px; }
+.heroRows .hr .face img { position: absolute; left: 0; top: -3px; width: 44px; height: 60px; }
+.heroRows .hr .v { flex: 1; font-family: var(--sans); font-weight: 600; font-size: 20px; color: #FFF3DD; }
+.heroRows .hr .pc { font-size: 15px; font-weight: 600; color: rgba(255,239,215,0.62); }

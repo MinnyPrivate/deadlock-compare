@@ -688,7 +688,7 @@ function heroRowsHtml(rows, g, t) {
   return `<div class="heroRows">` + rows.map(({ se, v }) => {
     const p = se.player, T = TEAMS[p.team], tot = se.total ? se.total(t) : 0;
     return `<div class="hr" style="--tc:${T.c};--pc:${se.color}" title="${esc(heroName(p))}"><i class="sw"></i>` +
-      `<span class="pt xs" style="--coin:${T.coin};--tc:${T.c}"><img src="${p.img}" alt=""></span>` +
+      `<span class="face"><img src="${p.img}" alt=""></span>` +
       `<span class="v">${fmtNum(v, g)}</span>${tot ? `<span class="pc">${Math.round((100 * v) / tot)}%</span>` : ""}</div>`;
   }).join("") + `</div>`;
 }
@@ -769,7 +769,7 @@ function drawItems(buyers, X, top, right) {
     for (const it of itemsOf(p)) {
       const x = Math.max(X(it.t), lastX + 25); // X clamps buys before the axis start to its left edge
       lastX = x;
-      const i = el("i", "itemIcon" + (it.sold ? " sold" : ""));
+      const i = el("i", "itemIcon" + (it.sold ? " sold" : "")); // sold later: full color, with a corner mark
       i.style.left = x + "px";
       i.style.setProperty("--sc", ITEM_SLOTS[it.slot].c);
       i.style.backgroundImage = `url("assets/items/${it.icon}.webp")`;
