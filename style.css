@@ -275,3 +275,9 @@ body:not(.tabMvp) #mvpView { display: none; }
 .wr .track i { display: block; height: 100%; }
 .wr .pb em { font-style: normal; font-family: var(--oracle); font-weight: 600; font-size: 14px; opacity: 0.8; }
 .whyFoot { margin-top: 8px; font-size: 13px; opacity: 0.4; }
+.whyTable.compact { flex: none; }
+.whyTable.compact .wr { flex: none; height: 32px; }
+.wr.th.sec { margin-top: 10px; }
+.allBtn { align-self: flex-start; margin-top: 12px; }
+.mvpWhy .whyFoot { margin-top: auto; padding-top: 8px; }
+.leftTag { font-family: var(--sans); font-size: 11px; font-weight: 700; letter-spacing: 0.5px; padding: 1px 5px; border-radius: 3px; background: #ff8a7a33; color: #ffb3a8; vertical-align: middle; }

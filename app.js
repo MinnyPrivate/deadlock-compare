@@ -17,20 +17,22 @@ const TEAMS = {
 // Objective lane index (ECitadelTeamObjective _LaneN) -> lane color. The current map uses lanes 1, 3 and 4.
 const LANES = { 1: "Yellow", 2: "Green", 3: "Blue", 4: "Green" };
 
-const GS = (s, ids) => (s.gold_sources || []).reduce((a, g) => a + (ids.includes(g.source) ? g.gold || 0 : 0), 0);
+// Souls per source. Trooper and Haunt souls come in two parts: the kill itself and the orb you shoot, so add both.
+const GS = (s, ids) => (s.gold_sources || []).reduce((a, g) => a + (ids.includes(g.source) ? (g.gold || 0) + (g.gold_orbs || 0) : 0), 0);
 const GRAPHS = [
   { group: "General", id: "souls", label: "Souls Collected", kind: "general", get: s => s.net_worth },
+  { group: "General", id: "souls_lead", label: "Team Souls Lead", kind: "lead", sub: "Which team was ahead on souls, and by how much" },
   { group: "General", id: "player_damage", label: "Damage to Players", kind: "general", get: s => s.player_damage },
   { group: "General", id: "damage_taken", label: "Damage from Players", kind: "general", get: s => s.player_damage_taken },
   { group: "General", id: "boss_damage", label: "Objective Damage", kind: "general", obj: true, get: s => s.boss_damage,
     sub: "Guardians, Walkers, Shrines, Patron and Mid Boss" },
-  { group: "General", id: "healing", label: "Healing", kind: "general", get: s => s.player_healing },
+  { group: "General", id: "healing", label: "Healing", kind: "general", get: s => s.player_healing, sub: "Yourself and allies" },
   { group: "General", id: "kills", label: "Kills", kind: "general", get: s => s.kills },
   { group: "General", id: "deaths", label: "Deaths", kind: "general", get: s => s.deaths },
   { group: "General", id: "assists", label: "Assists", kind: "general", get: s => s.assists },
-  { group: "General", id: "last_hits", label: "Last Hits", kind: "general", get: s => (s.creep_kills || 0) + (s.neutral_kills || 0), sub: "Troopers and Haunts" },
+  { group: "General", id: "last_hits", label: "Trooper and Haunt Kills", kind: "general", get: s => (s.creep_kills || 0) + (s.neutral_kills || 0), sub: "Not the scoreboard's Last Hits, which counts more" },
   { group: "General", id: "denies", label: "Denies", kind: "general", get: s => s.denies },
-  { group: "General", id: "accuracy", label: "Accuracy", kind: "general", ratio: true, get: s => pct(s.shots_hit, (s.shots_hit || 0) + (s.shots_missed || 0)) },
+  { group: "General", id: "accuracy", label: "Accuracy", sub: "All targets, troopers included", kind: "general", ratio: true, get: s => pct(s.shots_hit, (s.shots_hit || 0) + (s.shots_missed || 0)) },
   { group: "General", id: "crit", label: "Headshot Rate", kind: "general", ratio: true, get: s => pct(s.hero_bullets_hit_crit, s.hero_bullets_hit), sub: "Crit bullets that hit heroes" },
   { group: "Power", id: "level", label: "Level", kind: "general", level: true, get: s => s.level },
   { group: "Power", id: "max_health", label: "Max Health", kind: "general", level: true, get: s => s.max_health },
@@ -49,18 +51,21 @@ const GRAPHS = [
       { label: "Haunts", get: s => GS(s, [3]) },
       { label: "Objectives", get: s => GS(s, [4]) },
       { label: "Other", get: s => GS(s, [5, 7, 8, 9, 10, 11, 12, 13]) },
-  ] },
+  ], sub: "\"Other\" includes a source Valve doesn't name" },
   { group: "Player Comparison", id: "support", label: "Support", kind: "breakdown", series: [
       { label: "Healing Allies", get: s => s.teammate_healing },
-      { label: "Barriers on Allies", get: s => s.teammate_barriering },
+      { label: "Barriers Given", get: s => s.player_barriering },
       { label: "Healing Prevented", get: s => s.heal_prevented },
+  ] },
+  { group: "Player Comparison", id: "tanking", label: "Tanking", kind: "breakdown", series: [
+      { label: "Damage Taken", get: s => s.player_damage_taken },
       { label: "Damage Mitigated", get: s => s.damage_mitigated },
   ] },
   { group: "Player Comparison", id: "kill_types", label: "Kills by Type", kind: "breakdown", series: [
       { label: "Gun", get: s => s.bullet_kills },
       { label: "Ability", get: s => s.ability_kills },
       { label: "Melee", get: s => s.melee_kills },
-      { label: "Headshot", get: s => s.headshot_kills },
+      { label: "Headshot (of Gun)", get: s => s.headshot_kills },
   ] },
 ];
 const GROUP_SUB = { "Player Comparison": "Every line type for the heroes you pick" };
@@ -122,9 +127,10 @@ function setup(mi) {
   state.match = mi;
   const ordered = [...mi.players].sort((a, b) => a.team - b.team || (a.assigned_lane || 0) - (b.assigned_lane || 0) || a.player_slot - b.player_slot);
   state.players = ordered.map((p, i) => ({
-    slot: p.player_slot, team: p.team, lane: p.assigned_lane || 0, heroId: p.hero_id,
-    hero: (window.HERO_NAMES || {})[p.hero_id] || "Hero " + p.hero_id,
-    img: `assets/heroes/${p.hero_id}.png`,
+    slot: p.player_slot, team: p.team, lane: p.assigned_lane || 0, heroId: Number(p.hero_id) || 0,
+    hero: (window.HERO_NAMES || {})[p.hero_id] || "Hero " + (Number(p.hero_id) || 0),
+    img: `assets/heroes/${Number(p.hero_id) || 0}.png`,
+    left: Number(p.abandon_match_time_s) || 0,
     color: PLAYER_COLORS[i % PLAYER_COLORS.length],
     stats: (p.stats || []).slice().sort((a, b) => a.time_stamp_s - b.time_stamp_s),
     souls: p.net_worth || 0, mvp: p.mvp_rank || 0,
@@ -179,8 +185,9 @@ function buildEvents(mi) {
   }
   for (const mb of mi.mid_boss || []) {
     if (!mb.destroyed_time_s) continue;
-    const by = TEAMS[mb.team_killed] ? TEAMS[mb.team_killed].color : "";
-    ev.push({ t: mb.destroyed_time_s, kind: "Mid Boss", text: `Mid Boss killed${by ? " by " + by : ""}`, color: "#70F8C1", icon: "assets/ui/icon_soul.svg", mid: true });
+    const tm = mb.team_claimed ?? mb.team_killed;
+    const by = TEAMS[tm] ? TEAMS[tm].color : "";
+    ev.push({ t: mb.destroyed_time_s, kind: "Mid Boss", text: `Mid Boss taken${by ? " by " + by : ""}`, color: "#70F8C1", icon: "assets/ui/icon_soul.svg", mid: true });
   }
   return ev.sort((a, b) => a.t - b.t);
 }
@@ -210,7 +217,8 @@ function rankHtml(badge, cls) {
 // ---------- top bar ----------
 function renderTop() {
   const mvp = state.tab === "mvp";
-  const sel = mvp ? new Set(state.players.map(p => p.slot)) : selNow();
+  const leadG = !mvp && graphNow().kind === "lead";
+  const sel = mvp || leadG ? new Set(state.players.map(p => p.slot)) : selNow();
   for (const side of ["Left", "Right"]) {
     const team = side === "Left" ? state.leftTeam : 1 - state.leftTeam;
     const T = TEAMS[team];
@@ -221,7 +229,7 @@ function renderTop() {
       const d = el("div", "player" + (sel.has(p.slot) ? " sel" : "") + (mvp && state.mvpPick === p.slot ? " pick" : ""));
       d.style.setProperty("--tc", T.c); d.style.setProperty("--coin", T.coin); d.style.setProperty("--pc", colorOf(p));
       const rk = rankOf(p.badge);
-      d.title = `${p.hero}${rk ? " (" + rk.name + ")" : ""}\n` + (mvp ? "Click to see why they placed where they did." : "Click to add or remove. Ctrl+Click to show only this hero.");
+      d.title = `${p.hero}${rk ? " (" + rk.name + " going into the match)" : ""}${p.left ? "\nLeft the match at " + fmtTime(p.left) : ""}\n` + (mvp ? "Click to see why they placed where they did." : "Click to add or remove. Ctrl+Click to show only this hero.");
       const hi = el("div", "heroImg");
       const img = document.createElement("img"); img.src = p.img; img.alt = p.hero; img.onerror = () => { img.remove(); };
       hi.append(img);
@@ -231,6 +239,7 @@ function renderTop() {
       else if (p.mvp > 1) d.append(el("div", "badge key", "KEY"));
       d.onclick = ev => {
         if (mvp) { state.mvpPick = p.slot; renderAll(); return; }
+        if (leadG) return;
         const s = new Set(selNow());
         if (ev.ctrlKey || ev.metaKey) { setSel(new Set([p.slot])); }
         else { if (s.has(p.slot)) s.delete(p.slot); else s.add(p.slot); setSel(s); }
@@ -248,7 +257,7 @@ function renderTop() {
     sc.title = `${T.name} (${T.color})\nClick to show only this team. Click again to show everyone.`;
     const onlyThis = ps.length && ps.every(p => sel.has(p.slot)) && [...sel].every(s => ps.some(p => p.slot === s));
     sc.classList.toggle("dim", sel.size > 0 && !ps.some(p => sel.has(p.slot)));
-    sc.onclick = () => { if (mvp) return; setSel(onlyThis ? new Set(state.players.map(p => p.slot)) : new Set(ps.map(p => p.slot))); renderAll(); };
+    sc.onclick = () => { if (mvp || leadG) return; setSel(onlyThis ? new Set(state.players.map(p => p.slot)) : new Set(ps.map(p => p.slot))); renderAll(); };
   }
 }
 
@@ -287,10 +296,11 @@ function seg(id, value, fn) {
 }
 function renderOptions() {
   const g = graphNow(), sel = selNow();
-  const modeOk = !g.ratio && !g.level;
+  const modeOk = !g.ratio && !g.level && g.kind !== "lead";
   seg("optMode", modeOk ? state.mode : "value", v => { state.mode = v; renderAll(); });
   $("optMode").querySelectorAll("button").forEach(b => { b.disabled = !modeOk; });
-  const canDiff = sel.size === 2 && (g.kind === "general" || visibleCats(g).length === 1);
+  const canDiff = g.kind !== "lead" && sel.size === 2 && (g.kind === "general" || visibleCats(g).length === 1);
+  if (!canDiff) state.diff = false;
   $("optDiff").hidden = !canDiff;
   seg("optDiff", state.diff ? "on" : "off", v => { state.diff = v === "on"; renderAll(); });
   $("optObj").hidden = !state.events.length;
@@ -300,6 +310,7 @@ function renderOptions() {
 
 // ---------- series ----------
 function seriesFor(g) {
+  if (g.kind === "lead") return [leadLine()];
   const sel = g.kind === "breakdown"
     ? [...state.selBrk].map(s => state.players.find(p => p.slot === s)).filter(Boolean)
     : state.players.filter(p => selNow().has(p.slot));
@@ -334,6 +345,19 @@ function seriesFor(g) {
     out.push({ player: p, label: p.hero, sub: ser.label, color: colorOf(p), dash: DASHES[i % DASHES.length], pts: build(p, ser.get) });
   }
   return out;
+}
+// Team Souls Lead: the viewer's team (left) minus the other team, at every stats snapshot.
+function leadLine() {
+  const L = state.leftTeam;
+  const times = [...new Set(state.players.flatMap(p => p.stats.map(s => s.time_stamp_s)))].sort((a, b) => a - b);
+  const at = (p, t) => { const s = p.stats.filter(x => x.time_stamp_s <= t).pop(); return s ? s.net_worth || 0 : 0; };
+  const pts = [[0, 0]];
+  for (const t of times) {
+    let v = 0;
+    for (const p of state.players) v += (p.team === L ? 1 : -1) * at(p, t);
+    pts.push([t, v]);
+  }
+  return { lead: true, label: "Team Souls Lead", color: "#FFEFD7", dash: "", pts };
 }
 function diffLine(a, b, cat) {
   return { player: a.player, other: b.player, label: `${a.label} vs ${b.label}`, sub: cat, color: a.color, dash: "", diff: true,
@@ -380,7 +404,7 @@ function drawChart(series, g) {
   for (const v of ticks) {
     if (v === ymin && !g.level) continue;
     s += `<line x1="${m.l}" x2="${W - m.r + 8}" y1="${Y(v)}" y2="${Y(v)}" stroke="#ffffff" stroke-opacity="0.045"/>`;
-    s += `<text class="ylab" x="${W - 4}" y="${Y(v) + 6}" text-anchor="end">${fmtNum(v, g)}</text>`;
+    s += `<text class="ylab" x="${W - 4}" y="${Y(v) + 6}" text-anchor="end">${fmtNum(g.kind === "lead" ? Math.abs(v) : v, g)}</text>`;
   }
   const step = dur > 1500 ? 600 : 300;
   for (let t = 0; t <= dur - step * 0.3; t += step) {
@@ -389,6 +413,16 @@ function drawChart(series, g) {
   s += `<line x1="${m.l}" x2="${W - m.r + 8}" y1="${Y(ymin === 0 || ymin < 0 ? 0 : ymin)}" y2="${Y(ymin === 0 || ymin < 0 ? 0 : ymin)}" stroke="#ffffff" stroke-opacity="${ymin < 0 ? 0.35 : 0.12}"/>`;
   const evs = objOn(g) ? state.events : [];
   for (const e of evs) s += `<line x1="${X(e.t)}" x2="${X(e.t)}" y1="${m.t - 4}" y2="${H - m.b}" stroke="${e.color}" stroke-opacity="0.38" stroke-dasharray="3 5" stroke-width="1.5"/>`;
+  const lead = series.find(se => se.lead);
+  if (lead && lead.pts.length > 1) {
+    const y0 = Y(0), xs = lead.pts.map(([t, v]) => `${X(t).toFixed(1)} ${Y(v).toFixed(1)}`).join(" L");
+    const area = `M${X(lead.pts[0][0]).toFixed(1)} ${y0} L${xs} L${X(lead.pts[lead.pts.length - 1][0]).toFixed(1)} ${y0}Z`;
+    const cL = TEAMS[state.leftTeam].c, cR = TEAMS[1 - state.leftTeam].c;
+    s += `<defs><clipPath id="clipUp"><rect x="0" y="0" width="${W}" height="${y0}"/></clipPath><clipPath id="clipDn"><rect x="0" y="${y0}" width="${W}" height="${H}"/></clipPath></defs>`;
+    s += `<path d="${area}" fill="${cL}" fill-opacity="0.28" clip-path="url(#clipUp)"/><path d="${area}" fill="${cR}" fill-opacity="0.28" clip-path="url(#clipDn)"/>`;
+    s += `<text x="${m.l + 10}" y="${m.t + 4}" fill="${TEAMS[state.leftTeam].c}" style="fill:${cL};font-weight:600">${TEAMS[state.leftTeam].color} ahead</text>`;
+    s += `<text x="${m.l + 10}" y="${H - m.b - 12}" style="fill:${cR};font-weight:600">${TEAMS[1 - state.leftTeam].color} ahead</text>`;
+  }
   s += `<g class="lineSet">`;
   for (const se of series) {
     if (!se.pts.length) continue;
@@ -437,6 +471,10 @@ function evHtml(list) {
   return `<div class="ev">${list.map(e => `<div><b style="background:${e.color}"></b>${esc(e.text)} <small style="opacity:.55">${fmtTime(e.t)}</small></div>`).join("")}</div>`;
 }
 function rowHtml(se, v, g) {
+  if (se.lead) {
+    const T = TEAMS[v >= 0 ? state.leftTeam : 1 - state.leftTeam];
+    return `<div class="row"><span class="sw" style="background:${T.c}"></span><span class="n">${v === 0 ? "Even" : T.color + " ahead"}</span><span class="v">${fmtNum(Math.abs(v), g)}</span></div>`;
+  }
   const p = se.player, T = TEAMS[p.team];
   let name = esc(se.label) + (se.sub ? ` <small>${esc(se.sub)}</small>` : "");
   let val = fmtNum(v, g);
@@ -473,6 +511,13 @@ function renderLines(series, g) {
   const row = $("lineRow"), box = $("lines");
   box.innerHTML = "";
   const d = series.find(se => se.diff);
+  $("lineHintStatic").hidden = g.kind !== "breakdown";
+  if (g.kind === "lead") {
+    row.hidden = false;
+    box.append(el("span", "lineHint", `Above the line: ${TEAMS[state.leftTeam].color} ahead. Below: ${TEAMS[1 - state.leftTeam].color} ahead. Hero picks don't change this graph.`));
+    document.body.classList.remove("noLines");
+    return;
+  }
   if (g.kind !== "breakdown") {
     row.hidden = !d;
     if (d) box.append(el("span", "lineHint", `Above the line: ${d.player.hero} ahead. Below: ${d.other.hero} ahead.`));
