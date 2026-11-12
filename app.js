@@ -75,6 +75,7 @@ const state = {
   graph: "souls", mode: "value", diff: false,
   objPref: {}, hiddenCats: {},
   leftTeam: 0, me: null,
+  tab: "graphs", mvpPick: null, mvpMode: "impact",
 };
 const $ = id => document.getElementById(id);
 const graphNow = () => GRAPHS.find(g => g.id === state.graph);
@@ -127,6 +128,8 @@ function setup(mi) {
     color: PLAYER_COLORS[i % PLAYER_COLORS.length],
     stats: (p.stats || []).slice().sort((a, b) => a.time_stamp_s - b.time_stamp_s),
     souls: p.net_worth || 0, mvp: p.mvp_rank || 0,
+    badge: (p.player_rank_data && p.player_rank_data.initial_display_rank) || 0,
+    raw: p,
   }));
   // Which team sits on the left: the viewer's team when the game tells us, else Amber.
   const fr = Number(params.get("friendly"));
@@ -182,9 +185,32 @@ function buildEvents(mi) {
   return ev.sort((a, b) => a.t - b.t);
 }
 
+// ---------- ranks ----------
+// Valve's packed badge: tens = tier (0 Obscurus .. 11 Eternus), ones = subrank 1-6.
+const RANK_NAMES = ["Obscurus", "Initiate", "Seeker", "Alchemist", "Arcanist", "Ritualist", "Emissary", "Archon", "Oracle", "Phantom", "Ascendant", "Eternus"];
+function rankOf(badge) {
+  if (!badge) return null;
+  const tier = Math.floor(badge / 10), sub = badge % 10;
+  if (!RANK_NAMES[tier]) return null;
+  return { tier, sub, name: tier === 0 ? RANK_NAMES[0] : `${RANK_NAMES[tier]} ${sub}`, img: `assets/ranks/${tier}_${tier === 0 ? 0 : Math.min(6, Math.max(1, sub))}.png` };
+}
+// Average as steps (tier * 6 + subrank), then back to a badge.
+function avgBadge(badges) {
+  const b = badges.filter(x => x && Math.floor(x / 10) > 0);
+  if (!b.length) return 0;
+  const steps = b.reduce((a, x) => a + Math.floor(x / 10) * 6 + (x % 10 - 1), 0) / b.length;
+  const r = Math.round(steps);
+  return Math.floor(r / 6) * 10 + (r % 6) + 1;
+}
+function rankHtml(badge, cls) {
+  const r = rankOf(badge);
+  return r ? `<span class="${cls || "rank"}"><img src="${r.img}" alt=""><span>${esc(r.name)}</span></span>` : "";
+}
+
 // ---------- top bar ----------
 function renderTop() {
-  const sel = selNow();
+  const mvp = state.tab === "mvp";
+  const sel = mvp ? new Set(state.players.map(p => p.slot)) : selNow();
   for (const side of ["Left", "Right"]) {
     const team = side === "Left" ? state.leftTeam : 1 - state.leftTeam;
     const T = TEAMS[team];
@@ -192,9 +218,10 @@ function renderTop() {
     ctn.innerHTML = "";
     const ps = state.players.filter(p => p.team === team);
     for (const p of ps) {
-      const d = el("div", "player" + (sel.has(p.slot) ? " sel" : ""));
+      const d = el("div", "player" + (sel.has(p.slot) ? " sel" : "") + (mvp && state.mvpPick === p.slot ? " pick" : ""));
       d.style.setProperty("--tc", T.c); d.style.setProperty("--coin", T.coin); d.style.setProperty("--pc", colorOf(p));
-      d.title = `${p.hero}\nClick to add or remove. Ctrl+Click to show only this hero.`;
+      const rk = rankOf(p.badge);
+      d.title = `${p.hero}${rk ? " (" + rk.name + ")" : ""}\n` + (mvp ? "Click to see why they placed where they did." : "Click to add or remove. Ctrl+Click to show only this hero.");
       const hi = el("div", "heroImg");
       const img = document.createElement("img"); img.src = p.img; img.alt = p.hero; img.onerror = () => { img.remove(); };
       hi.append(img);
@@ -203,6 +230,7 @@ function renderTop() {
       if (p.mvp === 1) d.append(el("div", "badge", "MVP"));
       else if (p.mvp > 1) d.append(el("div", "badge key", "KEY"));
       d.onclick = ev => {
+        if (mvp) { state.mvpPick = p.slot; renderAll(); return; }
         const s = new Set(selNow());
         if (ev.ctrlKey || ev.metaKey) { setSel(new Set([p.slot])); }
         else { if (s.has(p.slot)) s.delete(p.slot); else s.add(p.slot); setSel(s); }
@@ -213,13 +241,14 @@ function renderTop() {
     const sc = $("score" + side);
     const total = ps.reduce((a, p) => a + p.souls, 0);
     sc.style.setProperty("--tc", T.c);
-    sc.innerHTML = side === "Left"
-      ? `<span>${fmtSouls(total)}</span><span class="icon" style="background-image:url(${T.icon})"></span>`
-      : `<span>${fmtSouls(total)}</span><span class="icon" style="background-image:url(${T.icon})"></span>`;
+    sc.innerHTML = `<span>${fmtSouls(total)}</span><span class="icon" style="background-image:url(${T.icon})"></span>`;
+    const tb = (team === 0 ? state.match.average_badge_team0 : state.match.average_badge_team1) || avgBadge(ps.map(p => p.badge));
+    const ta = $("avg" + side);
+    ta.innerHTML = tb ? `<span class="lbl">Avg</span>${rankHtml(tb)}` : "";
     sc.title = `${T.name} (${T.color})\nClick to show only this team. Click again to show everyone.`;
     const onlyThis = ps.length && ps.every(p => sel.has(p.slot)) && [...sel].every(s => ps.some(p => p.slot === s));
     sc.classList.toggle("dim", sel.size > 0 && !ps.some(p => sel.has(p.slot)));
-    sc.onclick = () => { setSel(onlyThis ? new Set(state.players.map(p => p.slot)) : new Set(ps.map(p => p.slot))); renderAll(); };
+    sc.onclick = () => { if (mvp) return; setSel(onlyThis ? new Set(state.players.map(p => p.slot)) : new Set(ps.map(p => p.slot))); renderAll(); };
   }
 }
 
@@ -319,7 +348,12 @@ function valueAt(pts, t) {
 // ---------- chart ----------
 function renderAll() {
   if (!state.match) return;
+  document.querySelectorAll("#tabs .tab").forEach(b => b.classList.toggle("on", b.dataset.tab === state.tab));
+  document.body.classList.toggle("tabMvp", state.tab === "mvp");
+  const lb = avgBadge(state.players.map(p => p.badge));
+  $("lobbyRank").innerHTML = lb ? `<span class="lbl">Lobby</span>${rankHtml(lb)}` : "";
   renderTop();
+  if (state.tab === "mvp") { window.renderMvp(); return; }
   renderOptions();
   const g = graphNow();
   const series = seriesFor(g);
@@ -486,6 +520,8 @@ if (!EMBED) document.body.classList.add("standalone");
 fit();
 window.addEventListener("resize", () => { fit(); renderAll(); });
 wireDropDown();
+document.querySelectorAll("#tabs .tab").forEach(b => b.onclick = () => { state.tab = b.dataset.tab; closeMenu(); renderAll(); });
+if (params.get("tab") === "mvp") state.tab = "mvp";
 buildDropDown();
 if (params.get("graph") && GRAPHS.some(g => g.id === params.get("graph"))) state.graph = params.get("graph");
 $("matchForm").onsubmit = ev => {

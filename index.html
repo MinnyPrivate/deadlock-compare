@@ -17,10 +17,18 @@
       <div class="teamNetworth">
         <button id="scoreLeft" class="teamScore" title="Show only this team. Click again to show everyone."></button>
         <button id="scoreRight" class="teamScore right" title="Show only this team. Click again to show everyone."></button>
+        <div id="avgLeft" class="teamAvg"></div>
+        <div id="avgRight" class="teamAvg right"></div>
       </div>
       <div id="teamRight" class="teamCtn right"></div>
     </div>
   </header>
+
+  <nav id="tabs" class="tabs">
+    <button class="tab on" data-tab="graphs">Graphs</button>
+    <button class="tab" data-tab="mvp">MVP</button>
+    <span id="lobbyRank" class="lobbyRank"></span>
+  </nav>
 
   <main class="mainCol">
     <div class="graphSelectCtn">
@@ -63,6 +71,8 @@
     </div>
   </main>
 
+  <section id="mvpView" class="mvpView"></section>
+
   <form id="matchForm" class="matchForm">
     <label for="matchInput">Match</label>
     <input id="matchInput" inputmode="numeric" autocomplete="off" placeholder="Match ID">
@@ -73,5 +83,6 @@
 
 <script src="heroes.js"></script>
 <script src="app.js"></script>
+<script src="mvp.js"></script>
 </body>
 </html>
