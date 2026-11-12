@@ -60,6 +60,10 @@
 								<Panel class="NavArrowIcon" />
 							</Button>
 							<Panel id="CarouselNavItems" />
+							<!-- DLCOMPARE: Compare nav icon, styled like the native screen icons -->
+							<Button id="DLCompareNav" class="DLCompareNav">
+								<Panel class="Icon" />
+							</Button>
 							<Button id="CarouselNavRightArrow" class="CarouselNavArrow" onactivate="CitadelPostGameIncrementScreen( 1 )">
 								<Panel class="NavArrowIcon" />
 							</Button>
@@ -74,10 +78,6 @@
 						</Panel>
 					</Panel>
 					<Panel class="FooterBarBR">
-						<!-- DLCOMPARE: Compare button -->
-						<Button id="DLCompareButton" class="DLCompareButton">
-							<Label text="COMPARE" />
-						</Button>
 						<MatchDetailsReplayButton id="ReplayButton" />
 					</Panel>
 				</Panel>
@@ -100,12 +100,9 @@
 			</Panel>
 		</AsyncDataPanel>
 		<CitadelCommendNotification id="CommendNotification" />
-		<!-- DLCOMPARE: full-screen overlay with the embedded graph page -->
+		<!-- DLCOMPARE: Compare screen, fills everything above the footer nav bar -->
 		<Panel id="DLCompareOverlay" hittest="true">
 			<CitadelHTMLPanel id="DLCompareWeb" />
-			<Button id="DLCompareClose" class="DLCompareClose">
-				<Label text="CLOSE" />
-			</Button>
 		</Panel>
 	</CitadelPostGameNew>
 </root>

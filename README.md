@@ -13,3 +13,7 @@ Optional URL parameters: `graph=<id>`, `players=<slot,slot>`, `embed=1` (shows C
 Data: [deadlock-api](https://deadlock-api.com/) `/v1/matches/{id}/metadata`. Hero names come from the game's own files (`heroes.js`).
 
 Local test without the API: `python -m http.server`, then `index.html?match=136014932&src=test/match_136014932.json`.
+
+## Game assets
+
+`assets/` holds hero portraits, the post-game background, icons and Deadlock's UI fonts (Radiance, VALVE Oracle, VALVE Pulp, subset to Latin), extracted from the game files with `tools/extract_assets.py` and decoded with `tools/s2decode.py`. They are Valve's. The fonts' license says: "Like other Valve game content, you may use this font to create Fan Art, as described in the Steam Subscriber Agreement." This project is a free, non-commercial fan mod.

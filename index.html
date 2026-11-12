@@ -4,51 +4,72 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Deadlock Compare</title>
+<link rel="preload" href="assets/fonts/valveoracle-semibold.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/fonts/radiance-semibold.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header class="top">
-  <div class="brand">COMPARE</div>
+<div id="stage">
+  <header class="topPanel">
+    <div class="gameClock"><span id="clock">0:00</span></div>
+    <div class="teamsRow">
+      <div id="teamLeft" class="teamCtn left"></div>
+      <div class="teamNetworth">
+        <button id="scoreLeft" class="teamScore" title="Show only this team. Click again to show everyone."></button>
+        <button id="scoreRight" class="teamScore right" title="Show only this team. Click again to show everyone."></button>
+      </div>
+      <div id="teamRight" class="teamCtn right"></div>
+    </div>
+  </header>
+
+  <main class="mainCol">
+    <div class="graphSelectCtn">
+      <div class="dropDown" id="graphDD" tabindex="0">
+        <span class="dropDownIntro">Graph Type:</span>
+        <span class="dropDownLabel" id="ddLabel"></span>
+        <span class="carat"></span>
+        <div class="dropDownMenu" id="ddMenu" hidden></div>
+      </div>
+      <div class="graphOptionsCtn">
+        <div class="graphOption" id="optMode">
+          <span class="optionLabel">View As:</span>
+          <button class="graphOptionButton" data-v="value">Value</button>
+          <button class="graphOptionButton" data-v="permin">Per Min</button>
+        </div>
+        <div class="graphOption" id="optDiff" hidden>
+          <span class="optionLabel">Two Players:</span>
+          <button class="graphOptionButton" data-v="off">Both</button>
+          <button class="graphOptionButton" data-v="on">Difference</button>
+        </div>
+        <div class="graphOption" id="optObj">
+          <span class="optionLabel">Objectives:</span>
+          <button class="graphOptionButton" data-v="on">Show</button>
+          <button class="graphOptionButton" data-v="off">Hide</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="graphCtn" id="graphCtn">
+      <svg id="chart" role="img" aria-label="Match graph"></svg>
+      <div id="markers" class="markers"></div>
+      <div id="tooltip" class="tooltip" hidden></div>
+      <div id="empty" class="empty" hidden></div>
+    </div>
+
+    <div class="lineRow" id="lineRow" hidden>
+      <span class="optionLabel">Lines:</span>
+      <div id="lines" class="lines"></div>
+      <span class="lineHint">Click to hide a line type. Ctrl+Click to show only that one.</span>
+    </div>
+  </main>
+
   <form id="matchForm" class="matchForm">
     <label for="matchInput">Match</label>
     <input id="matchInput" inputmode="numeric" autocomplete="off" placeholder="Match ID">
-    <button type="submit">Load</button>
+    <button type="submit" class="graphOptionButton">Load</button>
   </form>
-  <div id="matchMeta" class="matchMeta"></div>
-  <button id="closeBtn" class="closeBtn" title="Close">Close</button>
-</header>
-
-<section id="teams" class="teams"></section>
-
-<section class="controls">
-  <div class="ctl">
-    <span class="ctlLabel">Graph type</span>
-    <select id="graphType"></select>
-  </div>
-  <div class="ctl" id="modeCtl">
-    <span class="ctlLabel">Show as</span>
-    <div class="seg" id="modeSeg">
-      <button data-mode="value" class="on">Value</button>
-      <button data-mode="permin">Per minute</button>
-    </div>
-  </div>
-  <div class="ctl" id="diffCtl" hidden>
-    <span class="ctlLabel">Two players</span>
-    <div class="seg" id="diffSeg">
-      <button data-diff="off" class="on">Both lines</button>
-      <button data-diff="on">Difference</button>
-    </div>
-  </div>
-  <div class="hint" id="hint"></div>
-</section>
-
-<section class="chartWrap">
-  <svg id="chart" role="img" aria-label="Match graph"></svg>
-  <div id="tooltip" class="tooltip" hidden></div>
-  <div id="legend" class="legend"></div>
-</section>
-
-<div id="status" class="status"></div>
+  <div id="status" class="status"></div>
+</div>
 
 <script src="heroes.js"></script>
 <script src="app.js"></script>

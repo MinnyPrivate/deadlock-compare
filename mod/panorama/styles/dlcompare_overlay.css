@@ -1,34 +1,73 @@
-/* DLCOMPARE: Compare button and overlay */
-.DLCompareButton
+/* DLCOMPARE: Compare nav icon and screen. Mirrors .CarouselNav #CarouselNavItems .CarouselNavItem in
+   citadel_db_page_post_game_new.css so it sits in the footer like a native screen icon. */
+.DLCompareNav
 {
-	margin-right: 16px;
-	padding: 8px 18px;
+	width: 48px;
+	height: 48px;
+	margin: 0px;
+	border-radius: 60px;
+	background-color: #ACA39588;
 	vertical-align: center;
-	background-color: #2a2622;
-	border: 1px solid #6b6155;
-	border-radius: 4px;
+	pre-transform-scale2d: .8;
+	opacity: 0.12;
+	tooltip-position: top;
+	transition-property: pre-transform-scale2d, opacity, background-color;
+	transition-duration: 0.08s;
+	transition-timing-function: ease-in-out;
 }
-.DLCompareButton:hover
+.DLCompareNav:hover
 {
-	background-color: #3a342e;
-	border: 1px solid #d9c7a3;
+	opacity: 0.4;
+	pre-transform-scale2d: .82;
 }
-.DLCompareButton Label
-{
-	font-size: 18px;
-	font-weight: bold;
-	letter-spacing: 2px;
-	color: #ece4d6;
-}
-#DLCompareOverlay
+.DLCompareNav .Icon
 {
 	width: 100%;
 	height: 100%;
-	background-color: #121110f2;
+	background-image: url("s2r://panorama/images/dlcompare/nav_icon_compare.vsvg");
+	background-repeat: no-repeat;
+	background-position: center center;
+	background-size: 56%;
+	background-color: #00000001;
+	margin: 2px;
+	wash-color: #FFEFD7;
+}
+.DLCompareOpen .DLCompareNav
+{
+	opacity: .5;
+	pre-transform-scale2d: .88;
+	background-color: #FFEFD788;
+}
+.DLCompareOpen .DLCompareNav .Icon
+{
+	wash-color: #10130D;
+}
+/* While Compare is showing, the native screen icon should look unselected. */
+.DLCompareOpen .CarouselNav #CarouselNavItems .CarouselNavItem:selected
+{
+	opacity: 0.12;
+	pre-transform-scale2d: .8;
+	background-color: #ACA39588;
+}
+.DLCompareOpen .CarouselNav #CarouselNavItems .CarouselNavItem:selected .Icon
+{
+	wash-color: #FFEFD7;
+}
+.DLCompareOpen .CarouselNav #CarouselNavItems .CarouselNavItem:selected:hover
+{
+	opacity: 0.4;
+}
+/* The screen covers everything above the footer (996 of 1080 layout px), so ESC Back and the icons stay usable. */
+#DLCompareOverlay
+{
+	width: 100%;
+	height: 92.2%;
+	vertical-align: top;
+	background-color: #0b0b0a;
 	visibility: collapse;
 	z-index: 1000;
 }
-#DLCompareOverlay.Open
+.DLCompareOpen #DLCompareOverlay
 {
 	visibility: visible;
 }
@@ -36,24 +75,4 @@
 {
 	width: 100%;
 	height: 100%;
-}
-.DLCompareClose
-{
-	horizontal-align: right;
-	vertical-align: top;
-	margin: 16px 24px;
-	padding: 6px 16px;
-	background-color: #2a2622;
-	border: 1px solid #6b6155;
-	border-radius: 4px;
-}
-.DLCompareClose:hover
-{
-	border: 1px solid #d9c7a3;
-}
-.DLCompareClose Label
-{
-	font-size: 16px;
-	font-weight: bold;
-	color: #ece4d6;
 }

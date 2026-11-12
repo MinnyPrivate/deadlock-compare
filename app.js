@@ -1,75 +1,103 @@
 "use strict";
-// Deadlock Compare: overlay and isolate post-match graphs.
+// Deadlock Compare: overlay and isolate post-match graphs, styled like Deadlock's own graph screen.
 // Data: https://api.deadlock-api.com/v1/matches/{id}/metadata (Valve match metadata).
 
 const API = "https://api.deadlock-api.com/v1/matches/";
 const PLAYER_COLORS = [
-  "#f2c14e", "#e86a5b", "#7bd389", "#5bc0eb", "#c792ea", "#ff9f6e",
-  "#9be564", "#4ad7c8", "#f78fb3", "#a0a7ff", "#e4e47a", "#ffb4a2",
+  "#58D86A", "#8C83FF", "#F25CE0", "#FF5A5F", "#FFD23F", "#3FCBFF",
+  "#FF9A3C", "#C3A6FF", "#38E8B0", "#FF8FB1", "#C6EE4A", "#5C9DFF",
 ];
-const DASHES = ["", "7 4", "2 3", "10 3 2 3", "1 5", "14 4"];
+// Player comparison graphs show few heroes, so they get the most distinct colors in pick order.
+const PAIR_COLORS = ["#58D86A", "#8C83FF", "#FFD23F", "#F25CE0", "#3FCBFF", "#FF9A3C"];
+const DASHES = ["", "10 6", "2 5", "14 5 3 5", "1 8", "22 6"];
+const TEAMS = {
+  0: { name: "Hidden King", color: "Amber", c: "#D4860B", coin: "#6F3806", icon: "assets/ui/icon_team1.png" },
+  1: { name: "Archmother", color: "Sapphire", c: "#4D75C3", coin: "#243265", icon: "assets/ui/icon_team2.png" },
+};
+// Objective lane index (ECitadelTeamObjective _LaneN) -> lane color. The current map uses lanes 1, 3 and 4.
+const LANES = { 1: "Yellow", 2: "Green", 3: "Blue", 4: "Green" };
 
-// Graphs. kind "general" = one line per player. kind "breakdown" = several lines per player.
+const GS = (s, ids) => (s.gold_sources || []).reduce((a, g) => a + (ids.includes(g.source) ? g.gold || 0 : 0), 0);
 const GRAPHS = [
-  { group: "General", id: "souls", label: "Souls", kind: "general", get: s => s.net_worth },
-  { group: "General", id: "player_damage", label: "Damage to players", kind: "general", get: s => s.player_damage },
-  { group: "General", id: "damage_taken", label: "Damage taken from players", kind: "general", get: s => s.player_damage_taken },
-  { group: "General", id: "boss_damage", label: "Boss and objective damage", kind: "general", get: s => s.boss_damage, midboss: true },
+  { group: "General", id: "souls", label: "Souls Collected", kind: "general", get: s => s.net_worth },
+  { group: "General", id: "player_damage", label: "Damage to Players", kind: "general", get: s => s.player_damage },
+  { group: "General", id: "damage_taken", label: "Damage from Players", kind: "general", get: s => s.player_damage_taken },
+  { group: "General", id: "boss_damage", label: "Objective Damage", kind: "general", obj: true, get: s => s.boss_damage,
+    sub: "Guardians, Walkers, Shrines, Patron and Mid Boss" },
   { group: "General", id: "healing", label: "Healing", kind: "general", get: s => s.player_healing },
   { group: "General", id: "kills", label: "Kills", kind: "general", get: s => s.kills },
   { group: "General", id: "deaths", label: "Deaths", kind: "general", get: s => s.deaths },
   { group: "General", id: "assists", label: "Assists", kind: "general", get: s => s.assists },
-  { group: "General", id: "last_hits", label: "Last hits (troopers + neutrals)", kind: "general", get: s => (s.creep_kills || 0) + (s.neutral_kills || 0) },
-  { group: "General", id: "accuracy", label: "Accuracy %", kind: "general", ratio: true, get: s => pct(s.shots_hit, (s.shots_hit || 0) + (s.shots_missed || 0)) },
-  { group: "General", id: "crit", label: "Crit bullet %", kind: "general", ratio: true, get: s => pct(s.hero_bullets_hit_crit, s.hero_bullets_hit) },
-  { group: "Power curve", id: "level", label: "Level", kind: "general", level: true, get: s => s.level },
-  { group: "Power curve", id: "max_health", label: "Max health", kind: "general", level: true, get: s => s.max_health },
-  { group: "Power curve", id: "weapon_power", label: "Weapon power", kind: "general", level: true, get: s => s.weapon_power },
-  { group: "Power curve", id: "spirit_power", label: "Spirit power", kind: "general", level: true, get: s => s.tech_power },
-  { group: "Player-specific (overlay)", id: "dmg_breakdown", label: "Damage breakdown", kind: "breakdown", midboss: true, series: [
-      { label: "Players", get: s => s.player_damage },
+  { group: "General", id: "last_hits", label: "Last Hits", kind: "general", get: s => (s.creep_kills || 0) + (s.neutral_kills || 0), sub: "Troopers and Haunts" },
+  { group: "General", id: "denies", label: "Denies", kind: "general", get: s => s.denies },
+  { group: "General", id: "accuracy", label: "Accuracy", kind: "general", ratio: true, get: s => pct(s.shots_hit, (s.shots_hit || 0) + (s.shots_missed || 0)) },
+  { group: "General", id: "crit", label: "Headshot Rate", kind: "general", ratio: true, get: s => pct(s.hero_bullets_hit_crit, s.hero_bullets_hit), sub: "Crit bullets that hit heroes" },
+  { group: "Power", id: "level", label: "Level", kind: "general", level: true, get: s => s.level },
+  { group: "Power", id: "max_health", label: "Max Health", kind: "general", level: true, get: s => s.max_health },
+  { group: "Power", id: "weapon_power", label: "Weapon Power", kind: "general", level: true, get: s => s.weapon_power },
+  { group: "Power", id: "spirit_power", label: "Spirit Power", kind: "general", level: true, get: s => s.tech_power },
+  { group: "Player Comparison", id: "dmg_breakdown", label: "Damage Breakdown", kind: "breakdown", obj: true, series: [
+      { label: "Enemy Players", get: s => s.player_damage },
       { label: "Troopers", get: s => s.creep_damage },
-      { label: "Neutrals", get: s => s.neutral_damage },
-      { label: "Bosses and objectives", get: s => s.boss_damage },
+      { label: "Haunts", get: s => s.neutral_damage },
+      { label: "Objectives", get: s => s.boss_damage },
   ] },
-  { group: "Player-specific (overlay)", id: "souls_source", label: "Souls by source", kind: "breakdown", series: [
-      { label: "Players", get: s => s.gold_player },
-      { label: "Lane troopers", get: s => s.gold_lane_creep },
-      { label: "Neutrals", get: s => s.gold_neutral_creep },
-      { label: "Bosses", get: s => s.gold_boss },
-      { label: "Treasure", get: s => s.gold_treasure },
+  { group: "Player Comparison", id: "souls_source", label: "Souls by Source", kind: "breakdown", series: [
+      { label: "Enemy Kills", get: s => GS(s, [1]) },
+      { label: "Kill Assists", get: s => GS(s, [6]) },
+      { label: "Troopers", get: s => GS(s, [2]) },
+      { label: "Haunts", get: s => GS(s, [3]) },
+      { label: "Objectives", get: s => GS(s, [4]) },
+      { label: "Other", get: s => GS(s, [5, 7, 8, 9, 10, 11, 12, 13]) },
   ] },
-  { group: "Player-specific (overlay)", id: "support", label: "Support value", kind: "breakdown", series: [
-      { label: "Teammate healing", get: s => s.teammate_healing },
-      { label: "Teammate barriers", get: s => s.teammate_barriering },
-      { label: "Heal prevented", get: s => s.heal_prevented },
-      { label: "Damage mitigated", get: s => s.damage_mitigated },
+  { group: "Player Comparison", id: "support", label: "Support", kind: "breakdown", series: [
+      { label: "Healing Allies", get: s => s.teammate_healing },
+      { label: "Barriers on Allies", get: s => s.teammate_barriering },
+      { label: "Healing Prevented", get: s => s.heal_prevented },
+      { label: "Damage Mitigated", get: s => s.damage_mitigated },
   ] },
-  { group: "Player-specific (overlay)", id: "kill_types", label: "Kills by type", kind: "breakdown", series: [
-      { label: "Bullet", get: s => s.bullet_kills },
+  { group: "Player Comparison", id: "kill_types", label: "Kills by Type", kind: "breakdown", series: [
+      { label: "Gun", get: s => s.bullet_kills },
       { label: "Ability", get: s => s.ability_kills },
       { label: "Melee", get: s => s.melee_kills },
       { label: "Headshot", get: s => s.headshot_kills },
   ] },
 ];
+const GROUP_SUB = { "Player Comparison": "Every line type for the heroes you pick" };
 
 function pct(a, b) { return b ? (100 * (a || 0)) / b : null; }
 
-const state = {
-  match: null,
-  players: [],      // {slot, team, hero, color, stats[], mvp}
-  selected: new Set(),
-  graph: "souls",
-  mode: "value",
-  diff: false,
-  hiddenCats: {},   // graph id -> Set of hidden category indexes
-};
-
-function hiddenFor(graph) { return state.hiddenCats[graph.id] || (state.hiddenCats[graph.id] = new Set()); }
-function visibleCats(graph) { const h = hiddenFor(graph); return graph.series.map((s, i) => i).filter(i => !h.has(i)); }
-
-const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
+const EMBED = params.get("embed") === "1";
+const state = {
+  match: null, players: [], events: [],
+  selGen: new Set(), selBrk: new Set(),
+  graph: "souls", mode: "value", diff: false,
+  objPref: {}, hiddenCats: {},
+  leftTeam: 0, me: null,
+};
+const $ = id => document.getElementById(id);
+const graphNow = () => GRAPHS.find(g => g.id === state.graph);
+const selNow = () => (graphNow().kind === "breakdown" ? state.selBrk : state.selGen);
+const setSel = s => { if (graphNow().kind === "breakdown") state.selBrk = s; else state.selGen = s; };
+function colorOf(p) {
+  if (graphNow().kind !== "breakdown") return p.color;
+  const i = [...state.selBrk].indexOf(p.slot);
+  return i >= 0 && i < PAIR_COLORS.length ? PAIR_COLORS[i] : p.color;
+}
+function hiddenFor(g) { return state.hiddenCats[g.id] || (state.hiddenCats[g.id] = new Set()); }
+function visibleCats(g) { const h = hiddenFor(g); return g.series.map((s, i) => i).filter(i => !h.has(i)); }
+function objOn(g) { return state.objPref[g.id] ?? !!g.obj; }
+
+// ---------- layout scaling: Deadlock lays out in 1080p units ----------
+function fit() {
+  const H = EMBED ? 996 : 1080;
+  const z = Math.min(innerWidth / 1920, innerHeight / H);
+  const st = $("stage");
+  st.style.transform = `scale(${z})`;
+  st.style.left = Math.max(0, (innerWidth - 1920 * z) / 2) + "px";
+  state.zoom = z;
+}
 
 // ---------- loading ----------
 async function loadMatch(id) {
@@ -79,8 +107,8 @@ async function loadMatch(id) {
   let data;
   try {
     const r = await fetch(url);
-    if (r.status === 404) throw new Error("Match not found yet. The API may not have fetched it. Try again in a few minutes.");
-    if (!r.ok) throw new Error("API error " + r.status);
+    if (r.status === 404) throw new Error("This match isn't available yet. Try again in a few minutes.");
+    if (!r.ok) throw new Error("Couldn't load the match (error " + r.status + ").");
     data = await r.json();
   } catch (e) {
     setStatus(e.message || String(e), true);
@@ -91,124 +119,197 @@ async function loadMatch(id) {
 
 function setup(mi) {
   state.match = mi;
-  const ordered = [...mi.players].sort((a, b) => a.team - b.team || a.player_slot - b.player_slot);
+  const ordered = [...mi.players].sort((a, b) => a.team - b.team || (a.assigned_lane || 0) - (b.assigned_lane || 0) || a.player_slot - b.player_slot);
   state.players = ordered.map((p, i) => ({
-    slot: p.player_slot,
-    team: p.team,
+    slot: p.player_slot, team: p.team, lane: p.assigned_lane || 0, heroId: p.hero_id,
     hero: (window.HERO_NAMES || {})[p.hero_id] || "Hero " + p.hero_id,
+    img: `assets/heroes/${p.hero_id}.png`,
     color: PLAYER_COLORS[i % PLAYER_COLORS.length],
     stats: (p.stats || []).slice().sort((a, b) => a.time_stamp_s - b.time_stamp_s),
-    kda: `${p.kills || 0}/${p.deaths || 0}/${p.assists || 0}`,
-    souls: p.net_worth || 0,
-    mvp: p.mvp_rank || 0,
+    souls: p.net_worth || 0, mvp: p.mvp_rank || 0,
   }));
-  const sel = (params.get("players") || "").split(",").map(Number).filter(Boolean);
-  state.selected = new Set(sel.length ? sel : state.players.map(p => p.slot));
+  // Which team sits on the left: the viewer's team when the game tells us, else Amber.
+  const fr = Number(params.get("friendly"));
+  state.leftTeam = fr === 0 || fr === 1 ? fr : 0;
+  const meHero = Number(params.get("me_hero")) || (window.HERO_CODES || {})[params.get("me_name")] || 0;
+  state.me = state.players.find(p => p.heroId === meHero && (params.get("friendly") == null || p.team === state.leftTeam)) || null;
+  if (state.me) state.leftTeam = state.me.team;
+
+  const sel = (params.get("players") || "").split(",").map(Number).filter(n => n || n === 0).filter(n => state.players.some(p => p.slot === n));
+  state.selGen = new Set(sel.length ? sel : state.players.map(p => p.slot));
+  state.selBrk = new Set(sel.length && sel.length <= 2 ? sel : defaultPair());
+  state.events = buildEvents(mi);
   $("matchInput").value = mi.match_id || "";
-  const dur = mi.duration_s || 0;
-  $("matchMeta").textContent = `Match ${mi.match_id} · ${fmtTime(dur)}`;
-  renderTeams();
-  render();
+  $("clock").textContent = fmtTime(mi.duration_s || 0);
   setStatus("");
+  renderAll();
 }
 
-// ---------- UI ----------
-function renderTeams() {
-  const wrap = $("teams");
-  wrap.innerHTML = "";
-  const mi = state.match;
-  for (const team of [0, 1]) {
+// Two players for the player comparison graphs: you and your lane opponent, else each team's top earner.
+function defaultPair() {
+  const ps = state.players;
+  const top = arr => arr.slice().sort((a, b) => b.souls - a.souls)[0];
+  if (state.me) {
+    const foes = ps.filter(p => p.team !== state.me.team);
+    const opp = top(foes.filter(p => p.lane && p.lane === state.me.lane)) || top(foes);
+    return [state.me.slot, opp.slot];
+  }
+  return [top(ps.filter(p => p.team === state.leftTeam)), top(ps.filter(p => p.team !== state.leftTeam))].filter(Boolean).map(p => p.slot);
+}
+
+function buildEvents(mi) {
+  const ev = [];
+  for (const o of mi.objectives || []) {
+    const t = o.destroyed_time_s;
+    if (!t) continue;
+    const id = o.team_objective_id, team = TEAMS[o.team] || TEAMS[0];
+    let what, icon, lane = null;
+    if (id >= 1 && id <= 4) { what = "Guardian"; icon = "objective_t1"; lane = LANES[id]; }
+    else if (id >= 5 && id <= 8) { what = "Walker"; icon = "objective_t2"; lane = LANES[id - 4]; }
+    else if (id >= 12 && id <= 15) { what = "Base Guardians"; icon = "objective_t2"; lane = LANES[id - 11]; }
+    else if (id === 10 || id === 11) { what = "Shrine"; icon = "team"; }
+    else if (id === 9) { what = "Patron (first phase)"; icon = "team"; }
+    else if (id === 0) { what = "Patron"; icon = "team"; }
+    else continue;
+    const name = lane ? `${team.color}'s ${lane} ${what}` : `${team.color}'s ${what}`;
+    ev.push({ t, kind: what, text: `${name} destroyed`, color: team.c, icon: icon === "team" ? team.icon : `assets/ui/${icon}.svg`, team: o.team });
+  }
+  for (const mb of mi.mid_boss || []) {
+    if (!mb.destroyed_time_s) continue;
+    const by = TEAMS[mb.team_killed] ? TEAMS[mb.team_killed].color : "";
+    ev.push({ t: mb.destroyed_time_s, kind: "Mid Boss", text: `Mid Boss killed${by ? " by " + by : ""}`, color: "#70F8C1", icon: "assets/ui/icon_soul.svg", mid: true });
+  }
+  return ev.sort((a, b) => a.t - b.t);
+}
+
+// ---------- top bar ----------
+function renderTop() {
+  const sel = selNow();
+  for (const side of ["Left", "Right"]) {
+    const team = side === "Left" ? state.leftTeam : 1 - state.leftTeam;
+    const T = TEAMS[team];
+    const ctn = $("team" + side);
+    ctn.innerHTML = "";
     const ps = state.players.filter(p => p.team === team);
-    const total = ps.reduce((a, p) => a + p.souls, 0);
-    const box = el("div", "team " + (team === 0 ? "amber" : "sapphire"));
-    const head = el("div", "teamHead");
-    const name = el("span", "name" + (mi.winning_team === team ? " won" : ""), team === 0 ? "Hidden King" : "Archmother");
-    head.append(name, el("span", "souls", fmtK(total) + " souls"), el("span", "spacer"));
-    const all = el("button", "", "All"); all.onclick = () => { ps.forEach(p => state.selected.add(p.slot)); refresh(); };
-    const none = el("button", "", "None"); none.onclick = () => { ps.forEach(p => state.selected.delete(p.slot)); refresh(); };
-    const only = el("button", "", "Only"); only.onclick = () => { state.selected = new Set(ps.map(p => p.slot)); refresh(); };
-    head.append(all, none, only);
-    const grid = el("div", "players");
     for (const p of ps) {
-      const c = el("div", "player" + (state.selected.has(p.slot) ? " sel" : ""));
-      c.style.setProperty("--pc", p.color);
-      c.title = "Click to toggle. Ctrl+Click to show only this player.";
-      c.append(el("div", "swatch"), el("div", "hero", p.hero), el("div", "sub", p.kda + " · " + fmtK(p.souls)));
-      if (p.mvp) c.append(el("div", "mvp", p.mvp === 1 ? "MVP" : "KEY PLAYER"));
-      c.onclick = ev => {
-        if (ev.ctrlKey || ev.metaKey) state.selected = new Set([p.slot]);
-        else if (state.selected.has(p.slot)) state.selected.delete(p.slot);
-        else state.selected.add(p.slot);
-        refresh();
+      const d = el("div", "player" + (sel.has(p.slot) ? " sel" : ""));
+      d.style.setProperty("--tc", T.c); d.style.setProperty("--coin", T.coin); d.style.setProperty("--pc", colorOf(p));
+      d.title = `${p.hero}\nClick to add or remove. Ctrl+Click to show only this hero.`;
+      const hi = el("div", "heroImg");
+      const img = document.createElement("img"); img.src = p.img; img.alt = p.hero; img.onerror = () => { img.remove(); };
+      hi.append(img);
+      const souls = el("div", "souls"); souls.innerHTML = fmtSouls(p.souls);
+      d.append(hi, souls, el("div", "pcolor"));
+      if (p.mvp === 1) d.append(el("div", "badge", "MVP"));
+      else if (p.mvp > 1) d.append(el("div", "badge key", "KEY"));
+      d.onclick = ev => {
+        const s = new Set(selNow());
+        if (ev.ctrlKey || ev.metaKey) { setSel(new Set([p.slot])); }
+        else { if (s.has(p.slot)) s.delete(p.slot); else s.add(p.slot); setSel(s); }
+        renderAll();
       };
-      grid.append(c);
+      ctn.append(d);
     }
-    box.append(head, grid);
-    wrap.append(box);
+    const sc = $("score" + side);
+    const total = ps.reduce((a, p) => a + p.souls, 0);
+    sc.style.setProperty("--tc", T.c);
+    sc.innerHTML = side === "Left"
+      ? `<span>${fmtSouls(total)}</span><span class="icon" style="background-image:url(${T.icon})"></span>`
+      : `<span>${fmtSouls(total)}</span><span class="icon" style="background-image:url(${T.icon})"></span>`;
+    sc.title = `${T.name} (${T.color})\nClick to show only this team. Click again to show everyone.`;
+    const onlyThis = ps.length && ps.every(p => sel.has(p.slot)) && [...sel].every(s => ps.some(p => p.slot === s));
+    sc.classList.toggle("dim", sel.size > 0 && !ps.some(p => sel.has(p.slot)));
+    sc.onclick = () => { setSel(onlyThis ? new Set(state.players.map(p => p.slot)) : new Set(ps.map(p => p.slot))); renderAll(); };
   }
 }
 
-function refresh() { renderTeams(); render(); }
-
-function buildGraphSelect() {
-  const s = $("graphType");
-  let group = null, og = null;
+// ---------- dropdown and options ----------
+function buildDropDown() {
+  const dd = $("graphDD"), menu = $("ddMenu");
+  menu.innerHTML = "";
+  let group = null;
   for (const g of GRAPHS) {
-    if (g.group !== group) { og = document.createElement("optgroup"); og.label = group = g.group; s.append(og); }
-    const o = document.createElement("option"); o.value = g.id; o.textContent = g.label; og.append(o);
+    if (g.group !== group) { group = g.group; menu.append(el("div", "cat", group)); }
+    const b = el("button", "item" + (g.id === state.graph ? " on" : ""));
+    b.innerHTML = esc(g.label) + (g.sub || (g.kind === "breakdown" && GROUP_SUB[g.group]) ? `<span class="sub">${esc(g.sub || GROUP_SUB[g.group])}</span>` : "");
+    b.onclick = ev => { ev.stopPropagation(); state.graph = g.id; closeMenu(); renderAll(); };
+    menu.append(b);
   }
-  s.value = state.graph;
-  s.onchange = () => { state.graph = s.value; render(); };
-  segment("modeSeg", "mode", v => { state.mode = v; render(); });
-  segment("diffSeg", "diff", v => { state.diff = v === "on"; render(); });
+  $("ddLabel").textContent = graphNow().label;
 }
-
-function segment(id, key, fn) {
-  const seg = $(id);
-  seg.querySelectorAll("button").forEach(b => b.onclick = () => {
-    seg.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
-    fn(b.dataset[key]);
+function closeMenu() { $("ddMenu").hidden = true; $("graphDD").classList.remove("open"); }
+function wireDropDown() {
+  const dd = $("graphDD");
+  dd.onclick = () => { const m = $("ddMenu"); m.hidden = !m.hidden; dd.classList.toggle("open", !m.hidden); if (!m.hidden) buildDropDown(); };
+  dd.onkeydown = ev => {
+    if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+      ev.preventDefault();
+      const i = GRAPHS.findIndex(g => g.id === state.graph) + (ev.key === "ArrowDown" ? 1 : -1);
+      state.graph = GRAPHS[(i + GRAPHS.length) % GRAPHS.length].id; renderAll();
+    } else if (ev.key === "Escape") closeMenu();
+  };
+  document.addEventListener("click", ev => { if (!dd.contains(ev.target)) closeMenu(); });
+}
+function seg(id, value, fn) {
+  $(id).querySelectorAll(".graphOptionButton").forEach(b => {
+    b.classList.toggle("on", b.dataset.v === value);
+    b.onclick = () => fn(b.dataset.v);
   });
+}
+function renderOptions() {
+  const g = graphNow(), sel = selNow();
+  const modeOk = !g.ratio && !g.level;
+  seg("optMode", modeOk ? state.mode : "value", v => { state.mode = v; renderAll(); });
+  $("optMode").querySelectorAll("button").forEach(b => { b.disabled = !modeOk; });
+  const canDiff = sel.size === 2 && (g.kind === "general" || visibleCats(g).length === 1);
+  $("optDiff").hidden = !canDiff;
+  seg("optDiff", state.diff ? "on" : "off", v => { state.diff = v === "on"; renderAll(); });
+  $("optObj").hidden = !state.events.length;
+  seg("optObj", objOn(g) ? "on" : "off", v => { state.objPref[g.id] = v === "on"; renderAll(); });
+  $("ddLabel").textContent = g.label;
 }
 
 // ---------- series ----------
-function seriesFor(graph) {
-  const sel = state.players.filter(p => state.selected.has(p.slot));
-  const out = [];
-  const perMin = state.mode === "permin" && !graph.ratio && !graph.level;
+function seriesFor(g) {
+  const sel = g.kind === "breakdown"
+    ? [...state.selBrk].map(s => state.players.find(p => p.slot === s)).filter(Boolean)
+    : state.players.filter(p => selNow().has(p.slot));
+  const perMin = state.mode === "permin" && !g.ratio && !g.level;
   const build = (p, get) => {
     const pts = [];
-    if (!graph.ratio && !graph.level) pts.push([0, 0]);
+    if (!g.ratio && !g.level) pts.push([0, 0]);
     for (const s of p.stats) {
       let v = get(s);
       if (v == null) continue;
-      if (perMin) v = s.time_stamp_s > 0 ? v / (s.time_stamp_s / 60) : 0;
+      if (perMin) { if (s.time_stamp_s < 60) continue; v = v / (s.time_stamp_s / 60); }
       pts.push([s.time_stamp_s, v]);
     }
+    if (perMin && pts.length && pts[0][0] === 0) pts.shift();
     return pts;
   };
-  if (graph.kind === "general") {
-    const lines = sel.map(p => ({ player: p, label: p.hero, color: p.color, dash: "", pts: build(p, graph.get) }));
-    if (state.diff && lines.length === 2) {
-      const [a, b] = lines;
-      const pts = a.pts.map(([t, v]) => [t, v - (valueAt(b.pts, t) ?? 0)]);
-      out.push({ label: `${a.label} minus ${b.label}`, aName: a.label, bName: b.label, color: a.color, dash: "", pts, diff: true });
-    } else out.push(...lines);
-  } else {
-    const cats = visibleCats(graph);
-    if (state.diff && sel.length === 2 && cats.length === 1) {
-      const ser = graph.series[cats[0]];
-      const [a, b] = sel.map(p => build(p, ser.get));
-      out.push({ label: `${sel[0].hero} minus ${sel[1].hero} (${ser.label})`, aName: sel[0].hero, bName: sel[1].hero, color: sel[0].color, dash: "", diff: true,
-        pts: a.map(([t, v]) => [t, v - (valueAt(b, t) ?? 0)]) });
-    } else for (const p of sel) for (const i of cats) {
-      const ser = graph.series[i];
-      out.push({ player: p, label: `${p.hero}: ${ser.label}`, sub: ser.label, color: p.color, dash: DASHES[i % DASHES.length], pts: build(p, ser.get) });
-    }
+  const diffOk = state.diff && sel.length === 2;
+  if (g.kind === "general") {
+    const lines = sel.map(p => ({ player: p, label: p.hero, color: colorOf(p), dash: "", pts: build(p, g.get) }));
+    if (diffOk) return [diffLine(lines[0], lines[1], null)];
+    return lines;
+  }
+  const cats = visibleCats(g);
+  if (diffOk && cats.length === 1) {
+    const ser = g.series[cats[0]];
+    const [a, b] = sel.map(p => ({ player: p, label: p.hero, color: colorOf(p), pts: build(p, ser.get) }));
+    return [diffLine(a, b, ser.label)];
+  }
+  const out = [];
+  for (const p of sel) for (const i of cats) {
+    const ser = g.series[i];
+    out.push({ player: p, label: p.hero, sub: ser.label, color: colorOf(p), dash: DASHES[i % DASHES.length], pts: build(p, ser.get) });
   }
   return out;
 }
-
+function diffLine(a, b, cat) {
+  return { player: a.player, other: b.player, label: `${a.label} vs ${b.label}`, sub: cat, color: a.color, dash: "", diff: true,
+    pts: a.pts.map(([t, v]) => [t, v - (valueAt(b.pts, t) ?? 0)]) };
+}
 function valueAt(pts, t) {
   let best = null, bd = Infinity;
   for (const [x, v] of pts) { const d = Math.abs(x - t); if (d < bd) { bd = d; best = v; } }
@@ -216,104 +317,149 @@ function valueAt(pts, t) {
 }
 
 // ---------- chart ----------
-function render() {
+function renderAll() {
   if (!state.match) return;
-  const graph = GRAPHS.find(g => g.id === state.graph);
-  const sel = state.players.filter(p => state.selected.has(p.slot));
-  $("diffCtl").hidden = !(sel.length === 2 && (graph.kind === "general" || visibleCats(graph).length === 1));
-  $("modeCtl").style.opacity = graph.ratio || graph.level ? 0.4 : 1;
-  $("hint").textContent = graph.kind === "breakdown"
-    ? "Color = player, line style = category. Click a category below to hide it. Ctrl+Click shows only that one."
-    : "Click heroes to show or hide them. Ctrl+Click shows only that hero.";
-  const series = seriesFor(graph);
-  drawChart(series, graph);
-  drawLegend(series, graph);
+  renderTop();
+  renderOptions();
+  const g = graphNow();
+  const series = seriesFor(g);
+  drawChart(series, g);
+  renderLines(series, g);
 }
 
-function drawChart(series, graph) {
-  const svg = $("chart");
-  const W = svg.clientWidth || 1000, H = svg.clientHeight || 460;
+function drawChart(series, g) {
+  const ctn = $("graphCtn"), svg = $("chart");
+  const W = ctn.offsetWidth, H = ctn.offsetHeight;
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-  const m = { l: 64, r: 20, t: 16, b: 34 };
-  const dur = state.match.duration_s || Math.max(...series.flatMap(s => s.pts.map(p => p[0])), 60);
-  let ymin = 0, ymax = 1;
+  const m = { l: 18, r: 96, t: 34, b: 40 };
+  const dur = state.match.duration_s || Math.max(60, ...series.flatMap(s => s.pts.map(p => p[0])));
   const vals = series.flatMap(s => s.pts.map(p => p[1]));
+  let ymin = 0, ymax = 1;
   if (vals.length) { ymax = Math.max(...vals); ymin = Math.min(0, ...vals); }
-  if (graph.level && vals.length) ymin = Math.min(...vals) * 0.9;
+  if (g.level && vals.length) ymin = Math.min(...vals);
   if (ymax === ymin) ymax = ymin + 1;
-  const ticks = niceTicks(ymin, ymax, 5);
+  const ticks = niceTicks(ymin, ymax, 4);
   ymin = Math.min(ymin, ticks[0]); ymax = Math.max(ymax, ticks[ticks.length - 1]);
   const X = t => m.l + (t / dur) * (W - m.l - m.r);
   const Y = v => H - m.b - ((v - ymin) / (ymax - ymin)) * (H - m.t - m.b);
-  let g = "";
+  let s = "";
   for (const v of ticks) {
-    g += `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="#2f2b26"/>`;
-    g += `<text x="${m.l - 8}" y="${Y(v) + 4}" fill="#9b9286" font-size="11" text-anchor="end">${fmtNum(v, graph)}</text>`;
+    if (v === ymin && !g.level) continue;
+    s += `<line x1="${m.l}" x2="${W - m.r + 8}" y1="${Y(v)}" y2="${Y(v)}" stroke="#ffffff" stroke-opacity="0.045"/>`;
+    s += `<text class="ylab" x="${W - 4}" y="${Y(v) + 6}" text-anchor="end">${fmtNum(v, g)}</text>`;
   }
-  for (let t = 0; t <= dur; t += 300) {
-    g += `<line x1="${X(t)}" x2="${X(t)}" y1="${m.t}" y2="${H - m.b}" stroke="#24211d"/>`;
-    g += `<text x="${X(t)}" y="${H - m.b + 18}" fill="#9b9286" font-size="11" text-anchor="middle">${fmtTime(t)}</text>`;
+  const step = dur > 1500 ? 600 : 300;
+  for (let t = 0; t <= dur - step * 0.3; t += step) {
+    s += `<text x="${X(t)}" y="${H - m.b + 28}" text-anchor="${t === 0 ? "start" : "middle"}">${fmtTime(t)}</text>`;
   }
-  if (ymin < 0) g += `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(0)}" y2="${Y(0)}" stroke="#6b6358"/>`;
-  if (graph.midboss) for (const mb of state.match.mid_boss || []) {
-    if (!mb.destroyed_time_s) continue;
-    const x = X(mb.destroyed_time_s);
-    g += `<line x1="${x}" x2="${x}" y1="${m.t}" y2="${H - m.b}" stroke="#d9c7a3" stroke-dasharray="4 4" opacity="0.7"/>`;
-    g += `<text x="${x + 6}" y="${m.t + 12}" fill="#d9c7a3" font-size="11">Mid Boss killed ${fmtTime(mb.destroyed_time_s)}</text>`;
+  s += `<line x1="${m.l}" x2="${W - m.r + 8}" y1="${Y(ymin === 0 || ymin < 0 ? 0 : ymin)}" y2="${Y(ymin === 0 || ymin < 0 ? 0 : ymin)}" stroke="#ffffff" stroke-opacity="${ymin < 0 ? 0.35 : 0.12}"/>`;
+  const evs = objOn(g) ? state.events : [];
+  for (const e of evs) s += `<line x1="${X(e.t)}" x2="${X(e.t)}" y1="${m.t - 4}" y2="${H - m.b}" stroke="${e.color}" stroke-opacity="0.38" stroke-dasharray="3 5" stroke-width="1.5"/>`;
+  s += `<g class="lineSet">`;
+  for (const se of series) {
+    if (!se.pts.length) continue;
+    const d = se.pts.map(([t, v], i) => `${i ? "L" : "M"}${X(t).toFixed(1)} ${Y(v).toFixed(1)}`).join("");
+    s += `<path d="${d}" fill="none" stroke="#000" stroke-opacity="0.35" stroke-width="5.5" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="${se.dash}"/>`;
+    s += `<path d="${d}" fill="none" stroke="${se.color}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="${se.dash}"/>`;
   }
-  for (const s of series) {
-    if (!s.pts.length) continue;
-    const d = s.pts.map(([t, v], i) => `${i ? "L" : "M"}${X(t).toFixed(1)} ${Y(v).toFixed(1)}`).join("");
-    g += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2.25" stroke-dasharray="${s.dash}" stroke-linejoin="round"/>`;
-  }
-  g += `<line id="hoverLine" y1="${m.t}" y2="${H - m.b}" stroke="#d9c7a3" opacity="0" />`;
-  svg.innerHTML = g;
+  s += `</g><line id="hoverLine" y1="${m.t}" y2="${H - m.b}" stroke="#FFEFD7" stroke-opacity="0" />`;
+  svg.innerHTML = s;
+  drawMarkers(evs, X, W);
+
+  const emp = $("empty");
+  emp.hidden = series.length > 0;
+  if (!series.length) emp.textContent = selNow().size ? "Every line type is hidden. Turn one back on below." : "Click a hero portrait to add them to the graph.";
 
   const tip = $("tooltip"), line = svg.querySelector("#hoverLine");
-  svg.onmousemove = ev => {
-    const r = svg.getBoundingClientRect();
-    const px = (ev.clientX - r.left) * (W / r.width);
-    const times = [...new Set(series.flatMap(s => s.pts.map(p => p[0])))].sort((a, b) => a - b);
-    if (!times.length) return;
+  const times = [...new Set(series.flatMap(se => se.pts.map(p => p[0])))].sort((a, b) => a - b);
+  ctn.onmousemove = ev => {
+    const r = ctn.getBoundingClientRect(), z = r.width / W;
+    const px = (ev.clientX - r.left) / z, py = (ev.clientY - r.top) / z;
+    if (px < m.l || px > W - m.r + 10) { tip.hidden = true; line.setAttribute("stroke-opacity", 0); return; }
     const tRaw = ((px - m.l) / (W - m.l - m.r)) * dur;
-    const t = times.reduce((a, b) => (Math.abs(b - tRaw) < Math.abs(a - tRaw) ? b : a));
-    line.setAttribute("x1", X(t)); line.setAttribute("x2", X(t)); line.setAttribute("opacity", 0.6);
-    const rows = series.map(s => ({ s, v: valueAt(s.pts, t) })).filter(r => r.v != null).sort((a, b) => b.v - a.v);
-    tip.innerHTML = `<div class="t">${fmtTime(t)}</div>` + rows.map(({ s, v }) =>
-      `<div class="row"><span class="k"><span class="dot" style="background:${s.color}"></span>${esc(s.label)}</span><b>${fmtNum(v, graph)}</b></div>`).join("");
+    const near = evs.filter(e => Math.abs(e.t - tRaw) <= dur * 0.012);
+    let html = "";
+    if (times.length) {
+      const t = times.reduce((a, b) => (Math.abs(b - tRaw) < Math.abs(a - tRaw) ? b : a));
+      line.setAttribute("x1", X(t)); line.setAttribute("x2", X(t)); line.setAttribute("stroke-opacity", 0.35);
+      const rows = series.map(se => ({ se, v: valueAt(se.pts, t) })).filter(r => r.v != null).sort((a, b) => b.v - a.v);
+      html += `<div class="t">${fmtTime(t)}</div>`;
+      if (near.length) html += evHtml(near);
+      const MAX = 8;
+      html += rows.slice(0, MAX).map(({ se, v }) => rowHtml(se, v, g)).join("");
+      if (rows.length > MAX) html += `<div class="more">+${rows.length - MAX} more</div>`;
+    } else if (near.length) html = evHtml(near);
+    if (!html) { tip.hidden = true; return; }
+    tip.innerHTML = html;
     tip.hidden = false;
-    const left = ev.clientX - r.left + 16;
-    tip.style.left = Math.min(left, r.width - tip.offsetWidth - 8) + "px";
-    tip.style.top = (ev.clientY - r.top + 12) + "px";
+    const tw = tip.offsetWidth, th = tip.offsetHeight;
+    let left = px + 22; if (left + tw > W) left = px - tw - 22;
+    tip.style.left = left + "px";
+    tip.style.top = Math.max(0, Math.min(py - 20, H - th)) + "px";
   };
-  svg.onmouseleave = () => { tip.hidden = true; line.setAttribute("opacity", 0); };
+  ctn.onmouseleave = () => { tip.hidden = true; line.setAttribute("stroke-opacity", 0); };
+}
+function evHtml(list) {
+  return `<div class="ev">${list.map(e => `<div><b style="background:${e.color}"></b>${esc(e.text)} <small style="opacity:.55">${fmtTime(e.t)}</small></div>`).join("")}</div>`;
+}
+function rowHtml(se, v, g) {
+  const p = se.player, T = TEAMS[p.team];
+  let name = esc(se.label) + (se.sub ? ` <small>${esc(se.sub)}</small>` : "");
+  let val = fmtNum(v, g);
+  if (se.diff) {
+    const lead = v >= 0 ? p : se.other;
+    name = `${esc(lead.hero)} ahead` + (se.sub ? ` <small>${esc(se.sub)}</small>` : "");
+    val = fmtNum(Math.abs(v), g);
+  }
+  return `<div class="row"><img src="${(se.diff ? (v >= 0 ? p : se.other) : p).img}" style="--coin:${T.coin}"><span class="sw" style="background:${se.color}"></span><span class="n">${name}</span><span class="v">${val}</span></div>`;
 }
 
-function drawLegend(series, graph) {
-  const lg = $("legend");
-  lg.innerHTML = "";
-  if (graph.kind === "breakdown") {
-    const h = hiddenFor(graph);
-    lg.append(el("span", "lgLabel", "Lines"));
-    graph.series.forEach((ser, i) => {
-      const it = el("button", "item cat" + (h.has(i) ? " off" : ""));
-      it.innerHTML = `<svg width="30" height="8"><line x1="0" x2="30" y1="4" y2="4" stroke="#ece4d6" stroke-width="2" stroke-dasharray="${DASHES[i % DASHES.length]}"/></svg>${esc(ser.label)}`;
-      it.title = "Click to show or hide. Ctrl+Click shows only this line type.";
-      it.onclick = ev => {
-        if (ev.ctrlKey || ev.metaKey) { h.clear(); graph.series.forEach((_, j) => { if (j !== i) h.add(j); }); }
-        else if (h.has(i)) h.delete(i); else h.add(i);
-        render();
-      };
-      lg.append(it);
-    });
-    if (h.size) { const all = el("button", "item", "Show all"); all.onclick = () => { h.clear(); render(); }; lg.append(all); }
+function drawMarkers(evs, X, W) {
+  const box = $("markers");
+  box.innerHTML = "";
+  const placed = [];
+  for (const e of evs) {
+    const x = X(e.t);
+    let row = 0;
+    while (placed.some(q => q.row === row && Math.abs(q.x - x) < 22)) row++;
+    placed.push({ x, row });
+    const mk = el("div", "marker");
+    mk.style.left = x + "px";
+    mk.style.top = (-6 + row * 24) + "px";
+    const i = el("i", e.mid ? "mid" : "");
+    i.style.setProperty("--mc", e.color);
+    i.style.setProperty("--icon", `url("${e.icon}")`);
+    mk.title = `${e.text} at ${fmtTime(e.t)}`;
+    mk.append(i);
+    box.append(mk);
   }
-  if (!series.length) {
-    const noPlayers = !state.players.some(p => state.selected.has(p.slot));
-    lg.append(el("span", "item", noPlayers ? "No players selected. Click a hero above." : "All lines hidden. Click a line type to show it."));
+}
+
+function renderLines(series, g) {
+  const row = $("lineRow"), box = $("lines");
+  box.innerHTML = "";
+  const d = series.find(se => se.diff);
+  if (g.kind !== "breakdown") {
+    row.hidden = !d;
+    if (d) box.append(el("span", "lineHint", `Above the line: ${d.player.hero} ahead. Below: ${d.other.hero} ahead.`));
+    document.body.classList.toggle("noLines", row.hidden);
+    return;
   }
-  const d = series.find(s => s.diff);
-  if (d) lg.append(el("span", "item", `Above zero = ${d.aName} ahead. Below zero = ${d.bName} ahead.`));
+  row.hidden = false;
+  document.body.classList.remove("noLines");
+  const h = hiddenFor(g);
+  g.series.forEach((ser, i) => {
+    const b = el("button", "graphOptionButton" + (h.has(i) ? " off" : ""));
+    b.innerHTML = `<svg viewBox="0 0 30 8"><line x1="0" x2="30" y1="4" y2="4" stroke="#FFEFD7" stroke-width="2.5" stroke-dasharray="${DASHES[i % DASHES.length]}"/></svg><span>${esc(ser.label)}</span>`;
+    b.title = "Click to show or hide. Ctrl+Click to show only this line type.";
+    b.onclick = ev => {
+      if (ev.ctrlKey || ev.metaKey) { h.clear(); g.series.forEach((_, j) => { if (j !== i) h.add(j); }); }
+      else if (h.has(i)) h.delete(i); else h.add(i);
+      renderAll();
+    };
+    box.append(b);
+  });
+  if (h.size) { const all = el("button", "graphOptionButton", "Show All"); all.onclick = () => { h.clear(); renderAll(); }; box.append(all); }
 }
 
 // ---------- helpers ----------
@@ -325,20 +471,23 @@ function niceTicks(lo, hi, n) {
   return out;
 }
 function fmtTime(s) { s = Math.round(s); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; }
-function fmtK(v) { return v >= 1000 ? (v / 1000).toFixed(1) + "k" : String(Math.round(v)); }
-function fmtNum(v, graph) {
-  if (graph && graph.ratio) return v.toFixed(1) + "%";
-  if (Math.abs(v) >= 10000) return (v / 1000).toFixed(1) + "k";
-  if (Math.abs(v) < 10 && v % 1) return v.toFixed(2);
-  return Math.round(v).toLocaleString();
+function fmtSouls(v) { return v >= 1000 ? `${Math.round(v / 1000)}<span class="k">k</span>` : String(Math.round(v)); }
+function fmtNum(v, g) {
+  if (g && g.ratio) return v.toFixed(1) + "%";
+  if (Math.abs(v) < 10 && v % 1) return v.toFixed(1);
+  return Math.round(v).toLocaleString("en-US");
 }
 function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
 function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 function setStatus(msg, err) { const s = $("status"); s.textContent = msg; s.classList.toggle("err", !!err); }
 
 // ---------- boot ----------
-buildGraphSelect();
-if (params.get("graph") && GRAPHS.some(g => g.id === params.get("graph"))) { state.graph = params.get("graph"); $("graphType").value = state.graph; }
+if (!EMBED) document.body.classList.add("standalone");
+fit();
+window.addEventListener("resize", () => { fit(); renderAll(); });
+wireDropDown();
+buildDropDown();
+if (params.get("graph") && GRAPHS.some(g => g.id === params.get("graph"))) state.graph = params.get("graph");
 $("matchForm").onsubmit = ev => {
   ev.preventDefault();
   const id = $("matchInput").value.trim();
@@ -346,12 +495,8 @@ $("matchForm").onsubmit = ev => {
   const u = new URL(location.href); u.searchParams.set("match", id); u.searchParams.delete("players"); history.replaceState(null, "", u);
   loadMatch(id);
 };
-// Close: the in-game overlay listens for this title change (Panorama HTMLTitle event).
-// In-game, the Panorama overlay draws its own Close button at top right, so keep that corner clear.
-$("closeBtn").hidden = true;
-if (params.get("embed") === "1") document.body.classList.add("embed");
-$("closeBtn").onclick = () => { document.title = "DLC_CLOSE:" + Date.now(); };
-window.addEventListener("resize", render);
+// In game, ESC or the overlay's own Close closes it. The page can also ask Panorama to close via the title.
+document.addEventListener("keydown", ev => { if (ev.key === "Escape" && EMBED && $("ddMenu").hidden) document.title = "DLC_CLOSE:" + Date.now(); });
 const startId = params.get("match");
 if (startId && /^\d+$/.test(startId)) loadMatch(startId);
-else setStatus("Enter a match ID to load it.");
+else setStatus(EMBED ? "No match ID was passed in." : "Enter a match ID to load it.");
