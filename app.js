@@ -38,13 +38,13 @@ const GRAPHS = [
   { group: "Power", id: "max_health", label: "Max Health", kind: "general", level: true, get: s => s.max_health },
   { group: "Power", id: "weapon_power", label: "Weapon Power", kind: "general", level: true, get: s => s.weapon_power },
   { group: "Power", id: "spirit_power", label: "Spirit Power", kind: "general", level: true, get: s => s.tech_power },
-  { group: "Player Comparison", id: "dmg_breakdown", label: "Damage Breakdown", kind: "breakdown", obj: true, series: [
+  { group: "Player Comparison", id: "dmg_breakdown", label: "Damage Breakdown", kind: "breakdown", obj: true, defaultOn: [0, 1, 3], series: [
       { label: "Enemy Players", get: s => s.player_damage },
       { label: "Troopers", get: s => s.creep_damage },
       { label: "Haunts", get: s => s.neutral_damage },
       { label: "Objectives", get: s => s.boss_damage },
   ] },
-  { group: "Player Comparison", id: "souls_source", label: "Souls by Source", kind: "breakdown", series: [
+  { group: "Player Comparison", id: "souls_source", label: "Souls by Source", kind: "breakdown", defaultOn: [0, 2, 3], series: [
       { label: "Enemy Kills", get: s => GS(s, [1]) },
       { label: "Kill Assists", get: s => GS(s, [6]) },
       { label: "Troopers", get: s => GS(s, [2]) },
@@ -92,7 +92,14 @@ function colorOf(p) {
   const i = [...state.selBrk].indexOf(p.slot);
   return i >= 0 && i < PAIR_COLORS.length ? PAIR_COLORS[i] : p.color;
 }
-function hiddenFor(g) { return state.hiddenCats[g.id] || (state.hiddenCats[g.id] = new Set()); }
+// Player comparison graphs open with at most 3 line types (g.defaultOn); the rest are one click away.
+function hiddenFor(g) {
+  if (!state.hiddenCats[g.id]) {
+    const on = g.defaultOn || g.series.map((_, i) => i).slice(0, 3);
+    state.hiddenCats[g.id] = new Set(g.series.map((_, i) => i).filter(i => !on.includes(i)));
+  }
+  return state.hiddenCats[g.id];
+}
 function visibleCats(g) { const h = hiddenFor(g); return g.series.map((s, i) => i).filter(i => !h.has(i)); }
 function objOn(g) { return state.objPref[g.id] ?? !!g.obj; }
 
@@ -222,12 +229,13 @@ function buildEvents(mi) {
 
 // ---------- ranks ----------
 // Valve's packed badge: tens = tier (0 Obscurus .. 11 Eternus), ones = subrank 1-6.
-const RANK_NAMES = ["Obscurus", "Initiate", "Seeker", "Alchemist", "Arcanist", "Ritualist", "Emissary", "Archon", "Oracle", "Phantom", "Ascendant", "Eternus"];
+// Names and badges from the ranked overhaul (Citadel_ranks_N strings, ranked/badges/rankNN_sm art). The badge art has no subrank variants.
+const RANK_NAMES = ["Obscurus", "Initiate", "Seeker", "Acolyte", "Sentinel", "Mystic", "Ritualist", "Emissary", "Oracle", "Phantom", "Ascendant", "Eternus"];
 function rankOf(badge) {
   if (!badge) return null;
   const tier = Math.floor(badge / 10), sub = badge % 10;
   if (!RANK_NAMES[tier]) return null;
-  return { tier, sub, name: tier === 0 ? RANK_NAMES[0] : `${RANK_NAMES[tier]} ${sub}`, img: `assets/ranks/${tier}_${tier === 0 ? 0 : Math.min(6, Math.max(1, sub))}.png` };
+  return { tier, sub, name: tier === 0 ? RANK_NAMES[0] : `${RANK_NAMES[tier]} ${sub}`, img: `assets/ranks/${tier}.png` };
 }
 // Average as steps (tier * 6 + subrank), then back to a badge.
 function avgBadge(badges) {
@@ -254,7 +262,8 @@ function renderTop() {
     ctn.innerHTML = "";
     const ps = state.players.filter(p => p.team === team);
     for (const p of ps) {
-      const d = el("div", "player" + (sel.has(p.slot) ? " sel" : "") + (mvp && state.mvpPick === p.slot ? " pick" : ""));
+      const d = el("button", "player" + (sel.has(p.slot) ? " sel" : "") + (mvp && state.mvpPick === p.slot ? " pick" : ""));
+      d.setAttribute("aria-pressed", mvp ? String(state.mvpPick === p.slot) : String(sel.has(p.slot)));
       d.style.setProperty("--tc", T.c); d.style.setProperty("--coin", T.coin); d.style.setProperty("--pc", colorOf(p));
       const rk = rankOf(p.badge);
       d.title = `${p.hero}${rk ? " (" + rk.name + " going into the match)" : ""}${p.left ? "\nLeft the match at " + fmtTime(p.left) : ""}\n` + (mvp ? "Click to see why they placed where they did." : "Click to add or remove. Ctrl+Click to show only this hero.");
@@ -293,9 +302,18 @@ function renderTop() {
 function buildDropDown() {
   const dd = $("graphDD"), menu = $("ddMenu");
   menu.innerHTML = "";
+  // Jump buttons for each section, so the Player Comparison graphs aren't hidden below the fold.
+  const groups = [...new Set(GRAPHS.map(g => g.group))];
+  const jump = el("div", "jumps");
+  for (const gr of groups) {
+    const j = el("button", "jump", gr);
+    j.onclick = ev => { ev.stopPropagation(); const c = menu.querySelector(`.cat[data-g="${gr}"]`); if (c) menu.scrollTop = c.offsetTop - jump.offsetHeight; };
+    jump.append(j);
+  }
+  menu.append(jump);
   let group = null;
   for (const g of GRAPHS) {
-    if (g.group !== group) { group = g.group; menu.append(el("div", "cat", group)); }
+    if (g.group !== group) { group = g.group; const c = el("div", "cat", group); c.dataset.g = group; menu.append(c); }
     const b = el("button", "item" + (g.id === state.graph ? " on" : ""));
     b.innerHTML = esc(g.label) + (g.sub || (g.kind === "breakdown" && GROUP_SUB[g.group]) ? `<span class="sub">${esc(g.sub || GROUP_SUB[g.group])}</span>` : "");
     b.onclick = ev => { ev.stopPropagation(); state.graph = g.id; closeMenu(); renderAll(); };
@@ -322,8 +340,36 @@ function seg(id, value, fn) {
     b.onclick = () => fn(b.dataset.v);
   });
 }
+// Quick picks: you plus your lane opponents, everyone, or nobody.
+function lanePick() {
+  const me = state.me;
+  if (!me) return null;
+  const foes = state.players.filter(p => p.team !== me.team && p.lane && p.lane === me.lane);
+  return [me.slot, ...foes.map(p => p.slot)];
+}
+function renderPicks() {
+  const g = graphNow();
+  const box = $("optPick");
+  box.hidden = g.kind === "lead";
+  const lane = lanePick();
+  const sel = selNow();
+  const same = arr => arr && arr.length === sel.size && arr.every(x => sel.has(x));
+  const all = state.players.map(p => p.slot);
+  const btn = (id, label, arr, tip) => {
+    const b = $(id);
+    b.textContent = label;
+    b.hidden = !arr;
+    b.title = tip;
+    b.classList.toggle("on", !!arr && arr.length > 0 && same(arr));
+    b.onclick = () => { setSel(new Set(arr)); renderAll(); };
+  };
+  btn("pickLane", "Me + Lane", lane, "You and the enemies in your lane");
+  btn("pickAll", "All", g.kind === "breakdown" ? null : all, "Every player");
+  btn("pickNone", "Clear", [], "Nobody, then click portraits to add them");
+}
 function renderOptions() {
   const g = graphNow(), sel = selNow();
+  renderPicks();
   const modeOk = !g.ratio && !g.level && g.kind !== "lead";
   seg("optMode", modeOk ? state.mode : "value", v => { state.mode = v; renderAll(); });
   $("optMode").querySelectorAll("button").forEach(b => { b.disabled = !modeOk; });
@@ -417,7 +463,8 @@ function drawChart(series, g) {
   const ctn = $("graphCtn"), svg = $("chart");
   const W = ctn.offsetWidth, H = ctn.offsetHeight;
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-  const m = { l: 18, r: 96, t: 34, b: 40 };
+  const endLabels = g.kind === "breakdown" && series.some(se => se.sub && !se.diff);
+  const m = { l: 18, r: endLabels ? 250 : 96, t: 34, b: 40 };
   const dur = state.match.duration_s || Math.max(60, ...series.flatMap(s => s.pts.map(p => p[0])));
   const vals = series.flatMap(s => s.pts.map(p => p[1]));
   let ymin = 0, ymax = 1;
@@ -458,7 +505,17 @@ function drawChart(series, g) {
     s += `<path d="${d}" fill="none" stroke="#000" stroke-opacity="0.3" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="${se.dash}"/>`;
     s += `<path d="${d}" fill="none" stroke="${se.color}" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="${se.dash}"/>`;
   }
-  s += `</g><line id="hoverLine" y1="${m.t}" y2="${H - m.b}" stroke="#FFEFD7" stroke-opacity="0" />`;
+  s += `</g>`;
+  if (endLabels) {
+    // Name each line at its end so the dash styles don't need decoding. Labels are nudged apart when they collide.
+    const labs = series.filter(se => se.pts.length).map(se => {
+      const [t, v] = se.pts[se.pts.length - 1];
+      return { x: X(t) + 10, y: Y(v) + 5, se };
+    }).sort((a, b) => a.y - b.y);
+    for (let i = 1; i < labs.length; i++) if (labs[i].y - labs[i - 1].y < 17) labs[i].y = labs[i - 1].y + 17;
+    for (const l of labs) s += `<text class="endLab" x="${l.x}" y="${l.y}" style="fill:${l.se.color}">${esc(l.se.sub)}</text>`;
+  }
+  s += `<line id="hoverLine" y1="${m.t}" y2="${H - m.b}" stroke="#FFEFD7" stroke-opacity="0" />`;
   svg.innerHTML = s;
   drawMarkers(evs, X, W);
 
@@ -468,7 +525,18 @@ function drawChart(series, g) {
 
   const tip = $("tooltip"), line = svg.querySelector("#hoverLine");
   const times = [...new Set(series.flatMap(se => se.pts.map(p => p[0])))].sort((a, b) => a - b);
+  state.pinned = false;
+  tip.classList.remove("pinned");
+  ctn.onclick = ev => {
+    if (tip.contains(ev.target)) return;
+    if (state.pinned) { state.pinned = false; tip.classList.remove("pinned"); ctn.onmousemove(ev); return; }
+    if (tip.hidden) return;
+    state.pinned = true;
+    tip.classList.add("pinned");
+    tip.insertAdjacentHTML("beforeend", `<div class="pinNote">Pinned. Click the graph to unpin.</div>`);
+  };
   ctn.onmousemove = ev => {
+    if (state.pinned) return;
     const r = ctn.getBoundingClientRect(), z = r.width / W;
     const px = (ev.clientX - r.left) / z, py = (ev.clientY - r.top) / z;
     if (px < m.l || px > W - m.r + 10) { tip.hidden = true; line.setAttribute("stroke-opacity", 0); return; }
@@ -491,7 +559,7 @@ function drawChart(series, g) {
     tip.style.left = left + "px";
     tip.style.top = Math.max(0, Math.min(py - 20, H - th)) + "px";
   };
-  ctn.onmouseleave = () => { tip.hidden = true; line.setAttribute("stroke-opacity", 0); };
+  ctn.onmouseleave = () => { if (state.pinned) return; tip.hidden = true; line.setAttribute("stroke-opacity", 0); };
 }
 // Every line at the hovered time. Player comparison graphs group lines under each player; long lists use two columns.
 function readoutHtml(rows, g) {

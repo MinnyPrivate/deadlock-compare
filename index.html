@@ -39,10 +39,16 @@
         <div class="dropDownMenu" id="ddMenu" hidden></div>
       </div>
       <div class="graphOptionsCtn">
+        <div class="graphOption" id="optPick">
+          <span class="optionLabel">Show:</span>
+          <button class="graphOptionButton" id="pickLane"></button>
+          <button class="graphOptionButton" id="pickAll"></button>
+          <button class="graphOptionButton" id="pickNone"></button>
+        </div>
         <div class="graphOption" id="optMode">
           <span class="optionLabel">View As:</span>
           <button class="graphOptionButton" data-v="value">Value</button>
-          <button class="graphOptionButton" data-v="permin">Per Min</button>
+          <button class="graphOptionButton" data-v="permin" title="Each value divided by minutes played so far">Average per Minute</button>
         </div>
         <div class="graphOption" id="optDiff" hidden>
           <span class="optionLabel">Two Players:</span>

@@ -53,18 +53,19 @@ body.standalone #stage { height: 1080px; }
 .teamCtn { position: absolute; top: 0; width: 528px; height: 130px; display: flex; }
 .teamCtn.left { left: 0; flex-direction: row-reverse; }
 .teamCtn.right { right: 0; }
-.teamNetworth { position: absolute; left: 50%; top: 45px; width: 300px; height: 34px; transform: translateX(-50%); }
+/* The gap between the two portrait rows is 1260 - 2 x 528 = 204px, so the two souls boxes must fit in that. */
+.teamNetworth { position: absolute; left: 50%; top: 45px; width: 200px; height: 34px; transform: translateX(-50%); }
 .teamScore {
-  position: absolute; left: 0; top: 0; width: 145px; height: 34px;
-  display: flex; align-items: center; justify-content: flex-end; gap: 4px; padding-right: 10px;
-  font-family: var(--oracle); font-weight: 700; font-size: 22px; color: #fff;
+  position: absolute; left: 0; top: 0; width: 98px; height: 34px;
+  display: flex; align-items: center; justify-content: flex-end; gap: 4px; padding-right: 6px;
+  font-family: var(--oracle); font-weight: 700; font-size: 20px; color: #fff;
 }
-.teamScore.right { left: auto; right: 0; flex-direction: row-reverse; justify-content: flex-end; padding: 0 0 0 10px; }
+.teamScore.right { left: auto; right: 0; flex-direction: row-reverse; justify-content: flex-end; padding: 0 0 0 6px; }
 .teamScore::before {
   content: ""; position: absolute; inset: 0; z-index: -1; background: var(--tc);
   -webkit-mask: url("assets/ui/dust_01.png") center / 100% 100%; mask: url("assets/ui/dust_01.png") center / 100% 100%;
 }
-.teamScore .icon { width: 30px; height: 28px; background: center / contain no-repeat; margin: 2px; }
+.teamScore .icon { width: 22px; height: 22px; background: center / contain no-repeat; margin: 2px; }
 .teamScore .k { font-size: 14px; color: rgba(255,239,215,0.9); margin-left: 1px; }
 .teamScore.dim { opacity: 0.55; }
 .teamScore:hover { filter: brightness(1.15); }
@@ -142,7 +143,7 @@ body.standalone #stage { height: 1080px; }
 .graphOption .graphOptionButton:first-of-type { border-radius: 3px 0 0 3px; }
 .graphOption .graphOptionButton:last-of-type { border-radius: 0 3px 3px 0; }
 .graphOptionButton:hover { background: rgba(255,239,215,0.12); }
-.graphOptionButton.on { background: rgba(255,239,215,0.4); color: var(--offBlack); }
+.graphOptionButton.on { background: rgba(255,239,215,0.78); border-color: var(--offWhite); color: var(--offBlack); }
 .graphOptionButton:disabled { opacity: 0.3; cursor: default; }
 
 /* ---------- graph ---------- */
@@ -300,3 +301,25 @@ body.noMatch .topPanel, body.noMatch .tabs, body.noMatch .mainCol, body.noMatch 
 
 /* ---------- experimental tag on the MVP score ---------- */
 .expTag { margin-left: 14px; padding: 2px 7px; border-radius: 3px; border: 1px solid rgba(255,239,215,0.35); font-size: 12px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; opacity: 0.75; }
+
+/* ---------- Round 1 layout ---------- */
+.player { display: block; padding: 0; text-align: inherit; }
+.player:focus-visible { outline: 2px solid var(--offWhite); outline-offset: -2px; }
+.player.sel .pcolor { height: 6px; box-shadow: 0 0 6px var(--pc); }
+.dropDownMenu { scrollbar-width: thin; scrollbar-color: rgba(255,239,215,0.45) transparent; }
+.dropDownMenu::-webkit-scrollbar { width: 8px; }
+.dropDownMenu::-webkit-scrollbar-thumb { background: rgba(255,239,215,0.45); border-radius: 4px; }
+.dropDownMenu .jumps { position: sticky; top: 0; z-index: 1; display: flex; gap: 6px; padding: 8px 10px; background: var(--offBlack); border-bottom: 1px solid rgba(255,239,215,0.1); }
+.dropDownMenu .jump { padding: 4px 10px; border: 1px solid rgba(255,239,215,0.35); border-radius: 3px; font-size: 13px; font-weight: 600; }
+.dropDownMenu .jump:hover { background: rgba(255,239,215,0.12); }
+#chart text.endLab { font-size: 14px; font-weight: 600; paint-order: stroke; stroke: #000; stroke-width: 3px; stroke-opacity: 0.6; }
+.tooltip.pinned { pointer-events: auto; max-height: 100%; overflow-y: auto; box-shadow: 0 0 0 1px rgba(255,239,215,0.4); }
+.tooltip .pinNote { margin-top: 8px; font-size: 12px; opacity: 0.55; }
+.graphOption + .graphOption .optionLabel { margin-left: 22px; }
+.teamAvg { left: auto; right: calc(50% + 6px); width: auto; padding: 0; }
+.teamAvg.right { right: auto; left: calc(50% + 6px); padding: 0; }
+/* Native bar: a selected hero's coin lights up in the team color; unselected coins stay dark. */
+.player .heroImg::before { transition: background 0.15s; }
+.player.sel .heroImg::before { background: var(--tc); filter: brightness(1.12) saturate(1.1); }
+body.tabMvp .player.sel:not(.pick) .heroImg::before { background: var(--coin); filter: none; }
+body.tabMvp .player.pick .heroImg::before { background: var(--tc); filter: brightness(1.12) saturate(1.1); }
