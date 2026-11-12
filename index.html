@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deadlock Compare</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">COMPARE</div>
+  <form id="matchForm" class="matchForm">
+    <label for="matchInput">Match</label>
+    <input id="matchInput" inputmode="numeric" autocomplete="off" placeholder="Match ID">
+    <button type="submit">Load</button>
+  </form>
+  <div id="matchMeta" class="matchMeta"></div>
+  <button id="closeBtn" class="closeBtn" title="Close">Close</button>
+</header>
+
+<section id="teams" class="teams"></section>
+
+<section class="controls">
+  <div class="ctl">
+    <span class="ctlLabel">Graph type</span>
+    <select id="graphType"></select>
+  </div>
+  <div class="ctl" id="modeCtl">
+    <span class="ctlLabel">Show as</span>
+    <div class="seg" id="modeSeg">
+      <button data-mode="value" class="on">Value</button>
+      <button data-mode="permin">Per minute</button>
+    </div>
+  </div>
+  <div class="ctl" id="diffCtl" hidden>
+    <span class="ctlLabel">Two players</span>
+    <div class="seg" id="diffSeg">
+      <button data-diff="off" class="on">Both lines</button>
+      <button data-diff="on">Difference</button>
+    </div>
+  </div>
+  <div class="hint" id="hint"></div>
+</section>
+
+<section class="chartWrap">
+  <svg id="chart" role="img" aria-label="Match graph"></svg>
+  <div id="tooltip" class="tooltip" hidden></div>
+  <div id="legend" class="legend"></div>
+</section>
+
+<div id="status" class="status"></div>
+
+<script src="heroes.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
