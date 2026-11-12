@@ -1,0 +1,10 @@
+# Files and folders that must not be served by the Cloudflare site
+.git
+.github
+mod
+test
+tools
+README.md
+wrangler.jsonc
+.assetsignore
+node_modules
