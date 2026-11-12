@@ -137,7 +137,7 @@ window.renderMvp = function renderMvp() {
   let h = `<div class="mvpHead">
     <div class="graphOption"><span class="optionLabel">Score:</span>${Object.keys(MVP_MODES).map(m =>
       `<button class="graphOptionButton${m === mode ? " on" : ""}" data-mode="${m}">${MVP_MODES[m].name}</button>`).join("")}</div>
-    <span class="mvpSub">${esc(MVP_MODES[mode].sub)}. Scored against the best player in this match on each stat.</span>
+    <span class="expTag" title="Our own formula, not Valve's. Valve's MVP and Key Player picks are shown as tags.">Experimental</span><span class="mvpSub">${esc(MVP_MODES[mode].sub)}. Scored against the best player in this match on each stat.</span>
     <div class="legend">${Object.values(MVP_CATS).map(c => `<span><b style="background:${c.c}"></b>${c.name}</span>`).join("")}</div>
   </div>`;
 
@@ -171,7 +171,7 @@ window.renderMvp = function renderMvp() {
   const valveTop = rows.find(r => r.p.mvp === 1);
   let summary = `${ordinal(pick.place)} of ${rows.length} with ${Math.round(pick.score)} points`;
   summary += strong.length ? `, carried by ${listJoin(strong.map(sayOf))}.` : ".";
-  if (weak.length) summary += ` Lost the most ground on ${listJoin(weak.map(sayOf))}.`;
+  if (weak.length) summary += ` Biggest score gaps: ${listJoin(weak.map(sayOf))}.`;
   let valveLine = "";
   if (p.mvp === 1) valveLine = pick.place === 1 ? "Valve also named them MVP." : `Valve named them MVP; our ${MVP_MODES[mode].name} score puts them ${ordinal(pick.place)}.`;
   else if (p.mvp > 1) valveLine = `Valve named them a Key Player; our score puts them ${ordinal(pick.place)}.`;
@@ -192,7 +192,7 @@ window.renderMvp = function renderMvp() {
       <div class="wr th"><span>${state.mvpAll ? "Stat" : "Best at"}</span><span class="r">Value</span><span class="r">Lobby best</span><span>Points</span></div>`;
   const shown = state.mvpAll ? pick.parts : [...topParts, "lost", ...lostParts];
   for (const x of shown) {
-    if (x === "lost") { h += `<div class="wr th sec"><span>Lost the most on</span><span></span><span></span><span></span></div>`; continue; }
+    if (x === "lost") { h += `<div class="wr th sec"><span>Largest score gaps</span><span></span><span></span><span></span></div>`; continue; }
     const c = MVP_CATS[x.def.cat].c;
     const isBest = x.on && x.v === x.bestV;
     h += `<div class="wr${x.on ? "" : " off"}" title="${x.on ? `Weight ${x.def.w}. Worth up to ${x.maxPts.toFixed(1)} points.` : "Nobody in this match had any, so it doesn't count."}">
@@ -202,7 +202,7 @@ window.renderMvp = function renderMvp() {
       <span class="pb"><span class="track" style="width:${(x.maxPts / maxOf(pick.parts)) * 100}%"><i style="width:${x.maxPts ? (x.pts / x.maxPts) * 100 : 0}%;background:${c}"></i></span><em>${x.on ? x.pts.toFixed(1) : ""}</em></span>
     </div>`;
   }
-  h += `</div><button class="graphOptionButton allBtn" id="mvpAll">${state.mvpAll ? "Show fewer" : `Show all stats (${pick.parts.length})`}</button><div class="whyFoot">${mode === "impact" ? `Deaths count in reverse: fewest deaths in the match gets full points.${mvpSplit() ? "" : " This game was too short to split early and late, so damage and assists count once."}` : "Raw counts each scoreboard stat the same. Deaths count in reverse."} Crowd control isn't in Valve's match data, so it can't be scored.</div></div>`;
+  h += `</div><button class="graphOptionButton allBtn" id="mvpAll">${state.mvpAll ? "Show fewer" : `Show all stats (${pick.parts.length})`}</button><div class="whyFoot">${mode === "impact" ? `Deaths count in reverse: fewest deaths in the match gets full points.${mvpSplit() ? "" : " This game was too short to split early and late, so damage and assists count once."}` : "Raw counts each scoreboard stat the same. Deaths count in reverse."} Crowd control is in Valve's data but isn't scored yet.</div></div>`;
 
   view.innerHTML = h;
   view.querySelectorAll("[data-mode]").forEach(b => b.onclick = () => { state.mvpMode = b.dataset.mode; renderAll(); });

@@ -283,3 +283,20 @@ body:not(.tabMvp) #mvpView { display: none; }
 .allBtn { align-self: flex-start; margin-top: 12px; }
 .mvpWhy .whyFoot { margin-top: auto; padding-top: 8px; }
 .leftTag { font-family: var(--sans); font-size: 11px; font-weight: 700; letter-spacing: 0.5px; padding: 1px 5px; border-radius: 3px; background: #ff8a7a33; color: #ffb3a8; vertical-align: middle; }
+
+/* ---------- no match loaded / failed load ---------- */
+body.noMatch .topPanel, body.noMatch .tabs, body.noMatch .mainCol, body.noMatch #mvpView { display: none; }
+.status .retry { pointer-events: auto; margin-top: 14px; color: var(--offWhite); }
+
+/* ---------- full hover readout ---------- */
+.tooltip { max-width: 640px; }
+.tooltip .cols.two { display: grid; grid-template-columns: repeat(2, minmax(220px, 1fr)); column-gap: 18px; }
+.tooltip .grp + .grp { margin-top: 0; }
+.tooltip .cols:not(.two) .grp + .grp { margin-top: 8px; }
+.tooltip .row.gh .n { font-weight: 600; }
+.tooltip .row.sub { margin-top: 1px; padding-left: 32px; font-size: 14px; }
+.tooltip .row.sub svg { width: 22px; height: 6px; flex: none; }
+.tooltip .row.sub .v { font-size: 15px; }
+
+/* ---------- experimental tag on the MVP score ---------- */
+.expTag { margin-left: 14px; padding: 2px 7px; border-radius: 3px; border: 1px solid rgba(255,239,215,0.35); font-size: 12px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; opacity: 0.75; }

@@ -9,7 +9,7 @@ const PLAYER_COLORS = [
 ];
 // Player comparison graphs show few heroes, so they get the most distinct colors in pick order.
 const PAIR_COLORS = ["#58D86A", "#8C83FF", "#FFD23F", "#F25CE0", "#3FCBFF", "#FF9A3C"];
-const DASHES = ["", "10 6", "2 5", "14 5 3 5", "1 8", "22 6"];
+const DASHES = ["", "10 6", "2 5", "14 5 3 5", "1 8", "22 6", "6 3 1 3 1 3"];
 const TEAMS = {
   0: { name: "Hidden King", color: "Amber", c: "#D4860B", coin: "#6F3806", icon: "assets/ui/icon_team1.png" },
   1: { name: "Archmother", color: "Sapphire", c: "#4D75C3", coin: "#243265", icon: "assets/ui/icon_team2.png" },
@@ -50,8 +50,9 @@ const GRAPHS = [
       { label: "Troopers", get: s => GS(s, [2]) },
       { label: "Haunts", get: s => GS(s, [3]) },
       { label: "Objectives", get: s => GS(s, [4]) },
-      { label: "Other", get: s => GS(s, [5, 7, 8, 9, 10, 11, 12, 13]) },
-  ], sub: "\"Other\" includes a source Valve doesn't name" },
+      { label: "Breakables", get: s => GS(s, [12]) },
+      { label: "Other", get: s => GS(s, [5, 7, 8, 9, 10, 11, 13]) },
+  ], sub: "These won't add up exactly to total souls" },
   { group: "Player Comparison", id: "support", label: "Support", kind: "breakdown", series: [
       { label: "Healing Allies", get: s => s.teammate_healing },
       { label: "Barriers Given", get: s => s.player_barriering },
@@ -106,35 +107,49 @@ function fit() {
 }
 
 // ---------- loading ----------
+let loadSeq = 0;
 async function loadMatch(id) {
+  const my = ++loadSeq; // only the newest request may draw
+  clearMatch();
   setStatus("Loading match " + id + "...");
-  const src = params.get("src"); // local test file, relative path only
-  const url = src && /^[\w./-]+$/.test(src) && !src.includes("..") ? src : API + encodeURIComponent(id) + "/metadata";
+  const src = params.get("src"); // local test file: only files in this repo's test/ folder
+  const url = src && /^test\/[\w-]+\.json$/.test(src) ? src : API + encodeURIComponent(id) + "/metadata";
   let data;
   try {
     const r = await fetch(url);
     if (r.status === 404) throw new Error("This match isn't available yet. Try again in a few minutes.");
     if (!r.ok) throw new Error("Couldn't load the match (error " + r.status + ").");
     data = await r.json();
+    if (my !== loadSeq) return;
+    const mi = data.match_info || data;
+    if (!mi || !Array.isArray(mi.players) || !mi.players.length) throw new Error("This match has no player data.");
+    setup(mi);
   } catch (e) {
-    setStatus(e.message || String(e), true);
-    return;
+    if (my !== loadSeq) return;
+    clearMatch();
+    const msg = e instanceof TypeError ? "Couldn't reach the match server. Check your connection and try again." : e.message || String(e);
+    setStatus(msg, true, () => loadMatch(id));
   }
-  setup(data.match_info || data);
+}
+function clearMatch() {
+  state.match = null;
+  document.body.classList.add("noMatch");
+  $("tooltip").hidden = true;
 }
 
 function setup(mi) {
   state.match = mi;
+  document.body.classList.remove("noMatch");
   const ordered = [...mi.players].sort((a, b) => a.team - b.team || (a.assigned_lane || 0) - (b.assigned_lane || 0) || a.player_slot - b.player_slot);
   state.players = ordered.map((p, i) => ({
-    slot: p.player_slot, team: p.team, lane: p.assigned_lane || 0, heroId: Number(p.hero_id) || 0,
+    slot: Number(p.player_slot) || 0, team: Number(p.team) === 1 ? 1 : 0, lane: p.assigned_lane || 0, heroId: Number(p.hero_id) || 0,
     hero: (window.HERO_NAMES || {})[p.hero_id] || "Hero " + (Number(p.hero_id) || 0),
     img: `assets/heroes/${Number(p.hero_id) || 0}.png`,
     left: Number(p.abandon_match_time_s) || 0,
     color: PLAYER_COLORS[i % PLAYER_COLORS.length],
-    stats: (p.stats || []).slice().sort((a, b) => a.time_stamp_s - b.time_stamp_s),
+    stats: scoreboardKda(p),
     souls: p.net_worth || 0, mvp: p.mvp_rank || 0,
-    badge: (p.player_rank_data && p.player_rank_data.initial_display_rank) || 0,
+    badge: Number(p.player_rank_data && p.player_rank_data.initial_display_rank) || 0,
     raw: p,
   }));
   // Which team sits on the left: the viewer's team when the game tells us, else Amber.
@@ -144,7 +159,7 @@ function setup(mi) {
   state.me = state.players.find(p => p.heroId === meHero && (params.get("friendly") == null || p.team === state.leftTeam)) || null;
   if (state.me) state.leftTeam = state.me.team;
 
-  const sel = (params.get("players") || "").split(",").map(Number).filter(n => n || n === 0).filter(n => state.players.some(p => p.slot === n));
+  const sel = (params.get("players") || "").split(",").filter(x => /^\d+$/.test(x.trim())).map(Number).filter(n => state.players.some(p => p.slot === n));
   state.selGen = new Set(sel.length ? sel : state.players.map(p => p.slot));
   state.selBrk = new Set(sel.length && sel.length <= 2 ? sel : defaultPair());
   state.events = buildEvents(mi);
@@ -152,6 +167,19 @@ function setup(mi) {
   $("clock").textContent = fmtTime(mi.duration_s || 0);
   setStatus("");
   renderAll();
+}
+
+// Stats snapshots sorted by time, with kills, deaths and assists pinned to the scoreboard:
+// the last snapshot can disagree with the end screen, so the final point uses the scoreboard and earlier points never pass it.
+function scoreboardKda(p) {
+  const st = (p.stats || []).map(s => Object.assign({}, s)).sort((a, b) => a.time_stamp_s - b.time_stamp_s);
+  for (const k of ["kills", "deaths", "assists"]) {
+    const end = Number(p[k]);
+    if (!Number.isFinite(end) || !st.length) continue;
+    for (const s of st) if (s[k] > end) s[k] = end;
+    st[st.length - 1][k] = end;
+  }
+  return st;
 }
 
 // Two players for the player comparison graphs: you and your lane opponent, else each team's top earner.
@@ -407,7 +435,7 @@ function drawChart(series, g) {
     s += `<text class="ylab" x="${W - 4}" y="${Y(v) + 6}" text-anchor="end">${fmtNum(g.kind === "lead" ? Math.abs(v) : v, g)}</text>`;
   }
   const step = dur > 1500 ? 600 : 300;
-  for (let t = 0; t <= dur - step * 0.3; t += step) {
+  for (let t = 0; t <= dur; t += step) {
     s += `<text x="${X(t)}" y="${H - m.b + 28}" text-anchor="${t === 0 ? "start" : "middle"}">${fmtTime(t)}</text>`;
   }
   s += `<line x1="${m.l}" x2="${W - m.r + 8}" y1="${Y(ymin === 0 || ymin < 0 ? 0 : ymin)}" y2="${Y(ymin === 0 || ymin < 0 ? 0 : ymin)}" stroke="#ffffff" stroke-opacity="${ymin < 0 ? 0.35 : 0.12}"/>`;
@@ -450,12 +478,10 @@ function drawChart(series, g) {
     if (times.length) {
       const t = times.reduce((a, b) => (Math.abs(b - tRaw) < Math.abs(a - tRaw) ? b : a));
       line.setAttribute("x1", X(t)); line.setAttribute("x2", X(t)); line.setAttribute("stroke-opacity", 0.35);
-      const rows = series.map(se => ({ se, v: valueAt(se.pts, t) })).filter(r => r.v != null).sort((a, b) => b.v - a.v);
+      const rows = series.map(se => ({ se, v: valueAt(se.pts, t) })).filter(r => r.v != null);
       html += `<div class="t">${fmtTime(t)}</div>`;
       if (near.length) html += evHtml(near);
-      const MAX = 8;
-      html += rows.slice(0, MAX).map(({ se, v }) => rowHtml(se, v, g)).join("");
-      if (rows.length > MAX) html += `<div class="more">+${rows.length - MAX} more</div>`;
+      html += readoutHtml(rows, g);
     } else if (near.length) html = evHtml(near);
     if (!html) { tip.hidden = true; return; }
     tip.innerHTML = html;
@@ -466,6 +492,25 @@ function drawChart(series, g) {
     tip.style.top = Math.max(0, Math.min(py - 20, H - th)) + "px";
   };
   ctn.onmouseleave = () => { tip.hidden = true; line.setAttribute("stroke-opacity", 0); };
+}
+// Every line at the hovered time. Player comparison graphs group lines under each player; long lists use two columns.
+function readoutHtml(rows, g) {
+  if (g.kind === "breakdown" && rows.some(r => r.se.sub && !r.se.diff)) {
+    const groups = [];
+    for (const r of rows) {
+      let gr = groups.find(x => x.p === r.se.player);
+      if (!gr) groups.push(gr = { p: r.se.player, color: r.se.color, rows: [] });
+      gr.rows.push(r);
+    }
+    return `<div class="cols${groups.length > 1 ? " two" : ""}">` + groups.map(gr => {
+      const T = TEAMS[gr.p.team];
+      return `<div class="grp"><div class="row gh"><img src="${gr.p.img}" style="--coin:${T.coin}"><span class="sw" style="background:${gr.color}"></span><span class="n">${esc(heroName(gr.p))}</span></div>` +
+        gr.rows.sort((a, b) => b.v - a.v).map(({ se, v }) => `<div class="row sub"><svg viewBox="0 0 22 6"><line x1="0" x2="22" y1="3" y2="3" stroke="${se.color}" stroke-width="2.5" stroke-dasharray="${se.dash}"/></svg><span class="n">${esc(se.sub)}</span><span class="v">${fmtNum(v, g)}</span></div>`).join("") + `</div>`;
+    }).join("") + `</div>`;
+  }
+  rows.sort((a, b) => b.v - a.v);
+  const two = rows.length > 8; // fill down the first column, then the second, so rank order reads top to bottom
+  return `<div class="cols${two ? " two" : ""}"${two ? ` style="grid-auto-flow:column;grid-template-rows:repeat(${Math.ceil(rows.length / 2)},auto)"` : ""}>` + rows.map(({ se, v }) => rowHtml(se, v, g)).join("") + `</div>`;
 }
 function evHtml(list) {
   return `<div class="ev">${list.map(e => `<div><b style="background:${e.color}"></b>${esc(e.text)} <small style="opacity:.55">${fmtTime(e.t)}</small></div>`).join("")}</div>`;
@@ -558,7 +603,16 @@ function fmtNum(v, g) {
 }
 function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
 function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
-function setStatus(msg, err) { const s = $("status"); s.textContent = msg; s.classList.toggle("err", !!err); }
+function setStatus(msg, err, retry) {
+  const s = $("status");
+  s.textContent = msg;
+  s.classList.toggle("err", !!err);
+  if (retry) {
+    const b = el("button", "graphOptionButton retry", "Retry");
+    b.onclick = retry;
+    s.append(document.createElement("br"), b);
+  }
+}
 
 // ---------- boot ----------
 if (!EMBED) document.body.classList.add("standalone");
@@ -580,4 +634,4 @@ $("matchForm").onsubmit = ev => {
 document.addEventListener("keydown", ev => { if (ev.key === "Escape" && EMBED && $("ddMenu").hidden) document.title = "DLC_CLOSE:" + Date.now(); });
 const startId = params.get("match");
 if (startId && /^\d+$/.test(startId)) loadMatch(startId);
-else setStatus(EMBED ? "No match ID was passed in." : "Enter a match ID to load it.");
+else { clearMatch(); setStatus(EMBED ? "No match ID was passed in." : "Enter a match ID to load it."); }
