@@ -347,7 +347,9 @@ $("matchForm").onsubmit = ev => {
   loadMatch(id);
 };
 // Close: the in-game overlay listens for this title change (Panorama HTMLTitle event).
-$("closeBtn").hidden = params.get("embed") !== "1";
+// In-game, the Panorama overlay draws its own Close button at top right, so keep that corner clear.
+$("closeBtn").hidden = true;
+if (params.get("embed") === "1") document.body.classList.add("embed");
 $("closeBtn").onclick = () => { document.title = "DLC_CLOSE:" + Date.now(); };
 window.addEventListener("resize", render);
 const startId = params.get("match");

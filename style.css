@@ -76,3 +76,5 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--l
 .legend .lgLabel { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; align-self: center; }
 .legend button.item { background: var(--panel2); border: 1px solid var(--line); color: var(--text); padding: 4px 10px; font-size: 12px; }
 .legend button.item.off { opacity: 0.35; text-decoration: line-through; }
+
+body.embed .top { padding-right: 140px; }
