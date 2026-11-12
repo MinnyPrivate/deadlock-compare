@@ -308,7 +308,10 @@ function drawLegend(series, graph) {
     });
     if (h.size) { const all = el("button", "item", "Show all"); all.onclick = () => { h.clear(); render(); }; lg.append(all); }
   }
-  if (!series.length) lg.textContent = "No players selected. Click a hero above.";
+  if (!series.length) {
+    const noPlayers = !state.players.some(p => state.selected.has(p.slot));
+    lg.append(el("span", "item", noPlayers ? "No players selected. Click a hero above." : "All lines hidden. Click a line type to show it."));
+  }
   const d = series.find(s => s.diff);
   if (d) lg.append(el("span", "item", `Above zero = ${d.aName} ahead. Below zero = ${d.bName} ahead.`));
 }
