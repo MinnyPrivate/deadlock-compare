@@ -1,0 +1,59 @@
+/* DLCOMPARE: Compare button and overlay */
+.DLCompareButton
+{
+	margin-right: 16px;
+	padding: 8px 18px;
+	vertical-align: center;
+	background-color: #2a2622;
+	border: 1px solid #6b6155;
+	border-radius: 4px;
+}
+.DLCompareButton:hover
+{
+	background-color: #3a342e;
+	border: 1px solid #d9c7a3;
+}
+.DLCompareButton Label
+{
+	font-size: 18px;
+	font-weight: bold;
+	letter-spacing: 2px;
+	color: #ece4d6;
+}
+#DLCompareOverlay
+{
+	width: 100%;
+	height: 100%;
+	background-color: #121110f2;
+	visibility: collapse;
+	z-index: 1000;
+}
+#DLCompareOverlay.Open
+{
+	visibility: visible;
+}
+#DLCompareWeb
+{
+	width: 100%;
+	height: 100%;
+}
+.DLCompareClose
+{
+	horizontal-align: right;
+	vertical-align: top;
+	margin: 16px 24px;
+	padding: 6px 16px;
+	background-color: #2a2622;
+	border: 1px solid #6b6155;
+	border-radius: 4px;
+}
+.DLCompareClose:hover
+{
+	border: 1px solid #d9c7a3;
+}
+.DLCompareClose Label
+{
+	font-size: 16px;
+	font-weight: bold;
+	color: #ece4d6;
+}
