@@ -34,10 +34,12 @@ const GRAPHS = [
   { group: "General", id: "denies", label: "Denies", kind: "general", get: s => s.denies },
   { group: "General", id: "accuracy", label: "Accuracy", sub: "All targets, troopers included", kind: "general", ratio: true, get: s => pct(s.shots_hit, (s.shots_hit || 0) + (s.shots_missed || 0)) },
   { group: "General", id: "crit", label: "Headshot Rate", kind: "general", ratio: true, get: s => pct(s.hero_bullets_hit_crit, s.hero_bullets_hit), sub: "Crit bullets that hit heroes" },
-  { group: "Power", id: "level", label: "Level", kind: "general", level: true, get: s => s.level },
-  { group: "Power", id: "max_health", label: "Max Health", kind: "general", level: true, get: s => s.max_health },
-  { group: "Power", id: "weapon_power", label: "Weapon Power", kind: "general", level: true, get: s => s.weapon_power },
-  { group: "Power", id: "spirit_power", label: "Spirit Power", kind: "general", level: true, get: s => s.tech_power },
+  // Valve's first snapshot is at 3:00. The Power graphs start at 0:00 from what every hero spawns with:
+  // level 1, the hero's base health (heroes.vdata, gamedata.js HERO_HP) and no bonus power.
+  { group: "Power", id: "level", label: "Level", kind: "general", level: true, get: s => s.level, start: () => 1 },
+  { group: "Power", id: "max_health", label: "Max Health", kind: "general", level: true, get: s => s.max_health, start: p => (window.HERO_HP || {})[p.heroId] },
+  { group: "Power", id: "weapon_power", label: "Weapon Power", kind: "general", level: true, get: s => s.weapon_power, start: () => 0 },
+  { group: "Power", id: "spirit_power", label: "Spirit Power", kind: "general", level: true, get: s => s.tech_power, start: () => 0 },
   { group: "Player Comparison", id: "dmg_breakdown", label: "Damage Breakdown", kind: "breakdown", obj: true, defaultOn: [0, 1, 3], series: [
       { label: "Enemy Players", get: s => s.player_damage },
       { label: "Troopers", get: s => s.creep_damage },
@@ -79,7 +81,7 @@ const state = {
   match: null, players: [], events: [],
   selGen: new Set(), selBrk: new Set(),
   graph: "souls", mode: "value", diff: false,
-  objPref: {}, hiddenCats: {},
+  objPref: {}, itemPref: {}, hiddenCats: {}, hiddenGroups: new Set(),
   leftTeam: 0, me: null,
   tab: "graphs", mvpPick: null, mvpMode: "impact",
   muStat: "dmg", muWin: "all", muPair: null,
@@ -113,12 +115,16 @@ function modeNow(g) {
 const grouped = g => ["team", "lane"].includes(modeNow(g));
 
 // ---------- layout scaling: Deadlock lays out in 1080p units ----------
+// CSS zoom lays the page out again at the real size, so text is drawn sharp at your resolution.
+// transform: scale() shrinks a finished picture instead, which softens text; it is only the fallback.
+const ZOOM = !!(window.CSS && CSS.supports && CSS.supports("zoom", "2")) && params.get("scale") !== "transform";
 function fit() {
   const H = EMBED ? 996 : 1080;
   const z = Math.min(innerWidth / 1920, innerHeight / H);
   const st = $("stage");
-  st.style.transform = `scale(${z})`;
-  st.style.left = Math.max(0, (innerWidth - 1920 * z) / 2) + "px";
+  const left = Math.max(0, Math.round((innerWidth - 1920 * z) / 2));
+  if (ZOOM) { st.style.zoom = z; st.style.transform = ""; st.style.left = left / z + "px"; }
+  else { st.style.transform = `scale(${z})`; st.style.left = left + "px"; }
   state.zoom = z;
 }
 
@@ -238,13 +244,17 @@ function buildEvents(mi) {
 
 // ---------- ranks ----------
 // Valve's packed badge: tens = tier (0 Obscurus .. 11 Eternus), ones = subrank 1-6.
-// Names and badges from the ranked overhaul (Citadel_ranks_N strings, ranked/badges/rankNN_sm art). The badge art has no subrank variants.
+// Names and badges from the ranked overhaul (Citadel_ranks_N strings, ranked/badges/rankNN_sm art).
+// That art has no subrank versions, so the subrank is drawn on the badge the way the game writes it:
+// Citadel_subranks_1..6 are I to VI, and the subrank explainer shows the sixth as a star.
 const RANK_NAMES = ["Obscurus", "Initiate", "Seeker", "Acolyte", "Sentinel", "Mystic", "Ritualist", "Emissary", "Oracle", "Phantom", "Ascendant", "Eternus"];
+const SUBRANKS = ["", "I", "II", "III", "IV", "V", "VI"];
 function rankOf(badge) {
   if (!badge) return null;
   const tier = Math.floor(badge / 10), sub = badge % 10;
   if (!RANK_NAMES[tier]) return null;
-  return { tier, sub, name: tier === 0 ? RANK_NAMES[0] : `${RANK_NAMES[tier]} ${sub}`, img: `assets/ranks/${tier}.png` };
+  return { tier, sub, name: tier === 0 || !SUBRANKS[sub] ? RANK_NAMES[tier] : `${RANK_NAMES[tier]} ${SUBRANKS[sub]}`, img: `assets/ranks/${tier}.png`,
+    mark: tier === 0 ? "" : sub === 6 ? "\u2605" : SUBRANKS[sub] || "" };
 }
 // Average as steps (tier * 6 + subrank), then back to a badge.
 function avgBadge(badges) {
@@ -256,7 +266,7 @@ function avgBadge(badges) {
 }
 function rankHtml(badge, cls) {
   const r = rankOf(badge);
-  return r ? `<span class="${cls || "rank"}"><img src="${r.img}" alt=""><span>${esc(r.name)}</span></span>` : "";
+  return r ? `<span class="${cls || "rank"}"><span class="rk"><img src="${r.img}" alt="">${r.mark ? `<b class="${r.sub === 6 ? "star" : ""}">${r.mark}</b>` : ""}</span><span>${esc(r.name)}</span></span>` : "";
 }
 
 // ---------- top bar ----------
@@ -308,23 +318,16 @@ function renderTop() {
 }
 
 // ---------- dropdown and options ----------
+// Like the game's own menu: flat rows, one line each, section names on a darker band. A graph's note shows on hover.
 function buildDropDown() {
-  const dd = $("graphDD"), menu = $("ddMenu");
+  const menu = $("ddMenu");
   menu.innerHTML = "";
-  // Jump buttons for each section, so the Player Comparison graphs aren't hidden below the fold.
-  const groups = [...new Set(GRAPHS.map(g => g.group))];
-  const jump = el("div", "jumps");
-  for (const gr of groups) {
-    const j = el("button", "jump", gr);
-    j.onclick = ev => { ev.stopPropagation(); const c = menu.querySelector(`.cat[data-g="${gr}"]`); if (c) menu.scrollTop = c.offsetTop - jump.offsetHeight; };
-    jump.append(j);
-  }
-  menu.append(jump);
   let group = null;
   for (const g of GRAPHS) {
-    if (g.group !== group) { group = g.group; const c = el("div", "cat", group); c.dataset.g = group; menu.append(c); }
-    const b = el("button", "item" + (g.id === state.graph ? " on" : ""));
-    b.innerHTML = esc(g.label) + (g.sub || (g.kind === "breakdown" && GROUP_SUB[g.group]) ? `<span class="sub">${esc(g.sub || GROUP_SUB[g.group])}</span>` : "");
+    if (g.group !== group) { group = g.group; menu.append(el("div", "cat", group)); }
+    const b = el("button", "item" + (g.id === state.graph ? " on" : ""), g.label);
+    const note = g.sub || (g.kind === "breakdown" && GROUP_SUB[g.group]);
+    if (note) b.title = note;
     b.onclick = ev => { ev.stopPropagation(); state.graph = g.id; closeMenu(); renderAll(); };
     menu.append(b);
   }
@@ -333,7 +336,15 @@ function buildDropDown() {
 function closeMenu() { $("ddMenu").hidden = true; $("graphDD").classList.remove("open"); }
 function wireDropDown() {
   const dd = $("graphDD");
-  dd.onclick = () => { const m = $("ddMenu"); m.hidden = !m.hidden; dd.classList.toggle("open", !m.hidden); if (!m.hidden) buildDropDown(); };
+  dd.onclick = () => {
+    const m = $("ddMenu");
+    m.hidden = !m.hidden;
+    dd.classList.toggle("open", !m.hidden);
+    if (m.hidden) return;
+    buildDropDown();
+    const on = m.querySelector(".item.on"); // open with the current graph in view
+    if (on && on.offsetTop + on.offsetHeight > m.clientHeight) m.scrollTop = on.offsetTop - m.clientHeight / 2;
+  };
   dd.onkeydown = ev => {
     if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
       ev.preventDefault();
@@ -374,6 +385,11 @@ function renderPicks() {
   };
   btn("pickLane", "Me + Lane", lane, "You and the enemies in your lane");
   btn("pickAll", "All", g.kind === "breakdown" ? null : all, "Every player");
+  // Player Comparison draws every line type per hero, so "All" (12 heroes) would be too many lines; one team is six.
+  const L = state.leftTeam, team = t => state.players.filter(p => p.team === t).map(p => p.slot);
+  const brk = g.kind === "breakdown";
+  btn("pickTeamL", state.me ? "My Team" : TEAMS[L].color, brk ? team(L) : null, `All six heroes on ${state.me ? "your team" : "the " + TEAMS[L].color + " team"}`);
+  btn("pickTeamR", state.me ? "Enemy Team" : TEAMS[1 - L].color, brk ? team(1 - L) : null, `All six heroes on ${state.me ? "the enemy team" : "the " + TEAMS[1 - L].color + " team"}`);
   btn("pickNone", "Clear", [], "Nobody, then click portraits to add them");
 }
 function renderOptions() {
@@ -390,8 +406,15 @@ function renderOptions() {
   if (!canDiff) state.diff = false;
   $("optDiff").hidden = !canDiff;
   seg("optDiff", state.diff ? "on" : "off", v => { state.diff = v === "on"; renderAll(); });
-  $("optObj").hidden = !state.events.length;
-  seg("optObj", objOn(g) ? "on" : "off", v => { state.objPref[g.id] = v === "on"; renderAll(); });
+  // Objectives and item buys are both markers on the time axis, so they share one row of on/off toggles.
+  const mo = $("markObj"), mi = $("markItems");
+  mo.hidden = !state.events.length;
+  mi.hidden = !itemsFit(g);
+  $("optMarks").hidden = mo.hidden && mi.hidden;
+  mo.classList.toggle("on", objOn(g)); mo.setAttribute("aria-pressed", String(objOn(g)));
+  mi.classList.toggle("on", itemsOn(g)); mi.setAttribute("aria-pressed", String(itemsOn(g)));
+  mo.onclick = () => { state.objPref[g.id] = !objOn(g); renderAll(); };
+  mi.onclick = () => { state.itemPref[g.id] = !itemsOn(g); renderAll(); };
   $("ddLabel").textContent = g.label;
 }
 
@@ -402,18 +425,20 @@ function seriesFor(g) {
     ? [...state.selBrk].map(s => state.players.find(p => p.slot === s)).filter(Boolean)
     : state.players.filter(p => selNow().has(p.slot));
   const mode = modeNow(g);
-  if (mode === "team" || mode === "lane") return groupLines(g, mode);
+  if (mode === "team" || mode === "lane") return groupLines(g, mode).filter(se => !state.hiddenGroups.has(se.label));
   const perMin = mode === "permin";
+  // Totals start at 0 at 0:00 and the Power graphs at each hero's spawn values. Rates and percentages have no 0:00 value,
+  // so those lines start at Valve's first snapshot (3:00) and the time axis starts there too.
   const build = (p, get) => {
     const pts = [];
-    if (!g.ratio && !g.level && mode !== "share") pts.push([0, 0]);
+    if (g.start) { const v0 = g.start(p); if (v0 != null) pts.push([0, v0]); }
+    else if (!g.ratio && mode !== "share" && !perMin) pts.push([0, 0]);
     for (const s of p.stats) {
       let v = get(s);
       if (v == null) continue;
       if (perMin) { if (s.time_stamp_s < 60) continue; v = v / (s.time_stamp_s / 60); }
       pts.push([s.time_stamp_s, v]);
     }
-    if (perMin && pts.length && pts[0][0] === 0) pts.shift();
     return pts;
   };
   const diffOk = state.diff && sel.length === 2;
@@ -421,6 +446,12 @@ function seriesFor(g) {
     const get = mode === "share" ? shareGet(g) : g.get;
     const lines = sel.map(p => ({ player: p, label: p.hero, color: colorOf(p), dash: "", pts: build(p, get) }));
     if (diffOk) return [diffLine(lines[0], lines[1], null)];
+    // Share of the whole lobby at a time, for the hover readout, like the game's own graph tooltip.
+    if (!g.ratio && !g.level && mode !== "share") {
+      const everyone = state.players.map(p => build(p, get));
+      const total = t => everyone.reduce((a, pts) => a + (valueAt(pts, t) || 0), 0);
+      for (const l of lines) l.total = total;
+    }
     return lines;
   }
   const cats = visibleCats(g);
@@ -432,7 +463,8 @@ function seriesFor(g) {
   const out = [];
   for (const p of sel) for (const i of cats) {
     const ser = g.series[i];
-    out.push({ player: p, label: p.hero, sub: ser.label, color: colorOf(p), dash: DASHES[i % DASHES.length], pts: build(p, ser.get) });
+    // With more than two heroes the colors alone don't say whose line it is, so the end label names the hero too.
+    out.push({ player: p, label: p.hero, sub: ser.label, endLab: sel.length > 2 ? `${p.hero}: ${ser.label}` : null, color: colorOf(p), dash: DASHES[i % DASHES.length], pts: build(p, ser.get) });
   }
   return out;
 }
@@ -527,6 +559,9 @@ function drawChart(series, g) {
   const buyers = itemBuyers(g);
   if (buyers) m.b += buyers.length * 32 + 8; // item rows sit between the lines and the time axis
   const dur = state.match.duration_s || Math.max(60, ...series.flatMap(s => s.pts.map(p => p[0])));
+  // The axis starts where the lines do: 0:00 for totals, Valve's first snapshot (3:00) for rates and percentages.
+  const firsts = series.filter(se => se.pts.length).map(se => se.pts[0][0]);
+  const t0 = firsts.length && Math.min(...firsts) > 0 && Math.min(...firsts) < dur ? Math.min(...firsts) : 0;
   const vals = series.flatMap(s => s.pts.map(p => p[1]));
   let ymin = 0, ymax = 1;
   if (vals.length) { ymax = Math.max(...vals); ymin = Math.min(0, ...vals); }
@@ -534,7 +569,7 @@ function drawChart(series, g) {
   if (ymax === ymin) ymax = ymin + 1;
   const ticks = niceTicks(ymin, ymax, 4);
   ymin = Math.min(ymin, ticks[0]); ymax = Math.max(ymax, ticks[ticks.length - 1]);
-  const X = t => m.l + (t / dur) * (W - m.l - m.r);
+  const X = t => m.l + ((Math.max(t, t0) - t0) / (dur - t0)) * (W - m.l - m.r);
   const Y = v => H - m.b - ((v - ymin) / (ymax - ymin)) * (H - m.t - m.b);
   let s = "";
   for (const v of ticks) {
@@ -543,8 +578,10 @@ function drawChart(series, g) {
     s += `<text class="ylab" x="${W - 4}" y="${Y(v) + 6}" text-anchor="end">${fmtNum(g.kind === "lead" ? Math.abs(v) : v, g)}</text>`;
   }
   const step = dur > 1500 ? 600 : 300;
-  for (let t = 0; t <= dur; t += step) {
-    s += `<text x="${X(t)}" y="${H - 12}" text-anchor="${t === 0 ? "start" : "middle"}">${fmtTime(t)}</text>`;
+  s += `<text x="${X(t0)}" y="${H - 12}" text-anchor="start">${fmtTime(t0)}</text>`;
+  for (let t = step; t <= dur; t += step) {
+    if (t - t0 < step * 0.45) continue; // keep clear of the start label
+    s += `<text x="${X(t)}" y="${H - 12}" text-anchor="middle">${fmtTime(t)}</text>`;
   }
   s += `<line x1="${m.l}" x2="${W - m.r + 8}" y1="${Y(ymin === 0 || ymin < 0 ? 0 : ymin)}" y2="${Y(ymin === 0 || ymin < 0 ? 0 : ymin)}" stroke="#ffffff" stroke-opacity="${ymin < 0 ? 0.35 : 0.12}"/>`;
   const evs = objOn(g) ? state.events : [];
@@ -602,7 +639,7 @@ function drawChart(series, g) {
     const r = ctn.getBoundingClientRect(), z = r.width / W;
     const px = (ev.clientX - r.left) / z, py = (ev.clientY - r.top) / z;
     if (px < m.l || px > W - m.r + 10) { tip.hidden = true; line.setAttribute("stroke-opacity", 0); return; }
-    const tRaw = ((px - m.l) / (W - m.l - m.r)) * dur;
+    const tRaw = t0 + ((px - m.l) / (W - m.l - m.r)) * (dur - t0);
     const near = evs.filter(e => Math.abs(e.t - tRaw) <= dur * 0.012);
     let html = "";
     if (times.length) {
@@ -611,11 +648,12 @@ function drawChart(series, g) {
       const rows = series.map(se => ({ se, v: valueAt(se.pts, t) })).filter(r => r.v != null);
       html += `<div class="t">${fmtTime(t)}</div>`;
       if (near.length) html += evHtml(near);
-      html += readoutHtml(rows, g);
+      html += readoutHtml(rows, g, t);
       if (buyers) html += boughtHtml(buyers, times[times.indexOf(t) - 1] ?? -1, t);
     } else if (near.length) html = evHtml(near);
     if (!html) { tip.hidden = true; return; }
     tip.innerHTML = html;
+    tip.classList.toggle("heroTip", html.includes('class="heroRows"'));
     tip.hidden = false;
     const tw = tip.offsetWidth, th = tip.offsetHeight;
     let left = px + 22; if (left + tw > W) left = px - tw - 22;
@@ -625,7 +663,7 @@ function drawChart(series, g) {
   ctn.onmouseleave = () => { if (state.pinned) return; tip.hidden = true; line.setAttribute("stroke-opacity", 0); };
 }
 // Every line at the hovered time. Player comparison graphs group lines under each player; long lists use two columns.
-function readoutHtml(rows, g) {
+function readoutHtml(rows, g, t) {
   if (g.kind === "breakdown" && rows.some(r => r.se.sub && !r.se.diff)) {
     const groups = [];
     for (const r of rows) {
@@ -640,8 +678,19 @@ function readoutHtml(rows, g) {
     }).join("") + `</div>`;
   }
   rows.sort((a, b) => b.v - a.v);
+  if (rows.length && rows.every(r => r.se.player && !r.se.diff && !r.se.sub)) return heroRowsHtml(rows, g, t);
   const two = rows.length > 8; // fill down the first column, then the second, so rank order reads top to bottom
   return `<div class="cols${two ? " two" : ""}"${two ? ` style="grid-auto-flow:column;grid-template-rows:repeat(${Math.ceil(rows.length / 2)},auto)"` : ""}>` + rows.map(({ se, v }) => rowHtml(se, v, g)).join("") + `</div>`;
+}
+// One hero per line, highest first, like the game's graph tooltip: the row is tinted in the hero's team color,
+// the stripe on the left is the hero's line color, and the right column is their share of the whole lobby.
+function heroRowsHtml(rows, g, t) {
+  return `<div class="heroRows">` + rows.map(({ se, v }) => {
+    const p = se.player, T = TEAMS[p.team], tot = se.total ? se.total(t) : 0;
+    return `<div class="hr" style="--tc:${T.c};--pc:${se.color}" title="${esc(heroName(p))}"><i class="sw"></i>` +
+      `<span class="pt xs" style="--coin:${T.coin};--tc:${T.c}"><img src="${p.img}" alt=""></span>` +
+      `<span class="v">${fmtNum(v, g)}</span>${tot ? `<span class="pc">${Math.round((100 * v) / tot)}%</span>` : ""}</div>`;
+  }).join("") + `</div>`;
 }
 function evHtml(list) {
   return `<div class="ev">${list.map(e => `<div><b style="background:${e.color}"></b>${esc(e.text)} <small style="opacity:.55">${fmtTime(e.t)}</small></div>`).join("")}</div>`;
@@ -687,9 +736,13 @@ function drawMarkers(evs, X, W) {
   }
 }
 
-// ---------- item purchases (Power graphs) ----------
+// ---------- item purchases ----------
 // players[].items holds every purchase with its time; item_id is a hash of the item's class name (gamedata.js ITEMS).
-// Shown for 1 to 3 heroes, one row each, so the icons stay readable.
+// Any graph that draws heroes can show them, for 1 to 3 picked heroes, one row each, so the icons stay readable.
+// On by default where buys explain the line: the Power graphs and the damage graphs.
+const ITEMS_DEFAULT = ["player_damage", "damage_taken", "dmg_breakdown"];
+const itemsFit = g => g.kind !== "lead" && !grouped(g);
+const itemsOn = g => itemsFit(g) && (state.itemPref[g.id] ?? (g.group === "Power" || ITEMS_DEFAULT.includes(g.id)));
 const ITEM_SLOTS = { w: { name: "Weapon", c: "#E89A3C" }, v: { name: "Vitality", c: "#7FC241" }, s: { name: "Spirit", c: "#B77CF0" } };
 function itemsOf(p) {
   const I = window.ITEMS || {};
@@ -699,8 +752,8 @@ function itemsOf(p) {
   }).sort((a, b) => a.t - b.t);
 }
 function itemBuyers(g) {
-  if (g.group !== "Power" || state.diff) return null;
-  const sel = state.players.filter(p => state.selGen.has(p.slot));
+  if (!itemsOn(g)) return null;
+  const sel = g.kind === "breakdown" ? [...state.selBrk].map(s => state.players.find(p => p.slot === s)).filter(Boolean) : state.players.filter(p => state.selGen.has(p.slot));
   return sel.length >= 1 && sel.length <= 3 ? sel : null;
 }
 function drawItems(buyers, X, top, right) {
@@ -711,10 +764,10 @@ function drawItems(buyers, X, top, right) {
     const y = top + r * 32;
     const row = el("div", "itemRow");
     row.style.top = y + "px";
-    row.innerHTML = `<span class="who" style="left:${right + 14}px;--pc:${p.color}">${portraitImg(p)}</span>`;
+    row.innerHTML = `<span class="who" style="left:${right + 14}px;--pc:${colorOf(p)}">${portraitImg(p)}</span>`;
     let lastX = -99;
     for (const it of itemsOf(p)) {
-      const x = Math.max(X(it.t), lastX + 25);
+      const x = Math.max(X(it.t), lastX + 25); // X clamps buys before the axis start to its left edge
       lastX = x;
       const i = el("i", "itemIcon" + (it.sold ? " sold" : ""));
       i.style.left = x + "px";
@@ -733,7 +786,7 @@ function boughtHtml(buyers, t0, t1) {
   if (!rows.length) return "";
   rows.sort((a, b) => a.it.t - b.it.t);
   return `<div class="bought"><div class="bh">Bought since ${fmtTime(Math.max(0, t0))}</div>` + rows.map(({ p, it }) =>
-    `<div class="row"><span class="sw" style="background:${p.color}"></span><i class="itemIcon sm" style="--sc:${ITEM_SLOTS[it.slot].c};background-image:url('assets/items/${it.icon}.webp')"></i><span class="n">${esc(it.name)}${buyers.length > 1 ? ` <small>${esc(p.hero)}</small>` : ""}</span><span class="v t">${fmtTime(it.t)}</span></div>`).join("") + `</div>`;
+    `<div class="row"><span class="sw" style="background:${colorOf(p)}"></span><i class="itemIcon sm" style="--sc:${ITEM_SLOTS[it.slot].c};background-image:url('assets/items/${it.icon}.webp')"></i><span class="n">${esc(it.name)}${buyers.length > 1 ? ` <small>${esc(p.hero)}</small>` : ""}</span><span class="v t">${fmtTime(it.t)}</span></div>`).join("") + `</div>`;
 }
 
 function renderLines(series, g) {
@@ -741,6 +794,8 @@ function renderLines(series, g) {
   box.innerHTML = "";
   const d = series.find(se => se.diff);
   $("lineHintStatic").hidden = g.kind !== "breakdown";
+  $("lineHintStatic").textContent = grouped(g) ? "Click to hide a line. Ctrl+Click to show only that one."
+    : "Click to hide a line type. Ctrl+Click to show only that one." + (itemsOn(g) && !itemBuyers(g) ? " Item buys show for 1 to 3 heroes." : "");
   if (g.kind === "lead") {
     row.hidden = false;
     box.append(el("span", "lineHint", `Above the line: ${TEAMS[state.leftTeam].color} ahead. Below: ${TEAMS[1 - state.leftTeam].color} ahead. Hero picks don't change this graph.`));
@@ -748,14 +803,27 @@ function renderLines(series, g) {
     return;
   }
   if (grouped(g)) {
+    // One button per team or lane line, like the line types on the Player Comparison graphs.
     row.hidden = false;
-    const L = TEAMS[state.leftTeam].color, R = TEAMS[1 - state.leftTeam].color;
-    box.append(el("span", "lineHint", modeNow(g) === "lane" ? `Solid lines: ${L}. Dashed: ${R}. Each line adds up the two heroes in that lane. Hero picks don't change this view.` : `Each line adds up all six heroes on that team. Hero picks don't change this view.`));
+    $("lineHintStatic").hidden = false;
+    const all = groupLines(g, modeNow(g)), h = state.hiddenGroups;
+    for (const se of all) {
+      const b = el("button", "graphOptionButton" + (h.has(se.label) ? " off" : ""));
+      b.innerHTML = `<svg viewBox="0 0 30 8"><line x1="0" x2="30" y1="4" y2="4" stroke="${se.color}" stroke-width="3" stroke-dasharray="${se.dash}"/></svg><span>${esc(se.label)}</span>`;
+      b.title = (se.group.sub ? se.group.ps.map(p => p.hero).join(" + ") + "\n" : "") + "Click to show or hide. Ctrl+Click to show only this line.";
+      b.onclick = ev => {
+        if (ev.ctrlKey || ev.metaKey) { h.clear(); all.forEach(x => { if (x.label !== se.label) h.add(x.label); }); }
+        else if (h.has(se.label)) h.delete(se.label); else h.add(se.label);
+        renderAll();
+      };
+      box.append(b);
+    }
+    if (all.some(se => h.has(se.label))) { const b = el("button", "graphOptionButton", "Show All"); b.onclick = () => { h.clear(); renderAll(); }; box.append(b); }
     document.body.classList.remove("noLines");
     return;
   }
   if (g.kind !== "breakdown") {
-    const itemHint = g.group === "Power" && !d && !itemBuyers(g);
+    const itemHint = itemsOn(g) && !itemBuyers(g);
     row.hidden = !d && !itemHint;
     if (d) box.append(el("span", "lineHint", `Above the line: ${d.player.hero} ahead. Below: ${d.other.hero} ahead.`));
     if (itemHint) box.append(el("span", "lineHint", "Pick 1 to 3 heroes to see when they bought each item."));

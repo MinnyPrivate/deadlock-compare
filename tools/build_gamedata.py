@@ -1,7 +1,7 @@
 """Build gamedata.js (item, accolade and damage source names) and assets/items/*.webp from Deadlock's own files.
 
 Input: a folder holding the files from raw/ranks_items_raw.zip on the assets-portraits-raw branch:
-  scripts/abilities.vdata_c, scripts/accolades.vdata_c,
+  scripts/abilities.vdata_c, scripts/accolades.vdata_c, scripts/heroes.vdata_c,
   resource/localization/citadel_gc_mod_names/citadel_gc_mod_names_english.txt,
   resource/localization/citadel_heroes/citadel_heroes_english.txt,
   resource/localization/citadel_vdata/accolades/accolades_english.txt,
@@ -86,6 +86,14 @@ def main(src):
         d = d.replace('{g:citadel_thousands:stat_value}', '{v}')
         accolades[v['m_unAccoladeID']] = [fn, plural(d, 'one'), plural(d, 'other')]
 
+    # Base max health per hero_id (heroes.vdata m_mapStartingStats), so the Power graphs can start at 0:00.
+    hero_v, chk = read(os.path.join(src, 'scripts', 'heroes.vdata_c'))
+    base_hp = hero_v['hero_base']['m_mapStartingStats']['EMaxHealth']
+    hp = {}
+    for k, v in hero_v.items():
+        if isinstance(v, dict) and k.startswith('hero_') and v.get('m_HeroID'):
+            hp[v['m_HeroID']] = round((v.get('m_mapStartingStats') or {}).get('EMaxHealth', base_hp))
+
     out = os.path.join(root, 'assets', 'items')
     os.makedirs(out, exist_ok=True)
     for base, p in icons.items():
@@ -97,7 +105,9 @@ def main(src):
           '// ACCOLADES: accolade_id -> [name, text for 1, text for many] ({v} is the value)\n'
           'window.ACCOLADES = ' + json.dumps({str(k): v for k, v in sorted(accolades.items())}, separators=(',', ':')) + ';\n'
           '// SOURCE_NAMES: damage_matrix source_name -> in-game name\n'
-          'window.SOURCE_NAMES = ' + json.dumps(dict(sorted(srcs.items())), separators=(',', ':')) + ';\n')
+          'window.SOURCE_NAMES = ' + json.dumps(dict(sorted(srcs.items())), separators=(',', ':')) + ';\n'
+          '// HERO_HP: hero_id -> base max health at level 1\n'
+          'window.HERO_HP = ' + json.dumps({str(k): v for k, v in sorted(hp.items())}, separators=(',', ':')) + ';\n')
     open(os.path.join(root, 'gamedata.js'), 'w').write(js)
     print(len(items), 'items,', len(icons), 'icons,', len(accolades), 'accolades,', len(srcs), 'source names')
 

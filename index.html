@@ -44,6 +44,8 @@
           <span class="optionLabel">Show:</span>
           <button class="graphOptionButton" id="pickLane"></button>
           <button class="graphOptionButton" id="pickAll"></button>
+          <button class="graphOptionButton" id="pickTeamL"></button>
+          <button class="graphOptionButton" id="pickTeamR"></button>
           <button class="graphOptionButton" id="pickNone"></button>
         </div>
         <div class="graphOption" id="optMode">
@@ -59,10 +61,10 @@
           <button class="graphOptionButton" data-v="off">Both</button>
           <button class="graphOptionButton" data-v="on">Difference</button>
         </div>
-        <div class="graphOption" id="optObj">
-          <span class="optionLabel">Objectives:</span>
-          <button class="graphOptionButton" data-v="on">Show</button>
-          <button class="graphOptionButton" data-v="off">Hide</button>
+        <div class="graphOption" id="optMarks">
+          <span class="optionLabel">Markers:</span>
+          <button class="graphOptionButton toggle" id="markObj" title="Guardians, Walkers, Shrines, Patron and Mid Boss. Click to show or hide.">Objectives</button>
+          <button class="graphOptionButton toggle" id="markItems" title="When each picked hero bought each item (1 to 3 heroes). Click to show or hide.">Items</button>
         </div>
       </div>
     </div>
