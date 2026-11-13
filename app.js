@@ -92,8 +92,9 @@ const selNow = () => (graphNow().kind === "breakdown" ? state.selBrk : state.sel
 const setSel = s => { if (graphNow().kind === "breakdown") state.selBrk = s; else state.selGen = s; };
 function colorOf(p) {
   if (graphNow().kind !== "breakdown") return p.color;
+  if (state.selBrk.size > PAIR_COLORS.length) return p.color; // more heroes than pair colors: everyone keeps their own
   const i = [...state.selBrk].indexOf(p.slot);
-  return i >= 0 && i < PAIR_COLORS.length ? PAIR_COLORS[i] : p.color;
+  return i >= 0 ? PAIR_COLORS[i] : p.color;
 }
 // Player comparison graphs open with at most 3 line types (g.defaultOn); the rest are one click away.
 function hiddenFor(g) {
@@ -125,7 +126,15 @@ function fit() {
   const left = Math.max(0, Math.round((innerWidth - 1920 * z) / 2));
   if (ZOOM) { st.style.zoom = z; st.style.transform = ""; st.style.left = left / z + "px"; }
   else { st.style.transform = `scale(${z})`; st.style.left = left + "px"; }
-  state.zoom = z;
+  state.zoom = z; state.stageLeft = left;
+}
+// The mouse in an element's own 1080p layout units. Built only from the mouse's place on screen, the scale set in fit()
+// and layout offsets, because browsers disagree on whether getBoundingClientRect includes CSS zoom
+// (the game's built-in browser doesn't, which put the hover readout in the wrong place).
+function mouseIn(el, ev) {
+  let x = 0, y = 0;
+  for (let e = el; e && e.id !== "stage"; e = e.offsetParent) { x += e.offsetLeft; y += e.offsetTop; }
+  return { x: (ev.clientX - state.stageLeft) / state.zoom - x, y: ev.clientY / state.zoom - y };
 }
 
 // ---------- loading ----------
@@ -245,8 +254,8 @@ function buildEvents(mi) {
 // ---------- ranks ----------
 // Valve's packed badge: tens = tier (0 Obscurus .. 11 Eternus), ones = subrank 1-6.
 // Names and badges from the ranked overhaul (Citadel_ranks_N strings, ranked/badges/rankNN_sm art).
-// That art has no subrank versions, so the subrank is drawn on the badge the way the game writes it:
-// Citadel_subranks_1..6 are I to VI, and the subrank explainer shows the sixth as a star.
+// That art has no subrank versions, so the subrank is drawn inside the badge the way the game shows it: I to VI
+// (Citadel_subranks_1..6), white on the badge itself. Averages (team, lobby) show the badge without it.
 const RANK_NAMES = ["Obscurus", "Initiate", "Seeker", "Acolyte", "Sentinel", "Mystic", "Ritualist", "Emissary", "Oracle", "Phantom", "Ascendant", "Eternus"];
 const SUBRANKS = ["", "I", "II", "III", "IV", "V", "VI"];
 function rankOf(badge) {
@@ -254,7 +263,7 @@ function rankOf(badge) {
   const tier = Math.floor(badge / 10), sub = badge % 10;
   if (!RANK_NAMES[tier]) return null;
   return { tier, sub, name: tier === 0 || !SUBRANKS[sub] ? RANK_NAMES[tier] : `${RANK_NAMES[tier]} ${SUBRANKS[sub]}`, img: `assets/ranks/${tier}.png`,
-    mark: tier === 0 ? "" : sub === 6 ? "\u2605" : SUBRANKS[sub] || "" };
+    mark: tier === 0 ? "" : SUBRANKS[sub] || "" };
 }
 // Average as steps (tier * 6 + subrank), then back to a badge.
 function avgBadge(badges) {
@@ -264,9 +273,9 @@ function avgBadge(badges) {
   const r = Math.round(steps);
   return Math.floor(r / 6) * 10 + (r % 6) + 1;
 }
-function rankHtml(badge, cls) {
+function rankHtml(badge, cls, plain) {
   const r = rankOf(badge);
-  return r ? `<span class="${cls || "rank"}"><span class="rk"><img src="${r.img}" alt="">${r.mark ? `<b class="${r.sub === 6 ? "star" : ""}">${r.mark}</b>` : ""}</span><span>${esc(r.name)}</span></span>` : "";
+  return r ? `<span class="${cls || "rank"}"><span class="rk"><img src="${r.img}" alt="">${r.mark && !plain ? `<b>${r.mark}</b>` : ""}</span><span>${esc(r.name)}</span></span>` : "";
 }
 
 // ---------- top bar ----------
@@ -309,7 +318,7 @@ function renderTop() {
     sc.innerHTML = `<span>${fmtSouls(total)}</span><span class="icon" style="background-image:url(${T.icon})"></span>`;
     const tb = (team === 0 ? state.match.average_badge_team0 : state.match.average_badge_team1) || avgBadge(ps.map(p => p.badge));
     const ta = $("avg" + side);
-    ta.innerHTML = tb ? `<span class="lbl">Avg</span>${rankHtml(tb)}` : "";
+    ta.innerHTML = tb ? `<span class="lbl">Avg</span>${rankHtml(tb, "", true)}` : "";
     sc.title = `${T.name} (${T.color})\nClick to show only this team. Click again to show everyone.`;
     const onlyThis = ps.length && ps.every(p => sel.has(p.slot)) && [...sel].every(s => ps.some(p => p.slot === s));
     sc.classList.toggle("dim", sel.size > 0 && !ps.some(p => sel.has(p.slot)));
@@ -384,8 +393,7 @@ function renderPicks() {
     b.onclick = () => { setSel(new Set(arr)); renderAll(); };
   };
   btn("pickLane", "Me + Lane", lane, "You and the enemies in your lane");
-  btn("pickAll", "All", g.kind === "breakdown" ? null : all, "Every player");
-  // Player Comparison draws every line type per hero, so "All" (12 heroes) would be too many lines; one team is six.
+  btn("pickAll", "All", all, g.kind === "breakdown" ? "All twelve heroes. That's a lot of lines: hide line types below to thin it out." : "Every player");
   const L = state.leftTeam, team = t => state.players.filter(p => p.team === t).map(p => p.slot);
   const brk = g.kind === "breakdown";
   btn("pickTeamL", state.me ? "My Team" : TEAMS[L].color, brk ? team(L) : null, `All six heroes on ${state.me ? "your team" : "the " + TEAMS[L].color + " team"}`);
@@ -427,18 +435,20 @@ function seriesFor(g) {
   const mode = modeNow(g);
   if (mode === "team" || mode === "lane") return groupLines(g, mode).filter(se => !state.hiddenGroups.has(se.label));
   const perMin = mode === "permin";
-  // Totals start at 0 at 0:00 and the Power graphs at each hero's spawn values. Rates and percentages have no 0:00 value,
-  // so those lines start at Valve's first snapshot (3:00) and the time axis starts there too.
+  // Totals start at 0 at 0:00 and the Power graphs at each hero's spawn values. Rates and percentages have no value until
+  // Valve's first snapshot (3:00), so their lines start at 0 and the first stretch is dotted (pts.real = index of the first real point).
+  const lead = !g.start && (g.ratio || mode === "share" || perMin);
   const build = (p, get) => {
     const pts = [];
     if (g.start) { const v0 = g.start(p); if (v0 != null) pts.push([0, v0]); }
-    else if (!g.ratio && mode !== "share" && !perMin) pts.push([0, 0]);
+    else pts.push([0, 0]);
     for (const s of p.stats) {
       let v = get(s);
       if (v == null) continue;
       if (perMin) { if (s.time_stamp_s < 60) continue; v = v / (s.time_stamp_s / 60); }
       pts.push([s.time_stamp_s, v]);
     }
+    if (lead && pts.length > 1) pts.real = 1;
     return pts;
   };
   const diffOk = state.diff && sel.length === 2;
@@ -449,7 +459,7 @@ function seriesFor(g) {
     // Share of the whole lobby at a time, for the hover readout, like the game's own graph tooltip.
     if (!g.ratio && !g.level && mode !== "share") {
       const everyone = state.players.map(p => build(p, get));
-      const total = t => everyone.reduce((a, pts) => a + (valueAt(pts, t) || 0), 0);
+      const total = t => everyone.reduce((a, pts) => a + (lerpAt(pts, t) || 0), 0);
       for (const l of lines) l.total = total;
     }
     return lines;
@@ -521,8 +531,18 @@ function leadLine() {
   return { lead: true, label: "Team Souls Lead", color: "#FFEFD7", dash: "", pts };
 }
 function diffLine(a, b, cat) {
-  return { player: a.player, other: b.player, label: `${a.label} vs ${b.label}`, sub: cat, color: a.color, dash: "", diff: true,
-    pts: a.pts.map(([t, v]) => [t, v - (valueAt(b.pts, t) ?? 0)]) };
+  const pts = a.pts.map(([t, v]) => [t, v - (valueAt(b.pts, t) ?? 0)]);
+  if (a.pts.real) pts.real = a.pts.real;
+  return { player: a.player, other: b.player, label: `${a.label} vs ${b.label}`, sub: cat, color: a.color, dash: "", diff: true, pts };
+}
+// A line's value at any time, read off the straight segments between its points (null outside them).
+function lerpAt(pts, t) {
+  if (!pts.length || t < pts[0][0] || t > pts[pts.length - 1][0]) return null;
+  for (let i = 1; i < pts.length; i++) {
+    const [t1, v1] = pts[i - 1], [t2, v2] = pts[i];
+    if (t <= t2) return t2 === t1 ? v2 : v1 + ((v2 - v1) * (t - t1)) / (t2 - t1);
+  }
+  return pts[pts.length - 1][1];
 }
 function valueAt(pts, t) {
   let best = null, bd = Infinity;
@@ -538,7 +558,7 @@ function renderAll() {
   document.body.classList.toggle("tabMu", state.tab === "matchups");
   document.body.classList.toggle("tabPick", state.tab !== "graphs");
   const lb = avgBadge(state.players.map(p => p.badge));
-  $("lobbyRank").innerHTML = lb ? `<span class="lbl">Lobby</span>${rankHtml(lb)}` : "";
+  $("lobbyRank").innerHTML = lb ? `<span class="lbl">Lobby</span>${rankHtml(lb, "", true)}` : "";
   renderTop();
   if (state.tab === "mvp") { window.renderMvp(); return; }
   if (state.tab === "matchups") { window.renderMatchups(); return; }
@@ -559,9 +579,7 @@ function drawChart(series, g) {
   const buyers = itemBuyers(g);
   if (buyers) m.b += buyers.length * 32 + 8; // item rows sit between the lines and the time axis
   const dur = state.match.duration_s || Math.max(60, ...series.flatMap(s => s.pts.map(p => p[0])));
-  // The axis starts where the lines do: 0:00 for totals, Valve's first snapshot (3:00) for rates and percentages.
-  const firsts = series.filter(se => se.pts.length).map(se => se.pts[0][0]);
-  const t0 = firsts.length && Math.min(...firsts) > 0 && Math.min(...firsts) < dur ? Math.min(...firsts) : 0;
+  const t0 = 0;
   const vals = series.flatMap(s => s.pts.map(p => p[1]));
   let ymin = 0, ymax = 1;
   if (vals.length) { ymax = Math.max(...vals); ymin = Math.min(0, ...vals); }
@@ -597,9 +615,13 @@ function drawChart(series, g) {
     s += `<text x="${m.l + 10}" y="${H - m.b - 12}" style="fill:${cR};font-weight:600">${TEAMS[1 - state.leftTeam].color} ahead</text>`;
   }
   s += `<g class="lineSet">`;
+  const path = pts => pts.map(([t, v], i) => `${i ? "L" : "M"}${X(t).toFixed(1)} ${Y(v).toFixed(1)}`).join("");
   for (const se of series) {
     if (!se.pts.length) continue;
-    const d = se.pts.map(([t, v], i) => `${i ? "L" : "M"}${X(t).toFixed(1)} ${Y(v).toFixed(1)}`).join("");
+    const k = se.pts.real || 0;
+    // Before Valve's first snapshot a rate has no value: that stretch is a faint dotted line from 0.
+    if (k) s += `<path d="${path(se.pts.slice(0, k + 1))}" fill="none" stroke="${se.color}" stroke-opacity="0.45" stroke-width="2" stroke-linecap="round" stroke-dasharray="1 6"/>`;
+    const d = path(se.pts.slice(k));
     s += `<path d="${d}" fill="none" stroke="#000" stroke-opacity="0.3" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="${se.dash}"/>`;
     s += `<path d="${d}" fill="none" stroke="${se.color}" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="${se.dash}"/>`;
   }
@@ -636,24 +658,25 @@ function drawChart(series, g) {
   };
   ctn.onmousemove = ev => {
     if (state.pinned) return;
-    const r = ctn.getBoundingClientRect(), z = r.width / W;
-    const px = (ev.clientX - r.left) / z, py = (ev.clientY - r.top) / z;
+    const { x: px, y: py } = mouseIn(ctn, ev);
     if (px < m.l || px > W - m.r + 10) { tip.hidden = true; line.setAttribute("stroke-opacity", 0); return; }
-    const tRaw = t0 + ((px - m.l) / (W - m.l - m.r)) * (dur - t0);
-    const near = evs.filter(e => Math.abs(e.t - tRaw) <= dur * 0.012);
+    const end = times.length ? times[times.length - 1] : dur;
+    // The readout follows the mouse to the second, like the game's: values between Valve's snapshots are read off the drawn line.
+    const t = Math.round(Math.max(0, Math.min(end, ((px - m.l) / (W - m.l - m.r)) * dur)));
+    const near = evs.filter(e => Math.abs(e.t - t) <= dur * 0.012);
     let html = "";
     if (times.length) {
-      const t = times.reduce((a, b) => (Math.abs(b - tRaw) < Math.abs(a - tRaw) ? b : a));
       line.setAttribute("x1", X(t)); line.setAttribute("x2", X(t)); line.setAttribute("stroke-opacity", 0.35);
-      const rows = series.map(se => ({ se, v: valueAt(se.pts, t) })).filter(r => r.v != null);
       html += `<div class="t">${fmtTime(t)}</div>`;
       if (near.length) html += evHtml(near);
-      html += readoutHtml(rows, g, t);
-      if (buyers) html += boughtHtml(buyers, times[times.indexOf(t) - 1] ?? -1, t);
+      const first = Math.min(...series.filter(se => se.pts.length).map(se => se.pts[se.pts.real || 0][0]));
+      if (t < first) html += `<div class="noData">No data until ${fmtTime(first)}, Valve's first snapshot.</div>`;
+      else html += readoutHtml(series.map(se => ({ se, v: lerpAt(se.pts, t) })).filter(r => r.v != null), g, t);
+      if (buyers) { const prev = times.filter(x => x < t).pop(); html += boughtHtml(buyers, prev ?? -1, t); }
     } else if (near.length) html = evHtml(near);
     if (!html) { tip.hidden = true; return; }
     tip.innerHTML = html;
-    tip.classList.toggle("heroTip", html.includes('class="heroRows"'));
+    tip.classList.toggle("heroTip", html.includes('class="heroRows'));
     tip.hidden = false;
     const tw = tip.offsetWidth, th = tip.offsetHeight;
     let left = px + 22; if (left + tw > W) left = px - tw - 22;
@@ -671,10 +694,14 @@ function readoutHtml(rows, g, t) {
       if (!gr) groups.push(gr = { p: r.se.player, color: r.se.color, rows: [] });
       gr.rows.push(r);
     }
-    return `<div class="cols${groups.length > 1 ? " two" : ""}">` + groups.map(gr => {
+    // Official-style hero row (team tint, line color stripe, portrait, name), then one thin row per line type.
+    // Heroes are sorted by their biggest value; more than four heroes use two columns.
+    for (const gr of groups) gr.max = Math.max(...gr.rows.map(r => r.v));
+    groups.sort((a, b) => b.max - a.max);
+    return `<div class="heroRows brk${groups.length > 4 ? " two" : ""}"${groups.length > 4 ? ` style="grid-template-rows:repeat(${Math.ceil(groups.length / 2)},auto)"` : ""}>` + groups.map(gr => {
       const T = TEAMS[gr.p.team];
-      return `<div class="grp"><div class="row gh"><img src="${gr.p.img}" style="--coin:${T.coin}"><span class="sw" style="background:${gr.color}"></span><span class="n">${esc(heroName(gr.p))}</span></div>` +
-        gr.rows.sort((a, b) => b.v - a.v).map(({ se, v }) => `<div class="row sub"><svg viewBox="0 0 22 6"><line x1="0" x2="22" y1="3" y2="3" stroke="${se.color}" stroke-width="2.5" stroke-dasharray="${se.dash}"/></svg><span class="n">${esc(se.sub)}</span><span class="v">${fmtNum(v, g)}</span></div>`).join("") + `</div>`;
+      return `<div class="grp"><div class="hr" style="--tc:${T.c};--pc:${gr.color}"><i class="sw"></i><span class="face"><img src="${gr.p.img}" alt=""></span><span class="v hn">${esc(heroName(gr.p))}</span></div>` +
+        gr.rows.sort((a, b) => b.v - a.v).map(({ se, v }) => `<div class="sr"><svg viewBox="0 0 22 6"><line x1="0" x2="22" y1="3" y2="3" stroke="${se.color}" stroke-width="2.5" stroke-dasharray="${se.dash}"/></svg><span class="n">${esc(se.sub)}</span><span class="v">${fmtNum(v, g)}</span></div>`).join("") + `</div>`;
     }).join("") + `</div>`;
   }
   rows.sort((a, b) => b.v - a.v);

@@ -218,12 +218,10 @@ body.standalone .matchForm { display: flex; }
 .rank .rk { --b: 34px; position: relative; display: inline-block; flex: none; width: var(--b); height: var(--b); }
 .rank .rk img { display: block; width: 100%; height: 100%; }
 .rank .rk b {
-  position: absolute; left: 50%; bottom: calc(var(--b) * -0.14); transform: translateX(-50%);
-  min-width: max(15px, calc(var(--b) * 0.46)); padding: 0 3px; border-radius: 3px; text-align: center;
-  font-family: var(--oracle); font-weight: 700; font-size: max(11px, calc(var(--b) * 0.36)); line-height: max(14px, calc(var(--b) * 0.46));
-  color: #FFF3DD; background: #14120EE6; box-shadow: 0 0 0 1px rgba(255,239,215,0.45);
+  position: absolute; left: 0; right: 0; bottom: 14%; text-align: center; pointer-events: none;
+  font-family: var(--oracle); font-weight: 700; font-size: max(10px, calc(var(--b) * 0.34)); line-height: 1; letter-spacing: 0.5px;
+  color: #fff; text-shadow: 0 0 2px #000, 0 1px 2px #000, 0 0 4px #000a;
 }
-.rank .rk b.star { font-family: var(--sans); font-size: max(10px, calc(var(--b) * 0.3)); color: #FFE7A6; }
 .rank.none { opacity: 0.4; font-size: 14px; }
 .teamAvg { position: absolute; left: 0; top: 92px; width: 145px; display: flex; align-items: center; justify-content: flex-end; gap: 4px; padding-right: 8px; }
 .teamAvg.right { left: auto; right: 0; justify-content: flex-start; padding: 0 0 0 8px; }
@@ -265,7 +263,7 @@ body:not(.tabMu) #muView { display: none; }
 .mvpRow .who { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; }
 .mvpRow .hn { font-family: var(--oracle); font-weight: 700; font-size: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mvpRow .rank { font-size: 13px; opacity: 0.85; }
-.mvpRow .rank .rk { --b: 32px; }
+.mvpRow .rank .rk { --b: 40px; }
 .catBar { height: 14px; display: flex; background: rgba(255,239,215,0.06); border-radius: 2px; overflow: hidden; }
 .catBar i { display: block; height: 100%; }
 .catBar i + i { box-shadow: inset 1px 0 0 #0006; }
@@ -462,6 +460,21 @@ button.muRow:hover { background: rgba(255,239,215,0.06); }
 .heroRows .hr .sw { width: 4px; align-self: stretch; flex: none; background: var(--pc); }
 /* The painted card art, cropped to head and shoulders, filling the row height like the game's portraits. */
 .heroRows .hr .face { position: relative; width: 44px; align-self: stretch; flex: none; overflow: hidden; margin-left: -12px; }
-.heroRows .hr .face img { position: absolute; left: 0; top: -3px; width: 44px; height: 60px; }
+.heroRows .hr .face img { position: absolute; left: 1px; top: 1px; width: 42px; height: 57px; } /* whole head inside the row */
 .heroRows .hr .v { flex: 1; font-family: var(--sans); font-weight: 600; font-size: 20px; color: #FFF3DD; }
 .heroRows .hr .pc { font-size: 15px; font-weight: 600; color: rgba(255,239,215,0.62); }
+.muSide .nm { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.1; }
+.muSide.r .nm { align-items: flex-end; }
+.muSide .cap { font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.55; }
+.h2hRow.th { height: 24px; border-top: 0; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.55; }
+.h2hRow.th .l { text-align: right; }
+.tooltip .noData { font-size: 14px; opacity: 0.7; padding: 4px 8px 10px; }
+/* Player Comparison readout: hero row like the main readout, line types under it. */
+.tooltip.heroTip:has(.brk) { width: auto; min-width: 280px; }
+.heroRows.brk { gap: 8px; }
+.heroRows.brk.two { display: grid; grid-auto-flow: column; grid-template-columns: repeat(2, 270px); column-gap: 8px; row-gap: 8px; }
+.heroRows.brk .hr .hn { font-family: var(--oracle); font-size: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.heroRows .sr { display: flex; align-items: center; gap: 8px; height: 26px; padding: 0 10px 0 14px; background: #ffffff0d; border-top: 1px solid #000; font-size: 14px; }
+.heroRows .sr svg { width: 22px; height: 6px; flex: none; }
+.heroRows .sr .n { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0.85; }
+.heroRows .sr .v { font-family: var(--oracle); font-weight: 700; font-size: 16px; }
