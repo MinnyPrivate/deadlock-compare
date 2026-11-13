@@ -1,13 +1,24 @@
 "use strict";
 // DLCOMPARE: adds a Compare screen to Deadlock's post-match / match details page.
-// The footer gets a Compare icon next to the native screen icons. Clicking it shows the Compare page
+// The footer gets a Compare icon after the native screen icons. Clicking it shows the Compare page
 // (a CitadelHTMLPanel) above the footer. Clicking it again, any native screen icon, or ESC hides it.
+//
+// v4:
+// - The page loads in the background as soon as the match ID is known, and the browser panel stays invisible
+//   until the page says it has drawn ("DLC_READY" title), so opening Compare never shows the gray browser fill.
+//   Closing keeps the page loaded, so reopening is instant.
+// - While Compare is open it acts as the active screen: the native screen behind it is hidden, the native icon
+//   looks unselected, and the arrows count from Compare (it sits after the last native screen).
 (function () {
     var PAGE = "https://deadlock-compare.minnymods.workers.dev/";
+    var READY_FALLBACK_S = 3.0; // show the page anyway if it never says it's ready
     var wired = false;
     var tries = 0;
     var isOpen = false;
     var openedOn = null;
+    var loadedFor = null;   // match ID the browser holds
+    var hashNow = "";       // viewer hints last passed in the hash
+    var ready = false;
 
     function root() { return $.GetContextPanel(); }
     function find(id) {
@@ -62,33 +73,105 @@
         }
         return null;
     }
+    function hintHash() {
+        var h = [];
+        var ft = friendlyTeam();
+        if (ft !== null) h.push("friendly=" + ft);
+        var me = localHero();
+        if (me && me.id) h.push("me_hero=" + me.id);
+        else if (me && me.name) h.push("me_name=" + encodeURIComponent(me.name));
+        return h.join("&");
+    }
 
-    function selectedNavIndex() {
+    // ---------- native screens ----------
+    function navKids() {
         var items = find("CarouselNavItems");
-        if (!items || !items.Children) return -1;
-        var kids = items.Children();
+        return items && items.Children ? items.Children() : [];
+    }
+    function selectedNavIndex() {
+        var kids = navKids();
         for (var i = 0; i < kids.length; i++) {
             try { if (kids[i].IsSelected && kids[i].IsSelected()) return i; } catch (e) {}
             if (kids[i].BHasClass("selected") || kids[i].BHasClass("Selected")) return i;
         }
         return -1;
     }
+    // Move the native carousel by one screen, the same thing the native arrows do.
+    // If the game ignores the event, click the neighbouring footer icon instead.
+    function nativeStep(dir) {
+        var from = selectedNavIndex();
+        try { $.DispatchEvent("CitadelPostGameIncrementScreen", dir); } catch (e) { $.Msg("[DLCompare] increment failed: " + e); }
+        $.Schedule(0.05, function () {
+            var kids = navKids();
+            if (from === -1 || !kids.length || selectedNavIndex() !== from) return;
+            var to = (from + dir + kids.length) % kids.length;
+            $.Msg("[DLCompare] increment ignored, clicking icon " + to);
+            try { $.DispatchEvent("Activated", kids[to], "mouse"); } catch (e) {}
+        });
+    }
+    // Select native screen i. Clicking its footer icon is the most direct way; stepping is the backup.
+    function nativeGoTo(i) {
+        var kids = navKids();
+        if (i < 0 || i >= kids.length) return;
+        var from = selectedNavIndex();
+        if (from === i) return;
+        try { $.DispatchEvent("Activated", kids[i], "mouse"); } catch (e) {}
+        $.Schedule(0.05, function () {
+            var now = selectedNavIndex();
+            if (now === i || now === -1) return;
+            var d = i - now;
+            for (var s = 0; s < Math.abs(d); s++) nativeStep(d > 0 ? 1 : -1);
+        });
+    }
+
+    // ---------- the browser panel ----------
+    function setInteractive(on) {
+        var overlay = find("DLCompareOverlay");
+        var web = find("DLCompareWeb");
+        try { if (overlay) overlay.hittest = on; } catch (e) {}
+        try { if (web) { web.hittest = on; web.acceptsfocus = on; } } catch (e) {}
+    }
+    function markReady() {
+        if (ready) return;
+        ready = true;
+        root().AddClass("DLCompareReady");
+    }
+    function load(id, hash) {
+        var web = find("DLCompareWeb");
+        if (!web) return;
+        var url = PAGE + "?embed=1" + (id ? "&match=" + id : "") + (hash ? "#" + hash : "");
+        ready = false;
+        root().RemoveClass("DLCompareReady");
+        loadedFor = id;
+        hashNow = hash;
+        $.Msg("[DLCompare] load " + url);
+        try { web.SetURL(url); } catch (e) { $.Msg("[DLCompare] SetURL failed: " + e); }
+        $.Schedule(READY_FALLBACK_S, function () { if (loadedFor === id) markReady(); });
+    }
+    // Load the page in the background as soon as the match ID shows up.
+    var preloadTries = 0;
+    function preload() {
+        if (loadedFor) return;
+        var id = matchId();
+        if (id) { load(id, hintHash()); return; }
+        if (++preloadTries < 120) $.Schedule(0.25, preload);
+    }
 
     function open() {
         var web = find("DLCompareWeb");
         if (!web) return;
         var id = matchId();
-        var url = PAGE + "?embed=1" + (id ? "&match=" + id : "");
-        var ft = friendlyTeam();
-        if (ft !== null) url += "&friendly=" + ft;
-        var me = localHero();
-        if (me && me.id) url += "&me_hero=" + me.id;
-        else if (me && me.name) url += "&me_name=" + encodeURIComponent(me.name);
-        $.Msg("[DLCompare] open " + url);
-        root().AddClass("DLCompareOpen");
-        isOpen = true;
+        var hash = hintHash();
+        if (!loadedFor || loadedFor !== id) load(id, hash);
+        else if (hash !== hashNow) {
+            // Same page, new hints: only the hash changes, so the page doesn't reload.
+            hashNow = hash;
+            try { web.SetURL(PAGE + "?embed=1&match=" + id + "#" + hash); } catch (e) {}
+        }
         openedOn = selectedNavIndex();
-        try { web.SetURL(url); } catch (e) { $.Msg("[DLCompare] SetURL failed: " + e); }
+        isOpen = true;
+        root().AddClass("DLCompareOpen");
+        setInteractive(true);
         try { web.SetFocus(); } catch (e) {}
         $.Schedule(0.25, watch);
     }
@@ -97,8 +180,7 @@
         if (!isOpen) return;
         isOpen = false;
         root().RemoveClass("DLCompareOpen");
-        var web = find("DLCompareWeb");
-        try { if (web) web.SetURL("about:blank"); } catch (e) {}
+        setInteractive(false);
     }
 
     function toggle() { if (isOpen) close(); else open(); }
@@ -111,24 +193,36 @@
         $.Schedule(0.25, watch);
     }
 
-    function hookNative() {
-        var ids = ["CarouselNavLeftArrow", "CarouselNavRightArrow"];
-        for (var i = 0; i < ids.length; i++) {
-            var b = find(ids[i]);
-            if (b) { try { $.RegisterEventHandler("Activated", b, close); } catch (e) {} }
+    // Arrows: Compare is the screen after the last native one.
+    // From Compare, left goes to the last native screen and right goes to the first.
+    // From the last native screen, right opens Compare. Everything else is the native step.
+    function arrow(dir) {
+        var n = navKids().length;
+        if (isOpen) {
+            close();
+            nativeGoTo(dir < 0 ? n - 1 : 0);
+            return;
         }
-        var items = find("CarouselNavItems");
-        if (items && items.Children) {
-            var kids = items.Children();
-            for (var k = 0; k < kids.length; k++) {
-                if (kids[k].dlcHooked) continue;
-                try { $.RegisterEventHandler("Activated", kids[k], close); kids[k].dlcHooked = true; } catch (e) {}
-            }
+        if (dir > 0 && n > 0 && selectedNavIndex() === n - 1) { open(); return; }
+        nativeStep(dir);
+    }
+
+    function hookNative() {
+        var left = find("CarouselNavLeftArrow");
+        var right = find("CarouselNavRightArrow");
+        if (left && !left.dlcHooked) { left.SetPanelEvent("onactivate", function () { arrow(-1); }); left.dlcHooked = true; }
+        if (right && !right.dlcHooked) { right.SetPanelEvent("onactivate", function () { arrow(1); }); right.dlcHooked = true; }
+        var kids = navKids();
+        for (var k = 0; k < kids.length; k++) {
+            if (kids[k].dlcHooked) continue;
+            try { $.RegisterEventHandler("Activated", kids[k], close); kids[k].dlcHooked = true; } catch (e) {}
         }
     }
 
     function onTitle(panel, title) {
-        if (typeof title === "string" && title.indexOf("DLC_CLOSE") === 0) close();
+        if (typeof title !== "string") return;
+        if (title.indexOf("DLC_CLOSE") === 0) close();
+        else if (title.indexOf("DLC_READY") === 0) markReady();
     }
 
     function wire() {
@@ -142,6 +236,7 @@
         }
         if (wired) return;
         wired = true;
+        setInteractive(false);
         nav.SetPanelEvent("onactivate", toggle);
         nav.SetPanelEvent("onmouseover", function () { $.DispatchEvent("UIShowTextTooltip", nav, "Compare"); });
         nav.SetPanelEvent("onmouseout", function () { $.DispatchEvent("UIHideTextTooltip", nav); });
@@ -151,6 +246,7 @@
         hookNative();
         $.Schedule(2.0, hookNative); // nav items are created after the match data loads
         $.Schedule(6.0, hookNative);
+        preload();
         $.Msg("[DLCompare] ready");
     }
 
