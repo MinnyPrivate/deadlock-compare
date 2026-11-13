@@ -10,15 +10,15 @@ Open `index.html?match=<match id>`.
 - View As on the General graphs: Value, Per Minute, % of Team (each hero's share of their team), Teams (six heroes added together) and Lanes (each lane pair added together).
 - Teams and Lanes lines can be hidden one by one (Ctrl+Click shows only one).
 - Markers: Objectives and Items toggle on any hero graph. Item buys show under the lines for 1 to 3 heroes (on by default for the Power and damage graphs); hovering lists what was bought since the last point.
-- Player Comparison graphs can show a whole team (six heroes) at once.
-- Hover readout like the game's: one row per hero, highest first, tinted by team, with the line color on the left and the hero's share of the lobby.
-- Time axis: totals start at 0:00, the Power graphs start at each hero's spawn values (level 1, base health from `heroes.vdata`), and rates and percentages start at Valve's first snapshot (3:00).
+- Player Comparison graphs can show one team or all twelve heroes at once.
+- Hover readout like the game's: one row per hero, highest first, tinted by team, with the line color on the left and the hero's share of the lobby. It follows the mouse to the second; values between Valve's snapshots are read off the drawn line.
+- Time axis: totals start at 0:00, the Power graphs start at each hero's spawn values (level 1, base health from `heroes.vdata`), and rates and percentages start from 0 with a dotted line up to Valve's first snapshot (3:00), since there's no value before it.
 - Matchups tab: hero damage, hard crowd control and slows between every pair of opponents, from Valve's damage matrix, with a head-to-head for any pair. The side panel lists a hero's top damage sources and what hit them (enemy hero and ability or gun). Totals match the scoreboard's hero damage exactly. Crowd control values are milliseconds (whole 1/64 s ticks).
 - MVP tab: our Experimental score, plus Valve's own accolades for the picked hero with the lobby best for each.
 
 Optional URL parameters: `graph=<id>` (for example `souls_lead`), `players=<slot,slot>`, `embed=1` (in-game overlay mode: ESC asks the game to close it), `scale=transform` (old scaling, in case CSS zoom misbehaves).
 
-The page is laid out in Deadlock's 1080p units and scaled with CSS `zoom`, which lays text out again at the real resolution so it stays sharp. Rank badges show the subrank as the game writes it: I to V, and a star for the sixth.
+The page is laid out in Deadlock's 1080p units and scaled with CSS `zoom`, which lays text out again at the real resolution so it stays sharp. Rank badges show the subrank inside the badge (I to VI), except on the team and lobby averages.
 
 Data: [deadlock-api](https://deadlock-api.com/) `/v1/matches/{id}/metadata`. Hero names come from the game's own files (`heroes.js`).
 

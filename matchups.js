@@ -218,7 +218,7 @@ function muHeroPanel(mu, p) {
   }
   const sd = dealt.reduce((a, r) => a + muSum(r.parts), 0), st = took.filter(r => !r.world).reduce((a, r) => a + muSum(r.parts), 0);
   const scale = Math.max(1, ...dealt.concat(took).map(r => muSum(r.parts)));
-  const verb = state.muStat === "dmg" ? ["Dealt to", "Took from"] : state.muStat === "slow" ? ["Slowed", "Slowed by"] : ["Crowd controlled", "Crowd controlled by"];
+  const verb = state.muStat === "dmg" ? ["Dealt to", "Took from"] : state.muStat === "slow" ? ["They slowed", "Slowed them"] : ["They crowd controlled", "Crowd controlled them"];
   const list = (rows, title, total) => `<div class="muList"><div class="wr th"><span>${title}</span><span class="r">${muFmt(total)}</span></div>` +
     rows.sort((a, b) => muSum(b.parts) - muSum(a.parts)).map(r => {
       const v = muSum(r.parts);
@@ -250,17 +250,20 @@ function muPairPanel(mu, pair) {
   const sa = muSum(pa), sb = muSum(pb), scale = Math.max(1, ...pa.map(x => x.v), ...pb.map(x => x.v));
   const TA = TEAMS[a.team], TB = TEAMS[b.team];
   const lane = a.lane && a.lane === b.lane;
-  const verb = state.muStat === "dmg" ? "dealt" : "landed";
+  // Always say who did it to whom: "Wraith crowd controlled Bebop for 5.0s", never just a number beside a name.
+  const did = (x, y, v) => state.muStat === "dmg" ? `${x.hero} dealt ${muFmt(v)} damage to ${y.hero}`
+    : `${x.hero} ${state.muStat === "slow" ? "slowed" : "crowd controlled"} ${y.hero} for ${muFmt(v)}`;
+  const onWord = state.muStat === "dmg" ? "to" : "on";
   const ratio = Math.max(sa, sb) / Math.max(1e-9, Math.min(sa, sb));
-  const lead = sa === sb ? "Even" : `${(sa > sb ? a : b).hero} ${verb} ${ratio >= 2 ? (ratio >= 10 ? Math.round(ratio) : ratio.toFixed(1)) + " times as much" : Math.round((ratio - 1) * 100) + "% more"}`;
+  const more = sa && sb && sa !== sb ? ` (${(sa > sb ? a : b).hero}: ${ratio >= 2 ? (ratio >= 10 ? Math.round(ratio) : ratio.toFixed(1)) + " times as much" : Math.round((ratio - 1) * 100) + "% more"})` : "";
   let h = `<div class="mvpWhy muPanel" style="--tc:${TA.c}">
     <div class="whyHead h2h">
-      <button class="muSide" data-hero="${a.slot}">${portrait(a, "big")}<span class="hn">${esc(heroName(a))}</span><b style="color:${TA.c}">${muFmt(sa)}</b></button>
+      <button class="muSide" data-hero="${a.slot}">${portrait(a, "big")}<span class="nm"><span class="hn">${esc(heroName(a))}</span><span class="cap">${onWord} ${esc(b.hero)}</span></span><b style="color:${TA.c}">${muFmt(sa)}</b></button>
       <span class="vs">VS${lane ? `<span class="laneTag">Lane</span>` : ""}</span>
-      <button class="muSide r" data-hero="${b.slot}"><b style="color:${TB.c}">${muFmt(sb)}</b><span class="hn">${esc(heroName(b))}</span>${portrait(b, "big")}</button>
+      <button class="muSide r" data-hero="${b.slot}"><b style="color:${TB.c}">${muFmt(sb)}</b><span class="nm"><span class="hn">${esc(heroName(b))}</span><span class="cap">${onWord} ${esc(a.hero)}</span></span>${portrait(b, "big")}</button>
     </div>
-    <p class="summary">${esc(MU_WINDOWS[state.muWin].name)}: ${esc(sa || sb ? (Math.min(sa, sb) ? lead : (sa > sb ? a : b).hero + " was the only one to land any") : "Neither landed any on the other")}.</p>
-    <div class="muH2H">${pa.map((x, i) => `<div class="h2hRow"><span class="v">${muFmt(x.v)}</span><span class="track l"><i style="width:${(x.v / scale) * 100}%;background:${x.c}"></i></span><span class="n">${esc(x.label)}</span><span class="track"><i style="width:${(pb[i].v / scale) * 100}%;background:${pb[i].c}"></i></span><span class="v r">${muFmt(pb[i].v)}</span></div>`).filter((_, i) => pa[i].v || pb[i].v).join("") || `<div class="muNone">Nothing to compare.</div>`}</div>
+    <p class="summary">${esc(MU_WINDOWS[state.muWin].name)}: ${esc(did(a, b, sa))}. ${esc(did(b, a, sb))}.${esc(more)}</p>
+    <div class="muH2H"><div class="h2hRow th"><span></span><span class="l">${esc(a.hero)} ${onWord} ${esc(b.hero)}</span><span></span><span>${esc(b.hero)} ${onWord} ${esc(a.hero)}</span><span></span></div>${pa.map((x, i) => `<div class="h2hRow"><span class="v">${muFmt(x.v)}</span><span class="track l"><i style="width:${(x.v / scale) * 100}%;background:${x.c}"></i></span><span class="n">${esc(x.label)}</span><span class="track"><i style="width:${(pb[i].v / scale) * 100}%;background:${pb[i].c}"></i></span><span class="v r">${muFmt(pb[i].v)}</span></div>`).filter((_, i) => pa[i].v || pb[i].v).join("") || `<div class="muNone">Nothing to compare.</div>`}</div>
     ${state.muStat === "dmg" ? `<div class="muCols">${muSrcList(esc(a.hero) + " hit with", muSources(mu, { [a.slot]: (mu.srcTo[b.slot] || {})[a.slot] }), { n: 4 })}${muSrcList(esc(b.hero) + " hit with", muSources(mu, { [b.slot]: (mu.srcTo[a.slot] || {})[b.slot] }), { n: 4 })}</div>` : ""}
     ${muSpark(mu, a, b)}
     <button class="graphOptionButton allBtn" id="muBack">Back to ${esc(state.players.find(p => p.slot === state.mvpPick).hero)}</button>
@@ -281,7 +284,7 @@ function muSpark(mu, a, b) {
       return [t, v];
     });
   });
-  const W = 700, H = 150, m = { l: 8, r: 70, t: 14, b: 26 };
+  const W = 700, H = 150, m = { l: 8, r: 150, t: 14, b: 26 };
   const dur = mu.times[n - 1], max = Math.max(1, ...series.flat().map(p => p[1]));
   const X = t => m.l + (t / dur) * (W - m.l - m.r), Y = v => H - m.b - (v / max) * (H - m.t - m.b);
   let s = `<svg class="muSpark" viewBox="0 0 ${W} ${H}">`;
@@ -292,7 +295,7 @@ function muSpark(mu, a, b) {
     const pts = [[0, 0], ...series[i]];
     s += `<path d="${pts.map(([t, v], j) => `${j ? "L" : "M"}${X(t).toFixed(1)} ${Y(v).toFixed(1)}`).join("")}" fill="none" stroke="${TEAMS[x.team].c}" stroke-width="2.6" stroke-linejoin="round"/>`;
     const last = pts[pts.length - 1];
-    s += `<text class="endLab" x="${X(last[0]) + 8}" y="${Y(last[1]) + (i ? 14 : -4)}" style="fill:${TEAMS[x.team].c}">${esc(x.hero)}</text>`;
+    s += `<text class="endLab" x="${X(last[0]) + 8}" y="${Y(last[1]) + (i ? 14 : -4)}" style="fill:${TEAMS[x.team].c}">${esc(x.hero)} ${state.muStat === "dmg" ? "to" : "on"} ${esc((i ? a : b).hero)}</text>`;
   });
   return s + `</svg>`;
 }
