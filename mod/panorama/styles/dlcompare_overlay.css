@@ -57,22 +57,27 @@
 {
 	opacity: 0.4;
 }
-/* While Compare is showing it is the active screen: hide the native screen behind it, so its background
-   doesn't show under the footer. */
-.DLCompareOpen #ScreensCarousel
+/* While Compare is showing it is the active screen: hide the native screens' content so none of it shows under the
+   footer, but keep their backdrop (ScoreboardBackground, the texture and dark vignette), so the strip under the footer
+   and the screen edges are the game's own background, the same as on the Graphs screen. */
+.DLCompareOpen #ScreensCarousel .MatchMode,
+.DLCompareOpen #ScreensCarousel #MatchID,
+.DLCompareOpen #ScreensCarousel CitadelPostGameTeam,
+.DLCompareOpen #ScreensCarousel CitadelPostGameScoreboardNew,
+.DLCompareOpen #ScreensCarousel MatchDetailsGraphs
 {
 	opacity: 0;
 }
 /* The screen covers everything above the footer (996 of 1080 layout px), so ESC Back and the icons stay usable.
    It is always laid out so the page can load in the background; closed, it is invisible and lets clicks through
    (the script turns hittest off). The browser panel itself stays invisible until the page has drawn, so the
-   browser's gray fill never shows; until then the overlay shows the dark background. */
+   browser's gray fill never shows; until then the game's own backdrop shows through. */
 #DLCompareOverlay
 {
 	width: 100%;
 	height: 92.2%;
 	vertical-align: top;
-	background-color: #0b0b0a;
+	background-color: #00000000;
 	opacity: 0;
 	z-index: 1000;
 	transition-property: opacity;
