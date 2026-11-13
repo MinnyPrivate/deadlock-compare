@@ -213,20 +213,22 @@ body.standalone .matchForm { display: flex; }
 .lobbyRank { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 .lbl { font-size: 13px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; opacity: 0.45; }
 .rank { display: inline-flex; align-items: center; gap: 6px; font-family: var(--oracle); font-weight: 600; font-size: 16px; white-space: nowrap; }
-.rank img { width: 34px; height: 34px; object-fit: contain; }
-/* Subrank on the badge: I to V, and a star for the sixth, as the game writes them. --b is the badge size. */
-.rank .rk { --b: 34px; position: relative; display: inline-block; flex: none; width: var(--b); height: var(--b); }
-.rank .rk img { display: block; width: 100%; height: 100%; }
+/* Badge box like the game's CitadelRankedBadgeMini: square, art contained, subrank engraved as dark text.
+   Game units are a 256px box, so 1 unit = var(--b) / 256. --drop is the per-rank margin-top (Panorama centers the
+   label in what is left, so it moves down by half of it). --b is the badge size. */
+.rank .rk { --b: 40px; --u: calc(var(--b) / 256); position: relative; display: inline-block; flex: none; width: var(--b); height: var(--b); }
+.rank .rk img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .rank .rk b {
-  position: absolute; left: 0; right: 0; bottom: 14%; text-align: center; pointer-events: none;
-  font-family: var(--oracle); font-weight: 700; font-size: max(10px, calc(var(--b) * 0.34)); line-height: 1; letter-spacing: 0.5px;
-  color: #fff; text-shadow: 0 0 2px #000, 0 1px 2px #000, 0 0 4px #000a;
+  position: absolute; left: 0; right: 0; top: calc(50% + var(--u) * var(--drop) / 2); transform: translateY(-50%);
+  margin-left: calc(var(--u) * -2); text-align: center; pointer-events: none;
+  font-family: var(--oracle); font-weight: 700; font-size: calc(var(--u) * 64); line-height: 1;
+  color: #000000ee; text-shadow: 0 0 calc(var(--u) * 4) var(--glow);
 }
 .rank.none { opacity: 0.4; font-size: 14px; }
 .teamAvg { position: absolute; left: 0; top: 92px; width: 145px; display: flex; align-items: center; justify-content: flex-end; gap: 4px; padding-right: 8px; }
 .teamAvg.right { left: auto; right: 0; justify-content: flex-start; padding: 0 0 0 8px; }
 .teamAvg .rank { font-size: 13px; gap: 3px; }
-.teamAvg .rank .rk { --b: 26px; }
+.teamAvg .rank .rk { --b: 32px; }
 .teamAvg .lbl { font-size: 11px; }
 body.tabPick .player .pcolor { opacity: 0; }
 body.tabPick .player.pick .pcolor { opacity: 1; background: var(--offWhite); }
@@ -263,7 +265,7 @@ body:not(.tabMu) #muView { display: none; }
 .mvpRow .who { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; }
 .mvpRow .hn { font-family: var(--oracle); font-weight: 700; font-size: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mvpRow .rank { font-size: 13px; opacity: 0.85; }
-.mvpRow .rank .rk { --b: 40px; }
+.mvpRow .rank .rk { --b: 52px; }
 .catBar { height: 14px; display: flex; background: rgba(255,239,215,0.06); border-radius: 2px; overflow: hidden; }
 .catBar i { display: block; height: 100%; }
 .catBar i + i { box-shadow: inset 1px 0 0 #0006; }

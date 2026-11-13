@@ -254,8 +254,11 @@ function buildEvents(mi) {
 // ---------- ranks ----------
 // Valve's packed badge: tens = tier (0 Obscurus .. 11 Eternus), ones = subrank 1-6.
 // Names and badges from the ranked overhaul (Citadel_ranks_N strings, ranked/badges/rankNN_sm art).
-// That art has no subrank versions, so the subrank is drawn inside the badge the way the game shows it: I to VI
-// (Citadel_subranks_1..6), white on the badge itself. Averages (team, lobby) show the badge without it.
+// The game draws the subrank as text engraved on that art (citadel_ranked_badge.vcss, CitadelRankedBadgeMini):
+// a 256px box, Oracle bold 64px, #000000ee, a 4px glow in a per-rank color, pushed down by a per-rank margin.
+// RANK_GLOW and RANK_DROP copy those values. Averages (team, lobby) show the badge without it.
+const RANK_GLOW = ["#fff6", "#6b4e2f", "#7c6e63", "#8b9092", "#a57941", "#b9d0e0", "#ddb854", "#e3eade", "#d7e1eb", "#d2dcef", "#f2fed6", "#fafdfc"];
+const RANK_DROP = [68, 68, 62, 68, 68, 68, 68, 42, 68, 46, 48, 30];
 const RANK_NAMES = ["Obscurus", "Initiate", "Seeker", "Acolyte", "Sentinel", "Mystic", "Ritualist", "Emissary", "Oracle", "Phantom", "Ascendant", "Eternus"];
 const SUBRANKS = ["", "I", "II", "III", "IV", "V", "VI"];
 function rankOf(badge) {
@@ -275,7 +278,7 @@ function avgBadge(badges) {
 }
 function rankHtml(badge, cls, plain) {
   const r = rankOf(badge);
-  return r ? `<span class="${cls || "rank"}"><span class="rk"><img src="${r.img}" alt="">${r.mark && !plain ? `<b>${r.mark}</b>` : ""}</span><span>${esc(r.name)}</span></span>` : "";
+  return r ? `<span class="${cls || "rank"}"><span class="rk" style="--glow:${RANK_GLOW[r.tier]};--drop:${RANK_DROP[r.tier]}"><img src="${r.img}" alt="">${r.mark && !plain ? `<b>${r.mark}</b>` : ""}</span><span>${esc(r.name)}</span></span>` : "";
 }
 
 // ---------- top bar ----------
