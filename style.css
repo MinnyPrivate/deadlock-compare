@@ -135,6 +135,11 @@ body.standalone #stage { height: 1080px; }
 .dropDownMenu > :first-child { border-top: 0; }
 .dropDownMenu .cat { background: rgba(0,0,0,0.2); color: rgba(255,239,215,0.36); }
 .dropDownMenu .item { color: #E3D0B8; cursor: pointer; }
+/* Thin label between the game's own graphs and the ones Compare adds. */
+.dropDownMenu .extraSep {
+  display: block; padding: 6px 16px 3px; border-top: 2px solid rgba(46,43,38,0.55);
+  font-family: var(--sans); font-size: 12px; letter-spacing: 0.6px; text-transform: uppercase; color: rgba(255,239,215,0.32);
+}
 .dropDownMenu .item:hover { background: rgba(255,239,215,0.1); color: var(--offWhite); }
 .dropDownMenu .item.on { background: rgba(255,239,215,0.16); color: #fff; }
 

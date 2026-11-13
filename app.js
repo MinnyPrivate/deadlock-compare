@@ -19,34 +19,31 @@ const LANES = { 1: "Yellow", 2: "Green", 3: "Blue", 4: "Green" };
 
 // Souls per source. Trooper and Haunt souls come in two parts: the kill itself and the orb you shoot, so add both.
 const GS = (s, ids) => (s.gold_sources || []).reduce((a, g) => a + (ids.includes(g.source) ? (g.gold || 0) + (g.gold_orbs || 0) : 0), 0);
+// Same sections and order as the game's own Graph Type list; Compare's extra graphs come at the end of each section.
+const PS = "Player-Specific";
 const GRAPHS = [
   { group: "General", id: "souls", label: "Souls Collected", kind: "general", get: s => s.net_worth },
-  { group: "General", id: "souls_lead", label: "Team Souls Lead", kind: "lead", sub: "Which team was ahead on souls, and by how much" },
-  { group: "General", id: "player_damage", label: "Damage to Players", kind: "general", get: s => s.player_damage },
-  { group: "General", id: "damage_taken", label: "Damage from Players", kind: "general", get: s => s.player_damage_taken },
-  { group: "General", id: "boss_damage", label: "Objective Damage", kind: "general", obj: true, get: s => s.boss_damage,
-    sub: "Guardians, Walkers, Shrines, Patron and Mid Boss" },
-  { group: "General", id: "healing", label: "Healing", kind: "general", get: s => s.player_healing, sub: "Yourself and allies" },
+  { group: "General", id: "souls_pm", label: "Souls per Minute", kind: "general", permin: true, get: s => s.net_worth },
   { group: "General", id: "kills", label: "Kills", kind: "general", get: s => s.kills },
   { group: "General", id: "deaths", label: "Deaths", kind: "general", get: s => s.deaths },
-  { group: "General", id: "assists", label: "Assists", kind: "general", get: s => s.assists },
-  { group: "General", id: "last_hits", label: "Trooper and Haunt Kills", kind: "general", get: s => (s.creep_kills || 0) + (s.neutral_kills || 0), sub: "Not the scoreboard's Last Hits, which counts more" },
-  { group: "General", id: "denies", label: "Denies", kind: "general", get: s => s.denies },
-  { group: "General", id: "accuracy", label: "Accuracy", sub: "All targets, troopers included", kind: "general", ratio: true, get: s => pct(s.shots_hit, (s.shots_hit || 0) + (s.shots_missed || 0)) },
-  { group: "General", id: "crit", label: "Headshot Rate", kind: "general", ratio: true, get: s => pct(s.hero_bullets_hit_crit, s.hero_bullets_hit), sub: "Crit bullets that hit heroes" },
-  // Valve's first snapshot is at 3:00. The Power graphs start at 0:00 from what every hero spawns with:
+  { group: "General", id: "healing", label: "Healing", kind: "general", get: s => s.player_healing, sub: "Yourself and allies" },
+  // Compare's extras
+  { group: "General", id: "souls_lead", label: "Team Souls Lead", kind: "lead", extra: true, sub: "Which team was ahead on souls, and by how much" },
+  { group: "General", id: "assists", label: "Assists", kind: "general", extra: true, get: s => s.assists },
+  { group: "General", id: "boss_damage", label: "Objective Damage", kind: "general", extra: true, obj: true, get: s => s.boss_damage,
+    sub: "Guardians, Walkers, Shrines, Patron and Mid Boss" },
+  { group: "General", id: "last_hits", label: "Trooper and Haunt Kills", kind: "general", extra: true, get: s => (s.creep_kills || 0) + (s.neutral_kills || 0), sub: "Not the scoreboard's Last Hits, which counts more" },
+  { group: "General", id: "denies", label: "Denies", kind: "general", extra: true, get: s => s.denies },
+  { group: "General", id: "accuracy", label: "Accuracy", extra: true, sub: "All targets, troopers included", kind: "general", ratio: true, get: s => pct(s.shots_hit, (s.shots_hit || 0) + (s.shots_missed || 0)) },
+  { group: "General", id: "crit", label: "Headshot Rate", extra: true, kind: "general", ratio: true, get: s => pct(s.hero_bullets_hit_crit, s.hero_bullets_hit), sub: "Crit bullets that hit heroes" },
+  // Valve's first snapshot is at 3:00. The power graphs start at 0:00 from what every hero spawns with:
   // level 1, the hero's base health (heroes.vdata, gamedata.js HERO_HP) and no bonus power.
-  { group: "Power", id: "level", label: "Level", kind: "general", level: true, get: s => s.level, start: () => 1 },
-  { group: "Power", id: "max_health", label: "Max Health", kind: "general", level: true, get: s => s.max_health, start: p => (window.HERO_HP || {})[p.heroId] },
-  { group: "Power", id: "weapon_power", label: "Weapon Power", kind: "general", level: true, get: s => s.weapon_power, start: () => 0 },
-  { group: "Power", id: "spirit_power", label: "Spirit Power", kind: "general", level: true, get: s => s.tech_power, start: () => 0 },
-  { group: "Player Comparison", id: "dmg_breakdown", label: "Damage Breakdown", kind: "breakdown", obj: true, defaultOn: [0, 1, 3], series: [
-      { label: "Enemy Players", get: s => s.player_damage },
-      { label: "Troopers", get: s => s.creep_damage },
-      { label: "Haunts", get: s => s.neutral_damage },
-      { label: "Objectives", get: s => s.boss_damage },
-  ] },
-  { group: "Player Comparison", id: "souls_source", label: "Souls by Source", kind: "breakdown", defaultOn: [0, 2, 3], series: [
+  { group: "General", id: "level", label: "Level", kind: "general", extra: true, power: true, level: true, get: s => s.level, start: () => 1 },
+  { group: "General", id: "max_health", label: "Max Health", kind: "general", extra: true, power: true, level: true, get: s => s.max_health, start: p => (window.HERO_HP || {})[p.heroId] },
+  { group: "General", id: "weapon_power", label: "Weapon Power", kind: "general", extra: true, power: true, level: true, get: s => s.weapon_power, start: () => 0 },
+  { group: "General", id: "spirit_power", label: "Spirit Power", kind: "general", extra: true, power: true, level: true, get: s => s.tech_power, start: () => 0 },
+
+  { group: PS, id: "souls_source", label: "Souls by Source", kind: "breakdown", defaultOn: [0, 2, 3], series: [
       { label: "Enemy Kills", get: s => GS(s, [1]) },
       { label: "Kill Assists", get: s => GS(s, [6]) },
       { label: "Troopers", get: s => GS(s, [2]) },
@@ -55,23 +52,148 @@ const GRAPHS = [
       { label: "Breakables", get: s => GS(s, [12]) },
       { label: "Other", get: s => GS(s, [5, 7, 8, 9, 10, 11, 13]) },
   ], sub: "These won't add up exactly to total souls" },
-  { group: "Player Comparison", id: "support", label: "Support", kind: "breakdown", series: [
+  // Golden statue buffs, from power_up_buffs: the exact second of every pickup, so these lines step at the real times.
+  { group: PS, id: "perm_buffs", label: "Permanent Buffs", kind: "breakdown", steps: true, dyn: () => buffSeries(), sub: "Golden statue buffs picked up, by type" },
+  { group: PS, id: "dmg_breakdown", label: "Damage Breakdown", kind: "breakdown", obj: true, defaultOn: [0, 1, 3], series: [
+      { label: "Enemy Players", get: s => s.player_damage },
+      { label: "Troopers", get: s => s.creep_damage },
+      { label: "Haunts", get: s => s.neutral_damage },
+      { label: "Objectives", get: s => s.boss_damage },
+  ] },
+  // From Valve's damage matrix (every 3 minutes). Damage by type counts every target: heroes, troopers, haunts and objectives.
+  { group: PS, id: "dmg_type", label: "Damage Dealt by Type", kind: "breakdown", defaultOn: [0, 1, 2], series: [
+      { label: "Gun", tl: p => mtxLine(p, 0, ["Bullet"]) },
+      { label: "Ability", tl: p => mtxLine(p, 0, ["Ability"]) },
+      { label: "Melee", tl: p => mtxLine(p, 0, ["Melee"]) },
+      { label: "Other", tl: p => mtxLine(p, 0, ["Misc"]) },
+  ], sub: "Every target: heroes, troopers, haunts and objectives" },
+  { group: PS, id: "heal_type", label: "Healing by Type", kind: "breakdown", dyn: () => sourceSeries(1), sub: "Each ability and item that healed, yourself and allies" },
+  { group: PS, id: "regen_type", label: "Regen by Type", kind: "breakdown", dyn: () => sourceSeries(5), sub: "Base regen, fountain, pickups and items" },
+  { group: PS, id: "player_damage", label: "Damage to Players", kind: "general", get: s => s.player_damage },
+  { group: PS, id: "damage_taken", label: "Damage from Players", kind: "general", get: s => s.player_damage_taken },
+  // Compare's extras
+  { group: PS, id: "support", label: "Support", kind: "breakdown", extra: true, series: [
       { label: "Healing Allies", get: s => s.teammate_healing },
       { label: "Barriers Given", get: s => s.player_barriering },
       { label: "Healing Prevented", get: s => s.heal_prevented },
   ] },
-  { group: "Player Comparison", id: "tanking", label: "Tanking", kind: "breakdown", series: [
+  { group: PS, id: "tanking", label: "Tanking", kind: "breakdown", extra: true, series: [
       { label: "Damage Taken", get: s => s.player_damage_taken },
       { label: "Damage Mitigated", get: s => s.damage_mitigated },
   ] },
-  { group: "Player Comparison", id: "kill_types", label: "Kills by Type", kind: "breakdown", series: [
+  { group: PS, id: "kill_types", label: "Kills by Type", kind: "breakdown", extra: true, series: [
       { label: "Gun", get: s => s.bullet_kills },
       { label: "Ability", get: s => s.ability_kills },
       { label: "Melee", get: s => s.melee_kills },
       { label: "Headshot (of Gun)", get: s => s.headshot_kills },
   ] },
 ];
-const GROUP_SUB = { "Player Comparison": "Every line type for the heroes you pick" };
+for (const g of GRAPHS) if (g.dyn) g.series = [];
+
+// ---------- graphs built from the damage matrix and power-up buffs ----------
+// Every hero's cumulative damage matrix values per stat type and source, summed over all targets,
+// lined up with sample_time_s (Valve right-aligns shorter arrays: they start later).
+function mtxParse() {
+  const mi = state.match;
+  if (mi._mtx !== undefined) return mi._mtx;
+  const dm = mi.damage_matrix;
+  if (!dm || !Array.isArray(dm.damage_dealers) || !dm.source_details) return (mi._mtx = null);
+  const times = dm.sample_time_s || [], T = times.length;
+  const types = dm.source_details.stat_type || [], names = dm.source_details.source_name || [];
+  const by = {};
+  for (const d of dm.damage_dealers) {
+    const a = Number(d.dealer_player_slot);
+    for (const src of d.damage_sources || []) {
+      const t = types[src.source_details_index], n = names[src.source_details_index] || "";
+      const acc = (((by[a] = by[a] || {})[t] = by[a][t] || {})[n] = by[a][t][n] || new Array(T).fill(0));
+      for (const tp of src.damage_to_players || []) {
+        const arr = tp.damage || [];
+        for (let k = 0; k < T; k++) { const j = k - (T - arr.length); if (j >= 0) acc[k] += arr[j] || 0; }
+      }
+    }
+  }
+  return (mi._mtx = { times, by });
+}
+function mtxLine(p, type, names) {
+  const m = mtxParse();
+  if (!m) return [];
+  const o = ((m.by[p.slot] || {})[type]) || {};
+  return m.times.map((t, k) => [t, names.reduce((a, n) => a + (o[n] ? o[n][k] : 0), 0)]);
+}
+const MTX_CATS = ["Bullet", "Ability", "Melee", "Misc"];
+const REGEN_NAMES = [
+  [/^base_stat_regen/, "Base Regen"], [/in_fountain/, "Fountain"], [/medic_trooper_aoe_health_pickup/, "Healing Troopers"],
+  [/health_float_in_world/, "Health Orbs"], [/^survival_powerup_pickup/, "Survival Powerup"], [/invis_bush/, "Bushes"],
+];
+function sourceLabel(n) {
+  for (const [rx, label] of REGEN_NAMES) if (rx.test(n)) return label;
+  return typeof muSourceName === "function" ? muSourceName(n.split("/")[0]) : n;
+}
+const TOP_SOURCES = 5;
+// Healing and Regen by Type: one line type per source (same names merged), ranked by the picked heroes' totals.
+// The top 5 and "Other" (everything else added up) are on at first; every other source is one click away.
+function sourceSeries(type) {
+  const m = mtxParse();
+  if (!m) return [];
+  const last = m.times.length - 1, tot = {}, keys = {};
+  const picked = state.players.filter(p => state.selBrk.has(p.slot));
+  for (const p of picked.length ? picked : state.players) {
+    const o = (m.by[p.slot] || {})[type] || {};
+    for (const n of Object.keys(o)) {
+      if (type === 0 && MTX_CATS.includes(n)) continue;
+      const label = sourceLabel(n);
+      (keys[label] = keys[label] || new Set()).add(n);
+      tot[label] = (tot[label] || 0) + o[n][last];
+    }
+  }
+  const ranked = Object.keys(tot).filter(l => tot[l] > 0).sort((a, b) => tot[b] - tot[a]);
+  const top = ranked.slice(0, TOP_SOURCES), rest = ranked.slice(TOP_SOURCES);
+  const series = top.map(l => ({ label: l, tl: p => mtxLine(p, type, [...keys[l]]) }));
+  if (rest.length) series.push({ label: "Other", tl: p => mtxLine(p, type, rest.flatMap(l => [...keys[l]])) });
+  for (const l of rest) series.push({ label: l, tl: p => mtxLine(p, type, [...keys[l]]) });
+  series.defaultOn = series.map((_, i) => i).slice(0, top.length + (rest.length ? 1 : 0));
+  return series;
+}
+const BUFF_NAMES = {
+  spirit: "Spirit Power", wp: "Weapon Damage", firerate: "Fire Rate", ammo: "Ammo", hp: "Health",
+  bulletresist: "Bullet Resist", spiritresist: "Spirit Resist", cd: "Cooldown Reduction", movespeed: "Move Speed", range: "Range",
+};
+const buffKind = t => t.replace(/_permanent_pickup(_lv\d+)?$/, "");
+// Permanent Buffs: the number of each buff type picked up so far, stepping at the exact pickup second.
+function buffSeries() {
+  const tot = {};
+  for (const p of state.players) for (const b of p.raw.power_up_buffs || []) {
+    if (!b.is_permanent) continue;
+    const k = buffKind(b.type);
+    tot[k] = (tot[k] || 0) + (b.pickup_times_s || []).length;
+  }
+  const kinds = Object.keys(tot).filter(k => tot[k] > 0).sort((a, b) => tot[b] - tot[a]);
+  const series = [{ label: "All Buffs", tl: p => buffLine(p, null) }].concat(kinds.map(k => ({ label: BUFF_NAMES[k] || k, tl: p => buffLine(p, k) })));
+  series.defaultOn = series.map((_, i) => i).slice(0, 4);
+  return series;
+}
+function buffLine(p, kind) {
+  const times = [];
+  for (const b of p.raw.power_up_buffs || []) if (b.is_permanent && (!kind || buffKind(b.type) === kind)) times.push(...(b.pickup_times_s || []));
+  times.sort((a, b) => a - b);
+  const pts = [];
+  times.forEach((t, i) => { pts.push([t, i]); pts.push([t, i + 1]); });
+  pts.push([state.match.duration_s || (times[times.length - 1] || 0), times.length]);
+  return pts;
+}
+// New match: rebuild the graphs whose line types depend on the match, and forget their on/off picks.
+// They are ranked by the picked heroes, so they are rebuilt when the picks change too.
+function prepDynamicGraphs(force) {
+  const key = [...state.selBrk].sort().join(",");
+  for (const g of GRAPHS) if (g.dyn && (force || g._key !== key)) {
+    g._key = key;
+    g.series = g.dyn();
+    g.defaultOn = g.series.defaultOn;
+    delete state.hiddenCats[g.id];
+  }
+}
+
+const GROUP_SUB = { [PS]: "Every line type for the heroes you pick" };
 
 function pct(a, b) { return b ? (100 * (a || 0)) / b : null; }
 
@@ -109,6 +231,8 @@ function objOn(g) { return state.objPref[g.id] ?? !!g.obj; }
 // View As: Value and Per Minute work on most graphs; % of Team, Teams and Lanes only on the General graphs that add up.
 function modeNow(g) {
   const m = state.mode;
+  if (g.permin) return "permin";
+  if (g.steps) return "value";
   if (g.ratio || g.level || g.kind === "lead") return "value";
   if (g.kind !== "general" && m !== "permin") return "value";
   return m;
@@ -203,6 +327,7 @@ function setup(mi) {
   const sel = (params.get("players") || "").split(",").filter(x => /^\d+$/.test(x.trim())).map(Number).filter(n => state.players.some(p => p.slot === n));
   state.selGen = new Set(sel.length ? sel : state.players.map(p => p.slot));
   state.selBrk = new Set(sel.length && sel.length <= 2 ? sel : defaultPair());
+  prepDynamicGraphs(true);
   state.events = buildEvents(mi);
   $("matchInput").value = mi.match_id || "";
   $("clock").textContent = fmtTime(mi.duration_s || 0);
@@ -344,9 +469,10 @@ function renderTop() {
 function buildDropDown() {
   const menu = $("ddMenu");
   menu.innerHTML = "";
-  let group = null;
+  let group = null, extra = false;
   for (const g of GRAPHS) {
-    if (g.group !== group) { group = g.group; menu.append(el("div", "cat", group)); }
+    if (g.group !== group) { group = g.group; extra = false; menu.append(el("div", "cat", group)); }
+    if (g.extra && !extra) { extra = true; menu.append(el("div", "extraSep", "Added by Compare")); }
     const b = el("button", "item" + (g.id === state.graph ? " on" : ""), g.label);
     const note = g.sub || (g.kind === "breakdown" && GROUP_SUB[g.group]);
     if (note) b.title = note;
@@ -464,6 +590,17 @@ function seriesFor(g) {
     if (lead && pts.length > 1) pts.real = 1;
     return pts;
   };
+  // Line types built from the damage matrix or pickups bring their own points instead of reading the snapshots.
+  const line = (p, ser) => {
+    if (!ser.tl) return build(p, ser.get);
+    const pts = [[0, 0]];
+    for (const [t, v] of ser.tl(p)) {
+      if (perMin) { if (t >= 60) pts.push([t, v / (t / 60)]); }
+      else if (t > 0) pts.push([t, v]);
+    }
+    if (lead && pts.length > 1) pts.real = 1;
+    return pts;
+  };
   const diffOk = state.diff && sel.length === 2;
   if (g.kind === "general") {
     const get = mode === "share" ? shareGet(g) : g.get;
@@ -480,14 +617,15 @@ function seriesFor(g) {
   const cats = visibleCats(g);
   if (diffOk && cats.length === 1) {
     const ser = g.series[cats[0]];
-    const [a, b] = sel.map(p => ({ player: p, label: p.hero, color: colorOf(p), pts: build(p, ser.get) }));
+    const [a, b] = sel.map(p => ({ player: p, label: p.hero, color: colorOf(p), pts: line(p, ser) }));
     return [diffLine(a, b, ser.label)];
   }
   const out = [];
   for (const p of sel) for (const i of cats) {
     const ser = g.series[i];
+    if (ser.tl && g.dyn && !ser.tl(p).some(([, v]) => v > 0)) continue; // a source this hero never used
     // With more than two heroes the colors alone don't say whose line it is, so the end label names the hero too.
-    out.push({ player: p, label: p.hero, sub: ser.label, endLab: sel.length > 2 ? `${p.hero}: ${ser.label}` : null, color: colorOf(p), dash: DASHES[i % DASHES.length], pts: build(p, ser.get) });
+    out.push({ player: p, label: p.hero, sub: ser.label, endLab: sel.length > 2 ? `${p.hero}: ${ser.label}` : null, color: colorOf(p), dash: DASHES[i % DASHES.length], pts: line(p, ser) });
   }
   return out;
 }
@@ -565,6 +703,7 @@ function valueAt(pts, t) {
 
 // ---------- chart ----------
 function renderAll() {
+  if (state.match) prepDynamicGraphs();
   if (!state.match) return;
   document.querySelectorAll("#tabs .tab").forEach(b => b.classList.toggle("on", b.dataset.tab === state.tab));
   document.body.classList.toggle("tabMvp", state.tab === "mvp");
@@ -782,7 +921,7 @@ function drawMarkers(evs, X, W) {
 // On by default where buys explain the line: the Power graphs and the damage graphs.
 const ITEMS_DEFAULT = ["player_damage", "damage_taken", "dmg_breakdown"];
 const itemsFit = g => g.kind !== "lead" && !grouped(g);
-const itemsOn = g => itemsFit(g) && (state.itemPref[g.id] ?? (g.group === "Power" || ITEMS_DEFAULT.includes(g.id)));
+const itemsOn = g => itemsFit(g) && (state.itemPref[g.id] ?? (g.power || ITEMS_DEFAULT.includes(g.id)));
 const ITEM_SLOTS = { w: { name: "Weapon", c: "#E89A3C" }, v: { name: "Vitality", c: "#7FC241" }, s: { name: "Spirit", c: "#B77CF0" } };
 function itemsOf(p) {
   const I = window.ITEMS || {};
