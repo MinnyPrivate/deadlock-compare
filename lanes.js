@@ -36,7 +36,7 @@ function laneNow() {
   return (state.me && laneName(state.me)) || lanes[0] || null;
 }
 // A hero's snapshot at time t: the last one at or before it.
-function snapAt(p, t) { let best = null; for (const s of p.stats) if (s.time_stamp_s <= t) best = s; return best; }
+function snapAt(p, t) { let best = null; for (const s of p.stats) if (s.time_stamp_s <= t && (!best || s.time_stamp_s > best.time_stamp_s)) best = s; return best; }
 
 // When each team's own Tier 1, Tier 2 and Base Guardians in this lane fell (null: never).
 function laneObjectives(lane) {
@@ -194,7 +194,8 @@ window.renderLanes = function renderLanes() {
     `<div class="lvZone lvR"><h3>Who threw stats</h3>${extra.map(([r, v]) => barHtml(r, v, teams)).join("")}<div class="lvFoot">Hover a hero to see their part. Valve's numbers come every 3 minutes.</div></div>`;
   view.querySelectorAll(".lvPic").forEach(b => {
     const slot = Number(b.dataset.slot);
-    b.onmouseenter = () => { state.laneHover = slot; renderLanes(); };
+    // Redrawing replaces the portrait under the mouse, so only redraw when the hovered hero actually changes.
+    b.onmouseenter = () => { if (state.laneHover !== slot) { state.laneHover = slot; renderLanes(); } };
     b.onmouseleave = () => { if (state.laneHover === slot) { state.laneHover = null; renderLanes(); } };
   });
 };

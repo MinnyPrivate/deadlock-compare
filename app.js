@@ -304,6 +304,7 @@ async function loadMatch(id) {
 const RETRY_STEPS = [20, 60];
 let waitTimer = null;
 function waitAndRetry(id, my) {
+  if (state.waitId !== id) { state.waitId = id; state.waitTries = 0; } // a different match starts over at 20 seconds
   const n = (state.waitTries = (state.waitTries || 0) + 1);
   let left = RETRY_STEPS[Math.min(n - 1, RETRY_STEPS.length - 1)];
   clearInterval(waitTimer);
@@ -385,8 +386,6 @@ function scoreboardKda(p) {
   }
   return st;
 }
-
-// Two players for the player comparison graphs: you and your lane opponent, else each team's top earner.
 
 function buildEvents(mi) {
   const ev = [];

@@ -114,7 +114,7 @@ function muSourceName(n) {
   }
   if (/melee/.test(k)) name = "Melee";
   else if (!name && /^citadel_weapon_/.test(k)) name = "Gun";
-  else if (/^citadel_weapon_/.test(k)) name += " (gun)"; // a gun's own name, like Wraith's The Rake, doesn't say it's the gun
+  else if (/^citadel_weapon_/.test(k)) return name + (crit ? " (gun, headshots)" : " (gun)"); // a gun's own name, like Wraith's The Rake, doesn't say it's the gun
   if (!name) name = k.replace(/^(citadel_)?(ability_|upgrade_)?/, "").replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
   return crit ? name + " (headshots)" : name;
 }
