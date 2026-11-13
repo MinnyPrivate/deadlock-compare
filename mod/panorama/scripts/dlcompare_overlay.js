@@ -9,6 +9,11 @@
 //   Closing keeps the page loaded, so reopening is instant.
 // - While Compare is open it acts as the active screen: the native screen behind it is hidden, the native icon
 //   looks unselected, and the arrows count from Compare (it sits after the last native screen).
+//
+// v5:
+// - The native screens keep their backdrop under Compare (only their content is hidden), so the footer strip and
+//   edges match the game. The footer icons are hooked again on every open, so clicking the icon of the screen
+//   Compare was opened from (for example Graphs) closes Compare.
 (function () {
     var PAGE = "https://deadlock-compare.minnymods.workers.dev/";
     var READY_FALLBACK_S = 3.0; // show the page anyway if it never says it's ready
@@ -168,6 +173,7 @@
             hashNow = hash;
             try { web.SetURL(PAGE + "?embed=1&match=" + id + "#" + hash); } catch (e) {}
         }
+        hookNative(); // the footer icons may have been created after the timed hooks ran
         openedOn = selectedNavIndex();
         isOpen = true;
         root().AddClass("DLCompareOpen");

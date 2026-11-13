@@ -11,8 +11,8 @@ const PLAYER_COLORS = [
 const PAIR_COLORS = ["#58D86A", "#8C83FF", "#FFD23F", "#F25CE0", "#3FCBFF", "#FF9A3C"];
 const DASHES = ["", "10 6", "2 5", "14 5 3 5", "1 8", "22 6", "6 3 1 3 1 3"];
 const TEAMS = {
-  0: { name: "Hidden King", color: "Amber", c: "#D4860B", coin: "#6F3806", icon: "assets/ui/icon_team1.png" },
-  1: { name: "Archmother", color: "Sapphire", c: "#4D75C3", coin: "#243265", icon: "assets/ui/icon_team2.png" },
+  0: { name: "Hidden King", color: "Hidden King", c: "#D4860B", coin: "#6F3806", icon: "assets/ui/icon_team1.png" },
+  1: { name: "Archmother", color: "Archmother", c: "#4D75C3", coin: "#243265", icon: "assets/ui/icon_team2.png" },
 };
 // Objective lane index (ECitadelTeamObjective _LaneN) -> lane color. The current map uses lanes 1, 3 and 4.
 const LANES = { 1: "Yellow", 2: "Green", 3: "Blue", 4: "Green" };
@@ -27,6 +27,7 @@ const GRAPHS = [
   { group: "General", id: "kills", label: "Kills", kind: "general", get: s => s.kills },
   { group: "General", id: "deaths", label: "Deaths", kind: "general", get: s => s.deaths },
   { group: "General", id: "healing", label: "Healing", kind: "general", get: s => s.player_healing, sub: "Yourself and allies" },
+  { group: "General", id: "lanes", label: "Lane Stats", kind: "lanes", sub: "Each lane's two heroes per team side by side, plus who threw" },
   // Compare's extras
   { group: "General", id: "souls_lead", label: "Team Souls Lead", kind: "lead", extra: true, sub: "Which team was ahead on souls, and by how much" },
   { group: "General", id: "assists", label: "Assists", kind: "general", extra: true, get: s => s.assists },
@@ -136,7 +137,7 @@ function sourceSeries(type) {
   const m = mtxParse();
   if (!m) return [];
   const last = m.times.length - 1, tot = {}, keys = {};
-  const picked = state.players.filter(p => state.selBrk.has(p.slot));
+  const picked = pickedList("breakdown");
   for (const p of picked.length ? picked : state.players) {
     const o = (m.by[p.slot] || {})[type] || {};
     for (const n of Object.keys(o)) {
@@ -181,15 +182,14 @@ function buffLine(p, kind) {
   pts.push([state.match.duration_s || (times[times.length - 1] || 0), times.length]);
   return pts;
 }
-// New match: rebuild the graphs whose line types depend on the match, and forget their on/off picks.
-// They are ranked by the picked heroes, so they are rebuilt when the picks change too.
+// New match: rebuild the graphs whose line types depend on the match. They are ranked by the picked heroes,
+// so they are rebuilt when the picks change too. Lines you turned on or off stay that way (kept by name).
 function prepDynamicGraphs(force) {
-  const key = [...state.selBrk].sort().join(",");
+  const key = [...selFor("breakdown")].sort().join(",");
   for (const g of GRAPHS) if (g.dyn && (force || g._key !== key)) {
     g._key = key;
     g.series = g.dyn();
     g.defaultOn = g.series.defaultOn;
-    delete state.hiddenCats[g.id];
   }
 }
 
@@ -201,37 +201,47 @@ const params = new URLSearchParams(location.search);
 const EMBED = params.get("embed") === "1";
 const state = {
   match: null, players: [], events: [],
-  selGen: new Set(), selBrk: new Set(),
+  sel: null, // the heroes you picked; null until you pick, then it stays the same on every graph
   graph: "souls", mode: "value", diff: false,
-  objPref: {}, itemPref: {}, hiddenCats: {}, hiddenGroups: new Set(),
+  objPref: null, itemPref: null, lineOv: {}, hiddenGroups: new Set(),
+  laneOf: null, laneTime: 540, laneHover: null,
   leftTeam: 0, me: null,
   tab: "graphs", mvpPick: null, mvpMode: "impact",
   muStat: "dmg", muWin: "all", muPair: null,
 };
 const $ = id => document.getElementById(id);
 const graphNow = () => GRAPHS.find(g => g.id === state.graph);
-const selNow = () => (graphNow().kind === "breakdown" ? state.selBrk : state.selGen);
-const setSel = s => { if (graphNow().kind === "breakdown") state.selBrk = s; else state.selGen = s; };
+// Until you pick heroes, the General graphs show everyone and the Player-Specific ones show your team (each hero there
+// has several lines). Once you pick, those heroes stay picked on every graph until you change them.
+const myTeam = () => state.players.filter(p => p.team === state.leftTeam).map(p => p.slot);
+const selFor = kind => state.sel || new Set(kind === "breakdown" ? myTeam() : state.players.map(p => p.slot));
+const selNow = () => selFor(graphNow().kind);
+const setSel = s => { state.sel = s; };
+// Picked heroes in order, for the graphs that color them by pick order.
+const pickedList = kind => [...selFor(kind)].map(s => state.players.find(p => p.slot === s)).filter(Boolean);
 function colorOf(p) {
   if (graphNow().kind !== "breakdown") return p.color;
-  if (state.selBrk.size > PAIR_COLORS.length) return p.color; // more heroes than pair colors: everyone keeps their own
-  const i = [...state.selBrk].indexOf(p.slot);
+  const sel = selFor("breakdown");
+  if (sel.size > PAIR_COLORS.length) return p.color; // more heroes than pair colors: everyone keeps their own
+  const i = [...sel].indexOf(p.slot);
   return i >= 0 ? PAIR_COLORS[i] : p.color;
 }
 // Player comparison graphs open with at most 3 line types (g.defaultOn); the rest are one click away.
-function hiddenFor(g) {
-  if (!state.hiddenCats[g.id]) {
-    const on = g.defaultOn || g.series.map((_, i) => i).slice(0, 3);
-    state.hiddenCats[g.id] = new Set(g.series.map((_, i) => i).filter(i => !on.includes(i)));
-  }
-  return state.hiddenCats[g.id];
+// What you turn on or off is kept by line name, so it stays when the lines are re-ranked for other heroes.
+function lineOn(g, i) {
+  const ov = state.lineOv[g.id], label = g.series[i].label;
+  if (ov && ov.has(label)) return ov.get(label);
+  return (g.defaultOn || [0, 1, 2]).includes(i);
 }
-function visibleCats(g) { const h = hiddenFor(g); return g.series.map((s, i) => i).filter(i => !h.has(i)); }
-function objOn(g) { return state.objPref[g.id] ?? !!g.obj; }
+function setLine(g, i, on) { (state.lineOv[g.id] = state.lineOv[g.id] || new Map()).set(g.series[i].label, on); }
+function visibleCats(g) { return g.series.map((s, i) => i).filter(i => lineOn(g, i)); }
+// Markers: one setting for every graph once you change it.
+function objOn(g) { return state.objPref ?? !!g.obj; }
 // View As: Value and Per Minute work on most graphs; % of Team, Teams and Lanes only on the General graphs that add up.
 function modeNow(g) {
   const m = state.mode;
   if (g.permin) return "permin";
+  if (g.kind === "lanes") return "value";
   if (g.steps) return "value";
   if (g.ratio || g.level || g.kind === "lead") return "value";
   if (g.kind !== "general" && m !== "permin") return "value";
@@ -272,12 +282,15 @@ async function loadMatch(id) {
   let data;
   try {
     const r = await fetch(url);
-    if (r.status === 404) throw new Error("This match isn't available yet. Try again in a few minutes.");
+    // A brand new match: deadlock-api hasn't stored it yet (404), or its shared budget for fetching new matches
+    // from Valve is used up for now (429). Both clear up on their own, so wait and retry gently by ourselves.
+    if (r.status === 404 || r.status === 429) { if (my === loadSeq) waitAndRetry(id, my); return; }
     if (!r.ok) throw new Error("Couldn't load the match (error " + r.status + ").");
     data = await r.json();
     if (my !== loadSeq) return;
     const mi = data.match_info || data;
     if (!mi || !Array.isArray(mi.players) || !mi.players.length) throw new Error("This match has no player data.");
+    state.waitTries = 0;
     setup(mi);
   } catch (e) {
     if (my !== loadSeq) return;
@@ -285,6 +298,31 @@ async function loadMatch(id) {
     const msg = e instanceof TypeError ? "Couldn't reach the match server. Check your connection and try again." : e.message || String(e);
     setStatus(msg, true, () => loadMatch(id));
   }
+}
+// The "not ready yet" screen: first retry after 20 seconds, then every 60, with a countdown and a Try Now button.
+// Few, spaced requests, so it doesn't use up the per-player allowance for new matches.
+const RETRY_STEPS = [20, 60];
+let waitTimer = null;
+function waitAndRetry(id, my) {
+  const n = (state.waitTries = (state.waitTries || 0) + 1);
+  let left = RETRY_STEPS[Math.min(n - 1, RETRY_STEPS.length - 1)];
+  clearInterval(waitTimer);
+  const draw = () => {
+    if (my !== loadSeq) { clearInterval(waitTimer); return; }
+    const s = $("status");
+    s.classList.remove("err");
+    s.innerHTML = `<div class="waitTitle">Waiting for this match's data</div>` +
+      `<div class="waitText">Valve's data for a match that just ended usually takes 1 to 5 minutes to show up.<br>Trying again in ${fmtTime(left)}${n > 1 ? ` (try ${n})` : ""}.</div>`;
+    const b = el("button", "graphOptionButton retry", "Try Now");
+    b.onclick = () => { clearInterval(waitTimer); loadMatch(id); };
+    s.append(b);
+  };
+  draw();
+  waitTimer = setInterval(() => {
+    left--;
+    if (left <= 0) { clearInterval(waitTimer); if (my === loadSeq) loadMatch(id); return; }
+    draw();
+  }, 1000);
 }
 function clearMatch() {
   state.match = null;
@@ -298,7 +336,7 @@ function hint(k) {
   const h = new URLSearchParams(location.hash.slice(1));
   return h.has(k) ? h.get(k) : params.get(k);
 }
-// Which team sits on the left: the viewer's team when the game tells us, else Amber.
+// Which team sits on the left: the viewer's team when the game tells us, else Hidden King.
 function applyViewer() {
   const fr = Number(hint("friendly"));
   state.leftTeam = hint("friendly") != null && (fr === 0 || fr === 1) ? fr : 0;
@@ -325,8 +363,8 @@ function setup(mi) {
   applyViewer();
 
   const sel = (params.get("players") || "").split(",").filter(x => /^\d+$/.test(x.trim())).map(Number).filter(n => state.players.some(p => p.slot === n));
-  state.selGen = new Set(sel.length ? sel : state.players.map(p => p.slot));
-  state.selBrk = new Set(sel.length && sel.length <= 2 ? sel : defaultPair());
+  state.sel = sel.length ? new Set(sel) : null;
+  state.laneOf = null;
   prepDynamicGraphs(true);
   state.events = buildEvents(mi);
   $("matchInput").value = mi.match_id || "";
@@ -349,16 +387,6 @@ function scoreboardKda(p) {
 }
 
 // Two players for the player comparison graphs: you and your lane opponent, else each team's top earner.
-function defaultPair() {
-  const ps = state.players;
-  const top = arr => arr.slice().sort((a, b) => b.souls - a.souls)[0];
-  if (state.me) {
-    const foes = ps.filter(p => p.team !== state.me.team);
-    const opp = top(foes.filter(p => p.lane && p.lane === state.me.lane)) || top(foes);
-    return [state.me.slot, opp.slot];
-  }
-  return [top(ps.filter(p => p.team === state.leftTeam)), top(ps.filter(p => p.team !== state.leftTeam))].filter(Boolean).map(p => p.slot);
-}
 
 function buildEvents(mi) {
   const ev = [];
@@ -419,8 +447,11 @@ function rankHtml(badge, cls, plain) {
 // ---------- top bar ----------
 function renderTop() {
   const mvp = state.tab === "mvp" || state.tab === "matchups"; // tabs that focus one hero
-  const leadG = !mvp && (graphNow().kind === "lead" || grouped(graphNow())); // views where hero picks don't apply
-  const sel = mvp || leadG ? new Set(state.players.map(p => p.slot)) : selNow();
+  const lanesG = !mvp && graphNow().kind === "lanes"; // Lane Stats: a portrait picks its lane
+  const leadG = !mvp && !lanesG && (graphNow().kind === "lead" || grouped(graphNow())); // views where hero picks don't apply
+  const curLane = lanesG ? laneNow() : null;
+  const sel = lanesG ? new Set(state.players.filter(p => laneName(p) === curLane).map(p => p.slot))
+    : mvp || leadG ? new Set(state.players.map(p => p.slot)) : selNow();
   for (const side of ["Left", "Right"]) {
     const team = side === "Left" ? state.leftTeam : 1 - state.leftTeam;
     const T = TEAMS[team];
@@ -432,7 +463,11 @@ function renderTop() {
       d.setAttribute("aria-pressed", mvp ? String(state.mvpPick === p.slot) : String(sel.has(p.slot)));
       d.style.setProperty("--tc", T.c); d.style.setProperty("--coin", T.coin); d.style.setProperty("--pc", colorOf(p));
       const rk = rankOf(p.badge);
-      d.title = `${p.hero}${rk ? " (" + rk.name + " going into the match)" : ""}${p.left ? "\nLeft the match at " + fmtTime(p.left) : ""}\n` + (mvp ? "Click to see why they placed where they did." : "Click to add or remove. Ctrl+Click to show only this hero.");
+      d.title = `${p.hero}${rk ? " (" + rk.name + " going into the match)" : ""}${p.left ? "\nLeft the match at " + fmtTime(p.left) : ""}\n` + (mvp ? "Click to see why they placed where they did." : lanesG ? "Click to see their lane. Hover to see their part." : "Click to add or remove. Ctrl+Click to show only this hero.");
+      if (lanesG) {
+        d.onmouseenter = () => { if (laneName(p) === curLane) { state.laneHover = p.slot; window.renderLanes(); } };
+        d.onmouseleave = () => { if (state.laneHover === p.slot) { state.laneHover = null; window.renderLanes(); } };
+      }
       const hi = el("div", "heroImg");
       const img = document.createElement("img"); img.src = p.img; img.alt = p.hero; img.onerror = () => { img.remove(); };
       hi.append(img);
@@ -442,6 +477,7 @@ function renderTop() {
       else if (p.mvp > 1) d.append(el("div", "badge key", "KEY"));
       d.onclick = ev => {
         if (mvp) { state.mvpPick = p.slot; state.muPair = null; renderAll(); return; }
+        if (lanesG) { if (laneName(p)) { state.laneOf = laneName(p); state.laneHover = p.slot; renderAll(); } return; }
         if (leadG) return;
         const s = new Set(selNow());
         if (ev.ctrlKey || ev.metaKey) { setSel(new Set([p.slot])); }
@@ -457,10 +493,10 @@ function renderTop() {
     const tb = (team === 0 ? state.match.average_badge_team0 : state.match.average_badge_team1) || avgBadge(ps.map(p => p.badge));
     const ta = $("avg" + side);
     ta.innerHTML = tb ? `<span class="lbl">Avg</span>${rankHtml(tb, "", true)}` : "";
-    sc.title = `${T.name} (${T.color})\nClick to show only this team. Click again to show everyone.`;
+    sc.title = `${T.name}\nClick to show only this team. Click again to show everyone.`;
     const onlyThis = ps.length && ps.every(p => sel.has(p.slot)) && [...sel].every(s => ps.some(p => p.slot === s));
     sc.classList.toggle("dim", sel.size > 0 && !ps.some(p => sel.has(p.slot)));
-    sc.onclick = () => { if (mvp || leadG) return; setSel(onlyThis ? new Set(state.players.map(p => p.slot)) : new Set(ps.map(p => p.slot))); renderAll(); };
+    sc.onclick = () => { if (mvp || leadG || lanesG) return; setSel(onlyThis ? new Set(state.players.map(p => p.slot)) : new Set(ps.map(p => p.slot))); renderAll(); };
   }
 }
 
@@ -472,7 +508,7 @@ function buildDropDown() {
   let group = null, extra = false;
   for (const g of GRAPHS) {
     if (g.group !== group) { group = g.group; extra = false; menu.append(el("div", "cat", group)); }
-    if (g.extra && !extra) { extra = true; menu.append(el("div", "extraSep", "Added by Compare")); }
+    if (g.extra && !extra) { extra = true; menu.append(el("div", "extraSep", "Added by Postmortem")); }
     const b = el("button", "item" + (g.id === state.graph ? " on" : ""), g.label);
     const note = g.sub || (g.kind === "breakdown" && GROUP_SUB[g.group]);
     if (note) b.title = note;
@@ -533,14 +569,24 @@ function renderPicks() {
   };
   btn("pickLane", "Me + Lane", lane, "You and the enemies in your lane");
   btn("pickAll", "All", all, g.kind === "breakdown" ? "All twelve heroes. That's a lot of lines: hide line types below to thin it out." : "Every player");
+  // Teams in the same order as the portraits: yours (or Hidden King) first.
   const L = state.leftTeam, team = t => state.players.filter(p => p.team === t).map(p => p.slot);
-  const brk = g.kind === "breakdown";
-  btn("pickTeamL", state.me ? "My Team" : TEAMS[L].color, brk ? team(L) : null, `All six heroes on ${state.me ? "your team" : "the " + TEAMS[L].color + " team"}`);
-  btn("pickTeamR", state.me ? "Enemy Team" : TEAMS[1 - L].color, brk ? team(1 - L) : null, `All six heroes on ${state.me ? "the enemy team" : "the " + TEAMS[1 - L].color + " team"}`);
-  btn("pickNone", "Clear", [], "Nobody, then click portraits to add them");
+  btn("pickTeamL", TEAMS[L].name, team(L), `All six heroes on ${TEAMS[L].name}${state.me ? " (your team)" : ""}`);
+  btn("pickTeamR", TEAMS[1 - L].name, team(1 - L), `All six heroes on ${TEAMS[1 - L].name}`);
+  btn("pickNone", "None", [], "Nobody, then click portraits to add them");
 }
 function renderOptions() {
   const g = graphNow(), sel = selNow();
+  const lanes = g.kind === "lanes";
+  document.body.classList.toggle("laneMode", lanes);
+  $("optLane").hidden = $("optLaneTime").hidden = !lanes;
+  if (lanes) {
+    $("optPick").hidden = $("optMode").hidden = $("optDiff").hidden = $("optMarks").hidden = true;
+    window.renderLaneOptions();
+    $("ddLabel").textContent = g.label;
+    return;
+  }
+  $("optMode").hidden = false;
   renderPicks();
   const modeOk = !g.ratio && !g.level && g.kind !== "lead";
   const okFor = v => v === "value" || (modeOk && (v === "permin" || g.kind === "general"));
@@ -560,17 +606,15 @@ function renderOptions() {
   $("optMarks").hidden = mo.hidden && mi.hidden;
   mo.classList.toggle("on", objOn(g)); mo.setAttribute("aria-pressed", String(objOn(g)));
   mi.classList.toggle("on", itemsOn(g)); mi.setAttribute("aria-pressed", String(itemsOn(g)));
-  mo.onclick = () => { state.objPref[g.id] = !objOn(g); renderAll(); };
-  mi.onclick = () => { state.itemPref[g.id] = !itemsOn(g); renderAll(); };
+  mo.onclick = () => { state.objPref = !objOn(g); renderAll(); };
+  mi.onclick = () => { state.itemPref = !itemsOn(g); renderAll(); };
   $("ddLabel").textContent = g.label;
 }
 
 // ---------- series ----------
 function seriesFor(g) {
   if (g.kind === "lead") return [leadLine()];
-  const sel = g.kind === "breakdown"
-    ? [...state.selBrk].map(s => state.players.find(p => p.slot === s)).filter(Boolean)
-    : state.players.filter(p => selNow().has(p.slot));
+  const sel = g.kind === "breakdown" ? pickedList("breakdown") : state.players.filter(p => selNow().has(p.slot));
   const mode = modeNow(g);
   if (mode === "team" || mode === "lane") return groupLines(g, mode).filter(se => !state.hiddenGroups.has(se.label));
   const perMin = mode === "permin";
@@ -716,6 +760,7 @@ function renderAll() {
   if (state.tab === "matchups") { window.renderMatchups(); return; }
   renderOptions();
   const g0 = graphNow();
+  if (g0.kind === "lanes") { $("tooltip").hidden = true; window.renderLanes(); return; }
   const series = seriesFor(g0);
   const g = modeNow(g0) === "share" ? Object.assign({}, g0, { ratio: true }) : g0; // % of Team reads as a percentage
   drawChart(series, g);
@@ -921,7 +966,7 @@ function drawMarkers(evs, X, W) {
 // On by default where buys explain the line: the Power graphs and the damage graphs.
 const ITEMS_DEFAULT = ["player_damage", "damage_taken", "dmg_breakdown"];
 const itemsFit = g => g.kind !== "lead" && !grouped(g);
-const itemsOn = g => itemsFit(g) && (state.itemPref[g.id] ?? (g.power || ITEMS_DEFAULT.includes(g.id)));
+const itemsOn = g => itemsFit(g) && (state.itemPref ?? (g.power || ITEMS_DEFAULT.includes(g.id)));
 const ITEM_SLOTS = { w: { name: "Weapon", c: "#E89A3C" }, v: { name: "Vitality", c: "#7FC241" }, s: { name: "Spirit", c: "#B77CF0" } };
 function itemsOf(p) {
   const I = window.ITEMS || {};
@@ -932,7 +977,7 @@ function itemsOf(p) {
 }
 function itemBuyers(g) {
   if (!itemsOn(g)) return null;
-  const sel = g.kind === "breakdown" ? [...state.selBrk].map(s => state.players.find(p => p.slot === s)).filter(Boolean) : state.players.filter(p => state.selGen.has(p.slot));
+  const sel = g.kind === "breakdown" ? pickedList("breakdown") : state.players.filter(p => selNow().has(p.slot));
   return sel.length >= 1 && sel.length <= 3 ? sel : null;
 }
 function drawItems(buyers, X, top, right) {
@@ -1011,19 +1056,19 @@ function renderLines(series, g) {
   }
   row.hidden = false;
   document.body.classList.remove("noLines");
-  const h = hiddenFor(g);
   g.series.forEach((ser, i) => {
-    const b = el("button", "graphOptionButton" + (h.has(i) ? " off" : ""));
+    const on = lineOn(g, i);
+    const b = el("button", "graphOptionButton" + (on ? "" : " off"));
     b.innerHTML = `<svg viewBox="0 0 30 8"><line x1="0" x2="30" y1="4" y2="4" stroke="#FFEFD7" stroke-width="2.5" stroke-dasharray="${DASHES[i % DASHES.length]}"/></svg><span>${esc(ser.label)}</span>`;
     b.title = "Click to show or hide. Ctrl+Click to show only this line type.";
     b.onclick = ev => {
-      if (ev.ctrlKey || ev.metaKey) { h.clear(); g.series.forEach((_, j) => { if (j !== i) h.add(j); }); }
-      else if (h.has(i)) h.delete(i); else h.add(i);
+      if (ev.ctrlKey || ev.metaKey) g.series.forEach((_, j) => setLine(g, j, j === i));
+      else setLine(g, i, !on);
       renderAll();
     };
     box.append(b);
   });
-  if (h.size) { const all = el("button", "graphOptionButton", "Show All"); all.onclick = () => { h.clear(); renderAll(); }; box.append(all); }
+  if (g.series.some((_, i) => !lineOn(g, i))) { const all = el("button", "graphOptionButton", "Show All"); all.onclick = () => { g.series.forEach((_, j) => setLine(g, j, true)); renderAll(); }; box.append(all); }
 }
 
 // ---------- helpers ----------

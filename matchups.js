@@ -114,6 +114,7 @@ function muSourceName(n) {
   }
   if (/melee/.test(k)) name = "Melee";
   else if (!name && /^citadel_weapon_/.test(k)) name = "Gun";
+  else if (/^citadel_weapon_/.test(k)) name += " (gun)"; // a gun's own name, like Wraith's The Rake, doesn't say it's the gun
   if (!name) name = k.replace(/^(citadel_)?(ability_|upgrade_)?/, "").replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
   return crit ? name + " (headshots)" : name;
 }
@@ -264,7 +265,7 @@ function muPairPanel(mu, pair) {
     </div>
     <p class="summary">${esc(MU_WINDOWS[state.muWin].name)}: ${esc(did(a, b, sa))}. ${esc(did(b, a, sb))}.${esc(more)}</p>
     <div class="muH2H"><div class="h2hRow th"><span></span><span class="l">${esc(a.hero)} ${onWord} ${esc(b.hero)}</span><span></span><span>${esc(b.hero)} ${onWord} ${esc(a.hero)}</span><span></span></div>${pa.map((x, i) => `<div class="h2hRow"><span class="v">${muFmt(x.v)}</span><span class="track l"><i style="width:${(x.v / scale) * 100}%;background:${x.c}"></i></span><span class="n">${esc(x.label)}</span><span class="track"><i style="width:${(pb[i].v / scale) * 100}%;background:${pb[i].c}"></i></span><span class="v r">${muFmt(pb[i].v)}</span></div>`).filter((_, i) => pa[i].v || pb[i].v).join("") || `<div class="muNone">Nothing to compare.</div>`}</div>
-    ${state.muStat === "dmg" ? `<div class="muCols">${muSrcList(esc(a.hero) + " hit with", muSources(mu, { [a.slot]: (mu.srcTo[b.slot] || {})[a.slot] }), { n: 4 })}${muSrcList(esc(b.hero) + " hit with", muSources(mu, { [b.slot]: (mu.srcTo[a.slot] || {})[b.slot] }), { n: 4 })}</div>` : ""}
+    ${state.muStat === "dmg" ? `<div class="muCols">${muSrcList(`What ${esc(a.hero)} hit ${esc(b.hero)} with`, muSources(mu, { [a.slot]: (mu.srcTo[b.slot] || {})[a.slot] }), { n: 4 })}${muSrcList(`What ${esc(b.hero)} hit ${esc(a.hero)} with`, muSources(mu, { [b.slot]: (mu.srcTo[a.slot] || {})[b.slot] }), { n: 4 })}</div>` : ""}
     ${muSpark(mu, a, b)}
     <button class="graphOptionButton allBtn" id="muBack">Back to ${esc(state.players.find(p => p.slot === state.mvpPick).hero)}</button>
     <div class="whyFoot">From Valve's damage matrix, sampled every 3 minutes.${state.muStat === "dmg" ? "" : " Effects can overlap, so seconds can add up to more than the time spent stunned."}</div></div>`;

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Deadlock Compare</title>
+<title>Postmortem</title>
 <link rel="preload" href="assets/fonts/valveoracle-semibold.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="assets/fonts/radiance-semibold.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style.css">
@@ -42,11 +42,11 @@
       <div class="graphOptionsCtn">
         <div class="graphOption" id="optPick">
           <span class="optionLabel">Show:</span>
-          <button class="graphOptionButton" id="pickLane"></button>
           <button class="graphOptionButton" id="pickAll"></button>
           <button class="graphOptionButton" id="pickTeamL"></button>
           <button class="graphOptionButton" id="pickTeamR"></button>
           <button class="graphOptionButton" id="pickNone"></button>
+          <button class="graphOptionButton" id="pickLane"></button>
         </div>
         <div class="graphOption" id="optMode">
           <span class="optionLabel">View As:</span>
@@ -61,6 +61,8 @@
           <button class="graphOptionButton" data-v="off">Both</button>
           <button class="graphOptionButton" data-v="on">Difference</button>
         </div>
+        <div class="graphOption" id="optLane" hidden></div>
+        <div class="graphOption" id="optLaneTime" hidden></div>
         <div class="graphOption" id="optMarks">
           <span class="optionLabel">Markers:</span>
           <button class="graphOptionButton toggle" id="markObj" title="Guardians, Walkers, Shrines, Patron and Mid Boss. Click to show or hide.">Objectives</button>
@@ -76,6 +78,8 @@
       <div id="tooltip" class="tooltip" hidden></div>
       <div id="empty" class="empty" hidden></div>
     </div>
+
+    <div id="laneView" class="laneView"></div>
 
     <div class="lineRow" id="lineRow" hidden>
       <span class="optionLabel">Lines:</span>
@@ -100,5 +104,6 @@
 <script src="app.js"></script>
 <script src="mvp.js"></script>
 <script src="matchups.js"></script>
+<script src="lanes.js"></script>
 </body>
 </html>

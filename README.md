@@ -1,4 +1,4 @@
-# Deadlock Compare
+# Postmortem (Deadlock Compare)
 
 Overlay and isolate Deadlock post-match graphs. Built to load inside the game through a Panorama mod (Compare button on the post-match screen), and also works in a normal browser.
 

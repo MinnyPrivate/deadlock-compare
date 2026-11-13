@@ -1,9 +1,9 @@
 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
 <path d="M10.75 4H13.25V19H10.75Z" fill="white"/>
-<path d="M7.25 19.5H16.75A1.25 1.25 0 0 1 16.75 22H7.25A1.25 1.25 0 0 1 7.25 19.5Z" fill="white"/>
+<path d="M7.25 19.5H16.75V22H7.25Z" fill="white"/>
 <path d="M2.3 7.6L21.2 2.5L21.85 4.9L2.95 10Z" fill="white"/>
 <path d="M4 8.5H5.5V14H4Z" fill="white"/>
 <path d="M18.3 4.5H19.8V10H18.3Z" fill="white"/>
-<path d="M0.25 14H9.25A4.5 4.5 0 0 1 0.25 14Z" fill="white"/>
-<path d="M14.55 10H23.55A4.5 4.5 0 0 1 14.55 10Z" fill="white"/>
+<path d="M0.25 14H9.25C9.25 16.485 7.235 18.5 4.75 18.5C2.265 18.5 0.25 16.485 0.25 14Z" fill="white"/>
+<path d="M14.55 10H23.55C23.55 12.485 21.535 14.5 19.05 14.5C16.565 14.5 14.55 12.485 14.55 10Z" fill="white"/>
 </svg>
