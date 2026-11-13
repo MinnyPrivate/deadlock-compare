@@ -57,22 +57,42 @@
 {
 	opacity: 0.4;
 }
-/* The screen covers everything above the footer (996 of 1080 layout px), so ESC Back and the icons stay usable. */
+/* While Compare is showing it is the active screen: hide the native screen behind it, so its background
+   doesn't show under the footer. */
+.DLCompareOpen #ScreensCarousel
+{
+	opacity: 0;
+}
+/* The screen covers everything above the footer (996 of 1080 layout px), so ESC Back and the icons stay usable.
+   It is always laid out so the page can load in the background; closed, it is invisible and lets clicks through
+   (the script turns hittest off). The browser panel itself stays invisible until the page has drawn, so the
+   browser's gray fill never shows; until then the overlay shows the dark background. */
 #DLCompareOverlay
 {
 	width: 100%;
 	height: 92.2%;
 	vertical-align: top;
 	background-color: #0b0b0a;
-	visibility: collapse;
+	opacity: 0;
 	z-index: 1000;
+	transition-property: opacity;
+	transition-duration: 0.12s;
+	transition-timing-function: ease-out;
 }
 .DLCompareOpen #DLCompareOverlay
 {
-	visibility: visible;
+	opacity: 1;
 }
 #DLCompareWeb
 {
 	width: 100%;
 	height: 100%;
+	opacity: 0;
+	transition-property: opacity;
+	transition-duration: 0.15s;
+	transition-timing-function: ease-out;
+}
+.DLCompareReady #DLCompareWeb
+{
+	opacity: 1;
 }

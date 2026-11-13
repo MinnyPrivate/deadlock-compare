@@ -168,6 +168,21 @@ function clearMatch() {
   $("tooltip").hidden = true;
 }
 
+// Viewer hints from the game (friendly team, local hero). They come in the query, or in the #hash: the mod preloads the
+// page before the post-game screen knows them, then passes them by changing only the hash, which doesn't reload.
+function hint(k) {
+  const h = new URLSearchParams(location.hash.slice(1));
+  return h.has(k) ? h.get(k) : params.get(k);
+}
+// Which team sits on the left: the viewer's team when the game tells us, else Amber.
+function applyViewer() {
+  const fr = Number(hint("friendly"));
+  state.leftTeam = hint("friendly") != null && (fr === 0 || fr === 1) ? fr : 0;
+  const meHero = Number(hint("me_hero")) || (window.HERO_CODES || {})[hint("me_name")] || 0;
+  state.me = state.players.find(p => p.heroId === meHero && (hint("friendly") == null || p.team === state.leftTeam)) || null;
+  if (state.me) state.leftTeam = state.me.team;
+}
+
 function setup(mi) {
   state.match = mi;
   document.body.classList.remove("noMatch");
@@ -183,12 +198,7 @@ function setup(mi) {
     badge: Number(p.player_rank_data && p.player_rank_data.initial_display_rank) || 0,
     raw: p,
   }));
-  // Which team sits on the left: the viewer's team when the game tells us, else Amber.
-  const fr = Number(params.get("friendly"));
-  state.leftTeam = fr === 0 || fr === 1 ? fr : 0;
-  const meHero = Number(params.get("me_hero")) || (window.HERO_CODES || {})[params.get("me_name")] || 0;
-  state.me = state.players.find(p => p.heroId === meHero && (params.get("friendly") == null || p.team === state.leftTeam)) || null;
-  if (state.me) state.leftTeam = state.me.team;
+  applyViewer();
 
   const sel = (params.get("players") || "").split(",").filter(x => /^\d+$/.test(x.trim())).map(Number).filter(n => state.players.some(p => p.slot === n));
   state.selGen = new Set(sel.length ? sel : state.players.map(p => p.slot));
@@ -923,6 +933,15 @@ $("matchForm").onsubmit = ev => {
 };
 // In game, ESC or the overlay's own Close closes it. The page can also ask Panorama to close via the title.
 document.addEventListener("keydown", ev => { if (ev.key === "Escape" && EMBED && $("ddMenu").hidden) document.title = "DLC_CLOSE:" + Date.now(); });
+window.addEventListener("hashchange", () => { if (state.match) { applyViewer(); renderAll(); } });
+// Tell the mod the page has drawn, so it can show the panel without the browser's gray flash.
+// A hidden browser may not run animation frames, so a timer backs it up.
+if (EMBED) {
+  let told = false;
+  const ready = () => { if (!told) { told = true; document.title = "DLC_READY:" + Date.now(); } };
+  requestAnimationFrame(() => requestAnimationFrame(ready));
+  setTimeout(ready, 400);
+}
 const startId = params.get("match");
 if (startId && /^\d+$/.test(startId)) loadMatch(startId);
 else { clearMatch(); setStatus(EMBED ? "No match ID was passed in." : "Enter a match ID to load it."); }
