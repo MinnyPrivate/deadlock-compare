@@ -117,6 +117,8 @@ function portrait(p, cls) {
   const T = TEAMS[p.team];
   return `<span class="${cls}" style="--coin:${T.coin};--tc:${T.c}"><img src="${p.img}" alt="" onerror="this.remove()"></span>`;
 }
+// The MVP tab shows the game's rectangular card art (see cardImg in app.js), not the round chip.
+function cardFace(p, cls) { return `<span class="cardFace ${cls}" style="--tc:${TEAMS[p.team].c}">${cardImg(p)}</span>`; }
 function catBar(r, scale) {
   return `<div class="catBar">` + Object.keys(MVP_CATS).map(k => {
     const w = ((r.cats[k] || 0) / scale) * 100;
@@ -148,7 +150,7 @@ window.renderMvp = function renderMvp() {
     const v = valveLabel(p);
     h += `<button class="mvpRow${p.slot === state.mvpPick ? " on" : ""}" data-slot="${p.slot}" style="--tc:${T.c}">
       <span class="place">${r.place}</span>
-      ${portrait(p, "pt")}
+      ${cardFace(p, "row")}
       <span class="who"><span class="hn">${esc(heroName(p))}${p.left ? ` <span class="leftTag" title="Left the match at ${fmtTime(p.left)}">LEFT</span>` : ""}</span>${rankHtml(p.badge) || `<span class="rank none">Unranked</span>`}</span>
       ${catBar(r, top)}
       <span class="score">${Math.round(r.score)}</span>
@@ -179,7 +181,7 @@ window.renderMvp = function renderMvp() {
 
   h += `<div class="mvpWhy" style="--tc:${T.c}">
     <div class="whyHead">
-      ${portrait(p, "big")}
+      ${cardFace(p, "lg")}
       <div class="whyName">
         <div class="hn">${esc(heroName(p))}</div>
         <div class="meta"><span style="color:${T.c}">${T.color}</span> · ${won ? "Won" : "Lost"} · ${p.lane && LANES_BY_COLOR[p.lane] ? LANES_BY_COLOR[p.lane] + " lane" : "No lane"}${p.left ? ` · <span class="leftTag">Left at ${fmtTime(p.left)}</span>` : ""}</div>
