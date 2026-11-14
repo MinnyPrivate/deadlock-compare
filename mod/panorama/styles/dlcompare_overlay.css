@@ -57,16 +57,18 @@
 {
 	opacity: 0.4;
 }
-/* While Compare is showing it is the active screen: hide the native screens' content so none of it shows under the
-   footer, but keep their backdrop (ScoreboardBackground, the texture and dark vignette), so the strip under the footer
-   and the screen edges are the game's own background, the same as on the Graphs screen. */
-.DLCompareOpen #ScreensCarousel .MatchMode,
-.DLCompareOpen #ScreensCarousel #MatchID,
-.DLCompareOpen #ScreensCarousel CitadelPostGameTeam,
-.DLCompareOpen #ScreensCarousel CitadelPostGameScoreboardNew,
-.DLCompareOpen #ScreensCarousel MatchDetailsGraphs
+/* While Compare is showing, hide the whole native screen carousel (v4 behaviour). v5 tried to keep the screens' backdrop
+   and hide only their content, but #Team1Screen / #Team2Screen carry the team background art themselves, and the
+   hero scene panels still showed through the strip under the footer. Hiding the carousel leaves only the page root,
+   which is painted solid black here (the game's default is offBlack #10130D, which read as gray), like the bottom of
+   the official Graphs tab. The overlay covers everything above the footer, so only this strip is visible. */
+.DLCompareOpen #ScreensCarousel
 {
 	opacity: 0;
+}
+.DLCompareOpen
+{
+	background-color: #000000;
 }
 /* The screen covers everything above the footer (996 of 1080 layout px), so ESC Back and the icons stay usable.
    It is always laid out so the page can load in the background; closed, it is invisible and lets clicks through

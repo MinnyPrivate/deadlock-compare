@@ -24,8 +24,8 @@ const PS = "Player-Specific";
 const GRAPHS = [
   { group: "General", id: "souls", label: "Souls Collected", kind: "general", get: s => s.net_worth },
   { group: "General", id: "souls_pm", label: "Souls per Minute", kind: "general", permin: true, get: s => s.net_worth },
-  { group: "General", id: "kills", label: "Kills", kind: "general", get: s => s.kills },
-  { group: "General", id: "deaths", label: "Deaths", kind: "general", get: s => s.deaths },
+  { group: "General", id: "kills", label: "Kills", kind: "general", get: s => s.kills, events: p => killTimes(p) },
+  { group: "General", id: "deaths", label: "Deaths", kind: "general", get: s => s.deaths, events: p => deathTimes(p) },
   { group: "General", id: "healing", label: "Healing", kind: "general", get: s => s.player_healing, sub: "Yourself and allies" },
   { group: "General", id: "lanes", label: "Lane Stats", kind: "lanes", sub: "Each lane's two heroes per team side by side, plus who threw" },
   // Compare's extras
@@ -155,6 +155,29 @@ function sourceSeries(type) {
   series.defaultOn = series.map((_, i) => i).slice(0, top.length + (rest.length ? 1 : 0));
   return series;
 }
+// Kills and deaths: death_details has the exact second of every death and who got the kill, so these are whole numbers that
+// step at the real time. (Valve's 3-minute snapshots would draw slopes, like 4.3 deaths.) Older matches without it use the snapshots.
+const deathTimes = p => (p.raw.death_details || []).map(d => Number(d.game_time_s) || 0).sort((a, b) => a - b);
+const killTimes = p => state.players.flatMap(q => (q.raw.death_details || []).filter(d => Number(d.killer_player_slot) === p.slot).map(d => Number(d.game_time_s) || 0)).sort((a, b) => a - b);
+const haveDeathDetails = () => state.players.length > 0 && state.players.every(p => Array.isArray(p.raw.death_details));
+function stepPts(times) {
+  const pts = [[0, 0]];
+  times.forEach((t, i) => { pts.push([t, i]); pts.push([t, i + 1]); });
+  pts.push([state.match.duration_s || (times[times.length - 1] || 0), times.length]);
+  pts.step = true; // read as "the count so far", not interpolated
+  return pts;
+}
+const stepAt = (pts, t) => { let v = 0; for (const [x, y] of pts) { if (x <= t) v = y; else break; } return v; };
+// Every kill as one event: the hero that died, who killed them (if a hero) and when.
+function deathEvents() {
+  const mi = state.match;
+  if (mi._deaths) return mi._deaths;
+  const bySlot = new Map(state.players.map(p => [p.slot, p]));
+  const out = [];
+  for (const v of state.players) for (const d of v.raw.death_details || []) out.push({ t: Number(d.game_time_s) || 0, victim: v, killer: bySlot.get(Number(d.killer_player_slot)) || null });
+  return (mi._deaths = out.sort((a, b) => a.t - b.t));
+}
+
 const BUFF_NAMES = {
   spirit: "Spirit Power", wp: "Weapon Damage", firerate: "Fire Rate", ammo: "Ammo", hp: "Health",
   bulletresist: "Bullet Resist", spiritresist: "Spirit Resist", cd: "Cooldown Reduction", movespeed: "Move Speed", range: "Range",
@@ -203,7 +226,7 @@ const state = {
   match: null, players: [], events: [],
   sel: null, // the heroes you picked; null until you pick, then it stays the same on every graph
   graph: "souls", mode: "value", diff: false,
-  objPref: null, itemPref: null, lineOv: {}, hiddenGroups: new Set(),
+  objPref: null, itemPref: null, deathPref: null, lineOv: {}, hiddenGroups: new Set(),
   laneOf: null, laneTime: 540, laneHover: null,
   leftTeam: 0, me: null,
   tab: "graphs", mvpPick: null, mvpMode: "impact",
@@ -211,10 +234,9 @@ const state = {
 };
 const $ = id => document.getElementById(id);
 const graphNow = () => GRAPHS.find(g => g.id === state.graph);
-// Until you pick heroes, the General graphs show everyone and the Player-Specific ones show your team (each hero there
-// has several lines). Once you pick, those heroes stay picked on every graph until you change them.
-const myTeam = () => state.players.filter(p => p.team === state.leftTeam).map(p => p.slot);
-const selFor = kind => state.sel || new Set(kind === "breakdown" ? myTeam() : state.players.map(p => p.slot));
+// Until you pick heroes, the General graphs show everyone and the Player-Specific ones show nobody (each hero there
+// has several lines, so you choose whose to look at). Once you pick, those heroes stay picked on every graph until you change them.
+const selFor = kind => state.sel || new Set(kind === "breakdown" ? [] : state.players.map(p => p.slot));
 const selNow = () => selFor(graphNow().kind);
 const setSel = s => { state.sel = s; };
 // Picked heroes in order, for the graphs that color them by pick order.
@@ -282,15 +304,15 @@ async function loadMatch(id) {
   let data;
   try {
     const r = await fetch(url);
-    // A brand new match: deadlock-api hasn't stored it yet (404), or its shared budget for fetching new matches
-    // from Valve is used up for now (429). Both clear up on their own, so wait and retry gently by ourselves.
-    if (r.status === 404 || r.status === 429) { if (my === loadSeq) waitAndRetry(id, my); return; }
+    // Not ready yet: deadlock-api hasn't stored the match (404), its shared budget for fetching new matches from Valve is used
+    // up for now (429), or it is having trouble (502, 503, 504). Wait and retry gently by ourselves; see waitAndRetry.
+    if (WAIT_KINDS[r.status]) { if (my === loadSeq) waitAndRetry(id, my, WAIT_KINDS[r.status]); return; }
     if (!r.ok) throw new Error("Couldn't load the match (error " + r.status + ").");
     data = await r.json();
     if (my !== loadSeq) return;
     const mi = data.match_info || data;
     if (!mi || !Array.isArray(mi.players) || !mi.players.length) throw new Error("This match has no player data.");
-    state.waitTries = 0;
+    state.wait = null;
     setup(mi);
   } catch (e) {
     if (my !== loadSeq) return;
@@ -300,28 +322,51 @@ async function loadMatch(id) {
   }
 }
 // The "not ready yet" screen: first retry after 20 seconds, then every 60, with a countdown and a Try Now button.
-// Few, spaced requests, so it doesn't use up the per-player allowance for new matches.
+// Few, spaced requests, so it doesn't use up the per-player allowance for new matches. How long we keep trying depends on
+// the answer. Everything is counted in real time, so pressing Try Now can't make the "nobody uploaded it" message come early.
+//   429 (busy): keep trying, it clears by itself.
+//   404 (not stored): keep trying for 3 minutes since the first miss, then stop and say nobody in the match uploaded it.
+//   502, 503, 504 (the API is having trouble): stop after 10 tries and say it looks down.
 const RETRY_STEPS = [20, 60];
+const WAIT_KINDS = { 404: "missing", 429: "busy", 502: "down", 503: "down", 504: "down" };
+const MISSING_GIVE_UP_S = 180, DOWN_GIVE_UP_TRIES = 10, TRY_NOW_COOLDOWN_S = 10;
 let waitTimer = null;
-function waitAndRetry(id, my) {
-  if (state.waitId !== id) { state.waitId = id; state.waitTries = 0; } // a different match starts over at 20 seconds
-  const n = (state.waitTries = (state.waitTries || 0) + 1);
-  let left = RETRY_STEPS[Math.min(n - 1, RETRY_STEPS.length - 1)];
+function waitAndRetry(id, my, kind) {
+  let w = state.wait;
+  if (!w || w.id !== id) w = state.wait = { id, start: Date.now(), tries: 0, downTries: 0, last: 0 }; // a different match starts over
+  const now = Date.now();
+  w.tries++; w.last = now; w.kind = kind;
+  w.downTries = kind === "down" ? w.downTries + 1 : 0;
+  const stopped = kind === "missing" ? now - w.start >= MISSING_GIVE_UP_S * 1000 : kind === "down" && w.downTries >= DOWN_GIVE_UP_TRIES;
+  let left = RETRY_STEPS[Math.min(w.tries - 1, RETRY_STEPS.length - 1)];
   clearInterval(waitTimer);
   const draw = () => {
     if (my !== loadSeq) { clearInterval(waitTimer); return; }
     const s = $("status");
     s.classList.remove("err");
-    s.innerHTML = `<div class="waitTitle">Waiting for this match's data</div>` +
-      `<div class="waitText">Valve's data for a match that just ended usually takes 1 to 5 minutes to show up.<br>Trying again in ${fmtTime(left)}${n > 1 ? ` (try ${n})` : ""}.</div>`;
-    const b = el("button", "graphOptionButton retry", "Try Now");
+    const cool = Math.max(0, Math.ceil((w.last + TRY_NOW_COOLDOWN_S * 1000 - Date.now()) / 1000));
+    let title, text;
+    if (stopped && kind === "missing") {
+      title = "This match hasn't been uploaded";
+      text = "No one in this match has uploaded it to deadlock-api. Ask someone who played it to run the uploader, then press Try Now.";
+    } else if (stopped) {
+      title = "deadlock-api looks down right now";
+      text = "It keeps answering with errors, so I stopped asking. Press Try Now to ask again in a while.";
+    } else {
+      title = kind === "down" ? "deadlock-api is having trouble" : "Waiting for this match's data";
+      text = (kind === "busy" ? "deadlock-api is busy fetching new matches right now." : kind === "down" ? "deadlock-api answered with an error." : "Valve's data for a match that just ended usually takes 1 to 5 minutes to show up.") +
+        `<br>Trying again in ${fmtTime(left)}${w.tries > 1 ? ` (try ${w.tries})` : ""}.`;
+    }
+    s.innerHTML = `<div class="waitTitle">${title}</div><div class="waitText">${text}</div>`;
+    const b = el("button", "graphOptionButton retry", cool ? `Try Now (${cool})` : "Try Now");
+    b.disabled = cool > 0; // a short cooldown, so clicking again and again doesn't hammer the API
     b.onclick = () => { clearInterval(waitTimer); loadMatch(id); };
     s.append(b);
   };
   draw();
   waitTimer = setInterval(() => {
     left--;
-    if (left <= 0) { clearInterval(waitTimer); if (my === loadSeq) loadMatch(id); return; }
+    if (!stopped && left <= 0) { clearInterval(waitTimer); if (my === loadSeq) loadMatch(id); return; }
     draw();
   }, 1000);
 }
@@ -353,7 +398,8 @@ function setup(mi) {
   state.players = ordered.map((p, i) => ({
     slot: Number(p.player_slot) || 0, team: Number(p.team) === 1 ? 1 : 0, lane: p.assigned_lane || 0, heroId: Number(p.hero_id) || 0,
     hero: (window.HERO_NAMES || {})[p.hero_id] || "Hero " + (Number(p.hero_id) || 0),
-    img: `assets/heroes/${Number(p.hero_id) || 0}.png`,
+    img: `assets/heroes/${Number(p.hero_id) || 0}.png`, // masked card art for the round chips
+    card: (window.HERO_CARDS || []).includes(Number(p.hero_id)) ? `assets/cards/${Number(p.hero_id)}.webp` : null, // the game's rectangular card art
     left: Number(p.abandon_match_time_s) || 0,
     color: PLAYER_COLORS[i % PLAYER_COLORS.length],
     stats: scoreboardKda(p),
@@ -563,7 +609,7 @@ function renderPicks() {
     b.textContent = label;
     b.hidden = !arr;
     b.title = tip;
-    b.classList.toggle("on", !!arr && arr.length > 0 && same(arr));
+    b.classList.toggle("on", !!arr && same(arr));
     b.onclick = () => { setSel(new Set(arr)); renderAll(); };
   };
   btn("pickLane", "Me + Lane", lane, "You and the enemies in your lane");
@@ -599,10 +645,13 @@ function renderOptions() {
   $("optDiff").hidden = !canDiff;
   seg("optDiff", state.diff ? "on" : "off", v => { state.diff = v === "on"; renderAll(); });
   // Objectives and item buys are both markers on the time axis, so they share one row of on/off toggles.
-  const mo = $("markObj"), mi = $("markItems");
+  const mo = $("markObj"), mi = $("markItems"), md = $("markDeaths");
   mo.hidden = !state.events.length;
   mi.hidden = !itemsFit(g);
-  $("optMarks").hidden = mo.hidden && mi.hidden;
+  md.hidden = !deathsFit(g);
+  $("optMarks").hidden = mo.hidden && mi.hidden && md.hidden;
+  md.classList.toggle("on", deathsOn(g)); md.setAttribute("aria-pressed", String(deathsOn(g)));
+  md.onclick = () => { state.deathPref = !deathsOn(g); renderAll(); };
   mo.classList.toggle("on", objOn(g)); mo.setAttribute("aria-pressed", String(objOn(g)));
   mi.classList.toggle("on", itemsOn(g)); mi.setAttribute("aria-pressed", String(itemsOn(g)));
   mo.onclick = () => { state.objPref = !objOn(g); renderAll(); };
@@ -620,7 +669,9 @@ function seriesFor(g) {
   // Totals start at 0 at 0:00 and the Power graphs at each hero's spawn values. Rates and percentages have no value until
   // Valve's first snapshot (3:00), so their lines start at 0 and the first stretch is dotted (pts.real = index of the first real point).
   const lead = !g.start && (g.ratio || mode === "share" || perMin);
+  const exact = g.events && mode === "value" && haveDeathDetails();
   const build = (p, get) => {
+    if (exact) return stepPts(g.events(p));
     const pts = [];
     if (g.start) { const v0 = g.start(p); if (v0 != null) pts.push([0, v0]); }
     else pts.push([0, 0]);
@@ -725,6 +776,13 @@ function leadLine() {
   return { lead: true, label: "Team Souls Lead", color: "#FFEFD7", dash: "", pts };
 }
 function diffLine(a, b, cat) {
+  if (a.pts.step && b.pts.step) { // step graphs: the gap changes whenever either hero's count does
+    const ts = [...new Set([...a.pts, ...b.pts].map(p => p[0]))].sort((x, y) => x - y), pts = [];
+    let prev = 0;
+    for (const t of ts) { const d = stepAt(a.pts, t) - stepAt(b.pts, t); pts.push([t, prev], [t, d]); prev = d; }
+    pts.step = true;
+    return { player: a.player, other: b.player, label: `${a.label} vs ${b.label}`, sub: cat, color: a.color, dash: "", diff: true, pts };
+  }
   const pts = a.pts.map(([t, v]) => [t, v - (valueAt(b.pts, t) ?? 0)]);
   if (a.pts.real) pts.real = a.pts.real;
   return { player: a.player, other: b.player, label: `${a.label} vs ${b.label}`, sub: cat, color: a.color, dash: "", diff: true, pts };
@@ -732,6 +790,7 @@ function diffLine(a, b, cat) {
 // A line's value at any time, read off the straight segments between its points (null outside them).
 function lerpAt(pts, t) {
   if (!pts.length || t < pts[0][0] || t > pts[pts.length - 1][0]) return null;
+  if (pts.step) return stepAt(pts, t);
   for (let i = 1; i < pts.length; i++) {
     const [t1, v1] = pts[i - 1], [t2, v2] = pts[i];
     if (t <= t2) return t2 === t1 ? v2 : v1 + ((v2 - v1) * (t - t1)) / (t2 - t1);
@@ -772,8 +831,9 @@ function drawChart(series, g) {
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
   const endLabels = (g.kind === "breakdown" && series.some(se => se.sub && !se.diff)) || series.some(se => se.endLab);
   const m = { l: 18, r: endLabels ? 250 : 96, t: 34, b: 40 };
-  const buyers = itemBuyers(g);
+  const buyers = itemBuyers(g), dots = deathsOn(g);
   if (buyers) m.b += buyers.length * 32 + 8; // item rows sit between the lines and the time axis
+  if (dots) m.b += 2 * DEATH_ROW + 6; // death dots sit above those, still below the lines
   const dur = state.match.duration_s || Math.max(60, ...series.flatMap(s => s.pts.map(p => p[0])));
   const t0 = 0;
   const vals = series.flatMap(s => s.pts.map(p => p[1]));
@@ -781,12 +841,12 @@ function drawChart(series, g) {
   if (vals.length) { ymax = Math.max(...vals); ymin = Math.min(0, ...vals); }
   if (g.level && vals.length) ymin = Math.min(...vals);
   if (ymax === ymin) ymax = ymin + 1;
-  const ticks = niceTicks(ymin, ymax, 4);
+  const ticks = niceTicks(ymin, ymax, 4, series.length > 0 && series.every(se => se.pts.step));
   ymin = Math.min(ymin, ticks[0]); ymax = Math.max(ymax, ticks[ticks.length - 1]);
   const X = t => m.l + ((Math.max(t, t0) - t0) / (dur - t0)) * (W - m.l - m.r);
   const Y = v => H - m.b - ((v - ymin) / (ymax - ymin)) * (H - m.t - m.b);
   let s = "";
-  for (const v of ticks) {
+  for (const v of series.length ? ticks : []) {
     if (v === ymin && !g.level) continue;
     s += `<line x1="${m.l}" x2="${W - m.r + 8}" y1="${Y(v)}" y2="${Y(v)}" stroke="#ffffff" stroke-opacity="0.045"/>`;
     s += `<text class="ylab" x="${W - 4}" y="${Y(v) + 6}" text-anchor="end">${fmtNum(g.kind === "lead" ? Math.abs(v) : v, g)}</text>`;
@@ -828,13 +888,18 @@ function drawChart(series, g) {
       const [t, v] = se.pts[se.pts.length - 1];
       return { x: X(t) + 10, y: Y(v) + 5, se };
     }).sort((a, b) => a.y - b.y);
-    for (let i = 1; i < labs.length; i++) if (labs[i].y - labs[i - 1].y < 17) labs[i].y = labs[i - 1].y + 17;
+    // Keep them inside the chart: push down to clear each other, then pull back up from the bottom edge.
+    const lo = m.t + 6, hi = H - m.b - 4, gap = 17;
+    for (let i = 0; i < labs.length; i++) labs[i].y = Math.max(lo, i ? Math.max(labs[i].y, labs[i - 1].y + gap) : labs[i].y);
+    for (let i = labs.length - 1; i >= 0; i--) { const lim = i === labs.length - 1 ? hi : labs[i + 1].y - gap; if (labs[i].y > lim) labs[i].y = lim; }
     for (const l of labs) s += `<text class="endLab" x="${l.x}" y="${l.y}" style="fill:${l.se.color}">${esc(l.se.endLab || l.se.sub)}</text>`;
   }
   s += `<line id="hoverLine" y1="${m.t}" y2="${H - m.b}" stroke="#FFEFD7" stroke-opacity="0" />`;
   svg.innerHTML = s;
   drawMarkers(evs, X, W);
-  drawItems(buyers, X, H - 40 - (buyers ? buyers.length * 32 : 0), W - m.r);
+  const itemsH = buyers ? buyers.length * 32 : 0;
+  drawItems(buyers, X, H - 40 - itemsH, W - m.r);
+  drawDeaths(dots, X, H - 40 - itemsH - (buyers ? 4 : 0) - 2 * DEATH_ROW, W - m.r);
 
   const emp = $("empty");
   emp.hidden = series.length > 0;
@@ -896,7 +961,7 @@ function readoutHtml(rows, g, t) {
     groups.sort((a, b) => b.max - a.max);
     return `<div class="heroRows brk${groups.length > 4 ? " two" : ""}"${groups.length > 4 ? ` style="grid-template-rows:repeat(${Math.ceil(groups.length / 2)},auto)"` : ""}>` + groups.map(gr => {
       const T = TEAMS[gr.p.team];
-      return `<div class="grp"><div class="hr" style="--tc:${T.c};--pc:${gr.color}"><i class="sw"></i><span class="face"><img src="${gr.p.img}" alt=""></span><span class="v hn">${esc(heroName(gr.p))}</span></div>` +
+      return `<div class="grp"><div class="hr" style="--tc:${T.c};--pc:${gr.color}"><i class="sw"></i><span class="face">${cardImg(gr.p)}</span><span class="v hn">${esc(heroName(gr.p))}</span></div>` +
         gr.rows.sort((a, b) => b.v - a.v).map(({ se, v }) => `<div class="sr"><svg viewBox="0 0 22 6"><line x1="0" x2="22" y1="3" y2="3" stroke="${se.color}" stroke-width="2.5" stroke-dasharray="${se.dash}"/></svg><span class="n">${esc(se.sub)}</span><span class="v">${fmtNum(v, g)}</span></div>`).join("") + `</div>`;
     }).join("") + `</div>`;
   }
@@ -911,7 +976,7 @@ function heroRowsHtml(rows, g, t) {
   return `<div class="heroRows">` + rows.map(({ se, v }) => {
     const p = se.player, T = TEAMS[p.team], tot = se.total ? se.total(t) : 0;
     return `<div class="hr" style="--tc:${T.c};--pc:${se.color}" title="${esc(heroName(p))}"><i class="sw"></i>` +
-      `<span class="face"><img src="${p.img}" alt=""></span>` +
+      `<span class="face">${cardImg(p)}</span>` +
       `<span class="v">${fmtNum(v, g)}</span>${tot ? `<span class="pc">${Math.round((100 * v) / tot)}%</span>` : ""}</div>`;
   }).join("") + `</div>`;
 }
@@ -967,6 +1032,32 @@ const ITEMS_DEFAULT = ["player_damage", "damage_taken", "dmg_breakdown"];
 const itemsFit = g => g.kind !== "lead" && !grouped(g);
 const itemsOn = g => itemsFit(g) && (state.itemPref ?? (g.power || ITEMS_DEFAULT.includes(g.id)));
 const ITEM_SLOTS = { w: { name: "Weapon", c: "#E89A3C" }, v: { name: "Vitality", c: "#7FC241" }, s: { name: "Spirit", c: "#B77CF0" } };
+// Kills and deaths as dots: one row per team (the team of the hero who died), a dot at the exact second. On by default on the
+// Kills and Deaths graphs. Once heroes are picked, the dots that involve them stay bright and the rest fade.
+const deathsFit = g => g.kind !== "lead" && g.kind !== "lanes" && state.match && deathEvents().length > 0;
+const deathsOn = g => deathsFit(g) && (state.deathPref ?? ["kills", "deaths"].includes(g.id));
+const DEATH_ROW = 30;
+function drawDeaths(on, X, top, right) {
+  const box = $("deathRows");
+  box.innerHTML = "";
+  if (!on) return;
+  const picked = state.sel && state.sel.size ? state.sel : null;
+  [state.leftTeam, 1 - state.leftTeam].forEach((team, r) => {
+    const T = TEAMS[team], row = el("div", "deathRow");
+    row.style.top = top + r * DEATH_ROW + "px";
+    row.innerHTML = `<span class="who" style="left:${right + 14}px;color:${T.c}">${esc(T.name)} deaths</span>`;
+    const lastX = [-99, -99];
+    for (const e of deathEvents().filter(e => e.victim.team === team)) {
+      const x = X(e.t), lane = x - lastX[0] >= 14 ? 0 : x - lastX[1] >= 14 ? 1 : 0; // two sub-rows so close dots don't hide each other
+      lastX[lane] = x;
+      const d = el("i", "deathDot" + (picked && !picked.has(e.victim.slot) && !(e.killer && picked.has(e.killer.slot)) ? " dim" : ""));
+      d.style.left = x + "px"; d.style.top = 1 + lane * 14 + "px"; d.style.setProperty("--dc", T.c);
+      d.title = `${heroName(e.victim)} died${e.killer ? ", killed by " + heroName(e.killer) : ""}\n${fmtTime(e.t)}`;
+      row.append(d);
+    }
+    box.append(row);
+  });
+}
 function itemsOf(p) {
   const I = window.ITEMS || {};
   return (p.raw.items || []).filter(it => I[it.item_id]).map(it => {
@@ -1002,6 +1093,9 @@ function drawItems(buyers, X, top, right) {
     box.append(row);
   });
 }
+// The game's own painted card, uncropped, for the places Valve shows it as a rectangle (Lane Stats, the hover box, the MVP tab).
+// The round chips keep the masked art. Heroes without card art leave the gray gradient empty.
+function cardImg(p) { return p.card ? `<img src="${p.card}" alt="" onerror="this.remove()">` : ""; }
 function portraitImg(p) { return `<img src="${p.img}" alt="" style="--coin:${TEAMS[p.team].coin}">`; }
 function boughtHtml(buyers, t0, t1) {
   const rows = [];
@@ -1012,13 +1106,26 @@ function boughtHtml(buyers, t0, t1) {
     `<div class="row"><span class="sw" style="background:${colorOf(p)}"></span><i class="itemIcon sm" style="--sc:${ITEM_SLOTS[it.slot].c};background-image:url('assets/items/${it.icon}.webp')"></i><span class="n">${esc(it.name)}${buyers.length > 1 ? ` <small>${esc(p.hero)}</small>` : ""}</span><span class="v t">${fmtTime(it.t)}</span></div>`).join("") + `</div>`;
 }
 
+// One line chip: the toggle, and an "only" button that shows just this one (Ctrl+Click doesn't reach the game's browser).
+function lineChip(svg, label, off, tip, toggle, only) {
+  const c = el("span", "lineChip");
+  const b = el("button", "graphOptionButton" + (off ? " off" : ""));
+  b.innerHTML = `${svg}<span>${esc(label)}</span>`;
+  b.title = tip + " Ctrl+Click also shows only this one.";
+  b.onclick = ev => { if (ev.ctrlKey || ev.metaKey) only(); else toggle(); };
+  const o = el("button", "graphOptionButton only", "only");
+  o.title = "Show only this one";
+  o.onclick = only;
+  c.append(b, o);
+  return c;
+}
 function renderLines(series, g) {
   const row = $("lineRow"), box = $("lines");
   box.innerHTML = "";
   const d = series.find(se => se.diff);
   $("lineHintStatic").hidden = g.kind !== "breakdown";
-  $("lineHintStatic").textContent = grouped(g) ? "Click to hide a line. Ctrl+Click to show only that one."
-    : "Click to hide a line type. Ctrl+Click to show only that one." + (itemsOn(g) && !itemBuyers(g) ? " Item buys show for 1 to 3 heroes." : "");
+  $("lineHintStatic").textContent = (grouped(g) ? "Click to hide a line. Press only to show just that one." : "Click to hide a line type. Press only to show just that one.") +
+    (itemsOn(g) && !itemBuyers(g) ? " Item buys show for 1 to 3 heroes." : "");
   if (g.kind === "lead") {
     row.hidden = false;
     box.append(el("span", "lineHint", `Above the line: ${TEAMS[state.leftTeam].color} ahead. Below: ${TEAMS[1 - state.leftTeam].color} ahead. Hero picks don't change this graph.`));
@@ -1031,15 +1138,11 @@ function renderLines(series, g) {
     $("lineHintStatic").hidden = false;
     const all = groupLines(g, modeNow(g)), h = state.hiddenGroups;
     for (const se of all) {
-      const b = el("button", "graphOptionButton" + (h.has(se.label) ? " off" : ""));
-      b.innerHTML = `<svg viewBox="0 0 30 8"><line x1="0" x2="30" y1="4" y2="4" stroke="${se.color}" stroke-width="3" stroke-dasharray="${se.dash}"/></svg><span>${esc(se.label)}</span>`;
-      b.title = (se.group.sub ? se.group.ps.map(p => p.hero).join(" + ") + "\n" : "") + "Click to show or hide. Ctrl+Click to show only this line.";
-      b.onclick = ev => {
-        if (ev.ctrlKey || ev.metaKey) { h.clear(); all.forEach(x => { if (x.label !== se.label) h.add(x.label); }); }
-        else if (h.has(se.label)) h.delete(se.label); else h.add(se.label);
-        renderAll();
-      };
-      box.append(b);
+      const svg = `<svg viewBox="0 0 30 8"><line x1="0" x2="30" y1="4" y2="4" stroke="${se.color}" stroke-width="3" stroke-dasharray="${se.dash}"/></svg>`;
+      const tip = (se.group.sub ? se.group.ps.map(p => p.hero).join(" + ") + "\n" : "") + "Click to show or hide.";
+      box.append(lineChip(svg, se.label, h.has(se.label), tip,
+        () => { if (h.has(se.label)) h.delete(se.label); else h.add(se.label); renderAll(); },
+        () => { h.clear(); all.forEach(x => { if (x.label !== se.label) h.add(x.label); }); renderAll(); }));
     }
     if (all.some(se => h.has(se.label))) { const b = el("button", "graphOptionButton", "Show All"); b.onclick = () => { h.clear(); renderAll(); }; box.append(b); }
     document.body.classList.remove("noLines");
@@ -1057,23 +1160,19 @@ function renderLines(series, g) {
   document.body.classList.remove("noLines");
   g.series.forEach((ser, i) => {
     const on = lineOn(g, i);
-    const b = el("button", "graphOptionButton" + (on ? "" : " off"));
-    b.innerHTML = `<svg viewBox="0 0 30 8"><line x1="0" x2="30" y1="4" y2="4" stroke="#FFEFD7" stroke-width="2.5" stroke-dasharray="${DASHES[i % DASHES.length]}"/></svg><span>${esc(ser.label)}</span>`;
-    b.title = "Click to show or hide. Ctrl+Click to show only this line type.";
-    b.onclick = ev => {
-      if (ev.ctrlKey || ev.metaKey) g.series.forEach((_, j) => setLine(g, j, j === i));
-      else setLine(g, i, !on);
-      renderAll();
-    };
-    box.append(b);
+    const svg = `<svg viewBox="0 0 30 8"><line x1="0" x2="30" y1="4" y2="4" stroke="#FFEFD7" stroke-width="2.5" stroke-dasharray="${DASHES[i % DASHES.length]}"/></svg>`;
+    box.append(lineChip(svg, ser.label, !on, "Click to show or hide.",
+      () => { setLine(g, i, !on); renderAll(); },
+      () => { g.series.forEach((_, j) => setLine(g, j, j === i)); renderAll(); }));
   });
   if (g.series.some((_, i) => !lineOn(g, i))) { const all = el("button", "graphOptionButton", "Show All"); all.onclick = () => { g.series.forEach((_, j) => setLine(g, j, true)); renderAll(); }; box.append(all); }
 }
 
 // ---------- helpers ----------
-function niceTicks(lo, hi, n) {
+function niceTicks(lo, hi, n, whole) {
   const span = hi - lo, step0 = span / n, mag = Math.pow(10, Math.floor(Math.log10(step0)));
-  const step = [1, 2, 2.5, 5, 10].map(k => k * mag).find(s => span / s <= n) || 10 * mag;
+  let step = [1, 2, ...(whole ? [] : [2.5]), 5, 10].map(k => k * mag).find(s => span / s <= n) || 10 * mag;
+  if (whole) step = Math.max(1, step); // counts (kills, deaths, buffs) never get a half tick
   const out = [];
   for (let v = Math.floor(lo / step) * step; v <= hi + step * 0.5; v += step) out.push(+v.toFixed(6));
   return out;

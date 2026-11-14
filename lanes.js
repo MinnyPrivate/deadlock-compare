@@ -123,7 +123,7 @@ function objBarHtml(o, teams) {
     side(a, teams[0], fr, false) + side(b, teams[1], 1 - fr, true) + `<span class="lvLab">${esc(o.label)}</span></div>`;
 }
 function picsHtml(ps) {
-  return ps.map(p => `<button class="lvPic${state.laneHover === p.slot ? " hi" : ""}" data-slot="${p.slot}" style="--tc:${TEAMS[p.team].c};--coin:${TEAMS[p.team].coin}" title="${esc(heroName(p))}"><img src="${p.img}" alt=""><span>${esc(heroName(p))}</span></button>`).join("");
+  return ps.map(p => `<button class="lvPic${state.laneHover === p.slot ? " hi" : ""}" data-slot="${p.slot}" style="--tc:${TEAMS[p.team].c};--coin:${TEAMS[p.team].coin}" title="${esc(heroName(p))}">${cardImg(p)}<span>${esc(heroName(p))}</span></button>`).join("");
 }
 
 // Who threw: on the side behind on souls, the hero with the most deaths (then fewest souls). Who won it: the top
@@ -139,7 +139,7 @@ function verdictHtml(lane, sides, t) {
     const s = at(p), sh = laneSouls ? Math.round((100 * (s.net_worth || 0)) / laneSouls) : 0;
     return `${s.deaths || 0} death${s.deaths === 1 ? "" : "s"}, ${(s.gold_death_loss || 0).toLocaleString("en-US")} souls lost, ${(s.net_worth || 0).toLocaleString("en-US")} souls (${sh}% of the lane)`;
   };
-  const card = (p, tag, cls) => `<div class="lvVerdict ${cls}" style="--tc:${TEAMS[p.team].c}"><span class="face"><img src="${p.img}" alt=""></span><div><div class="tag">${tag}</div><div class="who">${esc(heroName(p))}</div><div class="why">${line(p)}</div></div></div>`;
+  const card = (p, tag, cls) => `<div class="lvVerdict ${cls}" style="--tc:${TEAMS[p.team].c}"><span class="face">${cardImg(p)}</span><div><div class="tag">${tag}</div><div class="who">${esc(heroName(p))}</div><div class="why">${line(p)}</div></div></div>`;
   let h = `<h3>Who threw lane?</h3>`;
   if (gap < 0.05) {
     const worst = all.slice().sort((a, b) => (at(b).deaths || 0) - (at(a).deaths || 0) || (at(a).net_worth || 0) - (at(b).net_worth || 0))[0];

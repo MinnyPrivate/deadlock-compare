@@ -66,6 +66,7 @@
         <div class="graphOption" id="optMarks">
           <span class="optionLabel">Markers:</span>
           <button class="graphOptionButton toggle" id="markObj" title="Guardians, Walkers, Shrines, Patron and Mid Boss. Click to show or hide.">Objectives</button>
+          <button class="graphOptionButton toggle" id="markDeaths" title="Every kill: a dot at the exact second, one row per team (the team of the hero who died). Hover a dot for who killed whom. Click to show or hide.">Deaths</button>
           <button class="graphOptionButton toggle" id="markItems" title="When each picked hero bought each item (1 to 3 heroes). A red dot means they sold it later. Click to show or hide.">Items</button>
         </div>
       </div>
@@ -75,6 +76,7 @@
       <svg id="chart" role="img" aria-label="Match graph"></svg>
       <div id="markers" class="markers"></div>
       <div id="itemRows" class="itemRows"></div>
+      <div id="deathRows" class="itemRows"></div>
       <div id="tooltip" class="tooltip" hidden></div>
       <div id="empty" class="empty" hidden></div>
     </div>
