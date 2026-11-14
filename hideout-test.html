@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Postmortem hideout test</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0b0b0a; color: #ffefd7; font: 20px/1.5 Arial, sans-serif; }
+  body { padding: 40px; box-sizing: border-box; }
+  h1 { margin: 0 0 8px; font-size: 40px; }
+  .ok { color: #6fe39a; font-weight: bold; }
+  .row { margin: 6px 0; }
+  .k { color: #aca395; display: inline-block; width: 260px; }
+  code { color: #ffd98a; word-break: break-all; }
+</style>
+</head>
+<body>
+<h1>Postmortem hideout test</h1>
+<div class="row ok">PAGE LOADED (answer 2: the page loads in the panel)</div>
+<div class="row"><span class="k">Loaded at</span><code id="now"></code></div>
+<div class="row"><span class="k">URL</span><code id="url"></code></div>
+<div class="row"><span class="k">User agent</span><code id="ua"></code></div>
+<div class="row"><span class="k">Window size</span><code id="size"></code></div>
+<hr>
+<div class="row"><b>Storage test (answer 3b)</b></div>
+<div class="row"><span class="k">localStorage works</span><code id="ls"></code></div>
+<div class="row"><span class="k">First saved at</span><code id="first"></code></div>
+<div class="row"><span class="k">Times opened</span><code id="count"></code></div>
+<div class="row">Open this page, quit Deadlock completely, start it again, open the page again. If "First saved at" is unchanged and "Times opened" went up, storage survives a restart.</div>
+<script>
+(function () {
+  function $(id) { return document.getElementById(id); }
+  $("now").textContent = new Date().toString();
+  $("url").textContent = location.href;
+  $("ua").textContent = navigator.userAgent;
+  $("size").textContent = innerWidth + " x " + innerHeight + " (dpr " + devicePixelRatio + ")";
+  try {
+    var k = "dlhideout_test";
+    var raw = localStorage.getItem(k);
+    var d = raw ? JSON.parse(raw) : { first: new Date().toString(), count: 0 };
+    d.count++;
+    localStorage.setItem(k, JSON.stringify(d));
+    $("ls").textContent = "yes";
+    $("first").textContent = d.first;
+    $("count").textContent = d.count;
+  } catch (e) {
+    $("ls").textContent = "NO: " + e;
+    $("first").textContent = "-";
+    $("count").textContent = "-";
+  }
+  // The in-game overlay script closes the panel when the title starts with DLC_CLOSE (ESC is handled natively).
+  document.title = "DLC_HIDEOUT_TEST_READY";
+})();
+</script>
+</body>
+</html>
