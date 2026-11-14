@@ -16,12 +16,14 @@ const LANE_ROWS = [
 ];
 const THREW_ROWS = [
   { label: "Deaths", get: s => s.deaths, low: true },
-  { label: "Souls Lost to Deaths", get: s => s.gold_death_loss, low: true, tip: "Souls dropped when they died" },
+  { label: "Time Dead", getP: (p, s, t) => window.PM_SCORE.timeDead(p.raw, t), time: true, low: true, tip: "Time spent dead before this point" },
+  { label: "Est. Soul Swing from Deaths", get: s => (s.deaths || 0) * 690, low: true, tip: "An estimate. Across 68,577 lanes, each death went with about 690 souls of swing: about 540 gained by the enemy pair and about 150 lost by the pair that died." },
   { label: "Last Hit Rate", rate: s => [s.creep_kills, s.possible_creeps], tip: "Troopers they killed, out of the troopers that died near them" },
   { label: "Damage Taken", get: s => s.player_damage_taken, low: true, tip: "From enemy heroes" },
   { label: "Healing", get: s => s.player_healing },
   { label: "Accuracy", rate: s => [s.shots_hit, (s.shots_hit || 0) + (s.shots_missed || 0)], tip: "All targets, troopers included" },
   { label: "Level", avg: s => s.level },
+  { label: "Unsecured Souls Dropped", get: s => s.gold_death_loss, low: true, tip: "Valve's own counter: unsecured souls this player was carrying that dropped when they died." },
 ];
 
 const laneName = p => (typeof LANES_BY_COLOR !== "undefined" && LANES_BY_COLOR[p.lane]) || null;
@@ -74,7 +76,7 @@ function rowVals(row, sides, t) {
       if (!s) return { p, v: 0 };
       if (row.rate) { const [a, b] = row.rate(s); return { p, v: b ? (100 * (a || 0)) / b : 0, a: a || 0, b: b || 0 }; }
       if (row.avg) return { p, v: Number(row.avg(s)) || 0 };
-      return { p, v: Number(row.get(s)) || 0 };
+      return { p, v: Number(row.getP ? row.getP(p, s, t) : row.get(s)) || 0 };
     });
     let total;
     if (row.rate) { const a = parts.reduce((x, q) => x + q.a, 0), b = parts.reduce((x, q) => x + q.b, 0); total = b ? (100 * a) / b : 0; }
@@ -83,7 +85,7 @@ function rowVals(row, sides, t) {
     return { total, parts };
   });
 }
-const laneFmt = (row, v) => row.rate ? v.toFixed(0) + "%" : row.avg ? (Math.round(v * 10) / 10).toString() : Math.round(v).toLocaleString("en-US");
+const laneFmt = (row, v) => row.time ? fmtTime(v) : row.rate ? v.toFixed(0) + "%" : row.avg ? (Math.round(v * 10) / 10).toString() : Math.round(v).toLocaleString("en-US");
 
 // A split bar like Valve's: left team's share on the left, right team's on the right. In a sum row each side is
 // cut into its two heroes; hovering a hero lights up their part and adds their own number next to the total.
@@ -126,32 +128,45 @@ function picsHtml(ps) {
   return ps.map(p => `<button class="lvPic${state.laneHover === p.slot ? " hi" : ""}" data-slot="${p.slot}" style="--tc:${TEAMS[p.team].c};--coin:${TEAMS[p.team].coin}" title="${esc(heroName(p))}">${cardImg(p)}<span>${esc(heroName(p))}</span></button>`).join("");
 }
 
-// Who threw: on the side behind on souls, the hero with the most deaths (then fewest souls). Who won it: the top
-// earner on the side ahead. Within 5% on souls the lane counts as even.
+// Lane verdict. The lane counts as even within 10% on souls, lost from 10%, lost badly from 25%.
+// On a side with two heroes, a player is named only when their lane grade (the Valve-style weights against the average
+// for their hero at that time) is at least 1.0 below their partner's.
+const LANE_NAME_GAP = 1.0;
 function verdictHtml(lane, sides, t) {
+  const S = window.PM_SCORE, norms = window.SNAP_NORMS;
+  if (!sides[0].length || !sides[1].length) return "";
+  const tv = S.SNAP_TIMES.filter(x => x <= t).pop();
+  if (!tv) return "";
   const at = p => snapAt(p, t) || {};
   const souls = ps => ps.reduce((x, p) => x + (at(p).net_worth || 0), 0);
   const [sl, sr] = sides.map(souls);
-  if (!sides[0].length || !sides[1].length) return "";
   const gap = Math.abs(sl - sr) / Math.max(1, sl, sr);
-  const all = sides.flat(), laneSouls = sl + sr;
-  const line = p => {
-    const s = at(p), sh = laneSouls ? Math.round((100 * (s.net_worth || 0)) / laneSouls) : 0;
-    return `${s.deaths || 0} death${s.deaths === 1 ? "" : "s"}, ${(s.gold_death_loss || 0).toLocaleString("en-US")} souls lost, ${(s.net_worth || 0).toLocaleString("en-US")} souls (${sh}% of the lane)`;
+  const num = n => Math.round(n).toLocaleString("en-US");
+  const detail = p => {
+    const row = (norms.heroes[String(p.raw.hero_id)] || norms.fallback).early[String(tv)];
+    const here = snapAt(p, tv) || {};
+    const diff = (here.net_worth || 0) - row.mean[3];
+    const d = at(p).deaths || 0;
+    return `${d} death${d === 1 ? "" : "s"}, ${fmtTime(S.timeDead(p.raw, t))} dead, ${num(at(p).net_worth || 0)} souls (${diff >= 0 ? "+" : "-"}${num(Math.abs(diff))} vs an average ${p.hero} at ${fmtTime(tv)})`;
   };
-  const card = (p, tag, cls) => `<div class="lvVerdict ${cls}" style="--tc:${TEAMS[p.team].c}"><span class="face">${cardImg(p)}</span><div><div class="tag">${tag}</div><div class="who">${esc(heroName(p))}</div><div class="why">${line(p)}</div></div></div>`;
-  let h = `<h3>Who threw lane?</h3>`;
-  if (gap < 0.05) {
-    const worst = all.slice().sort((a, b) => (at(b).deaths || 0) - (at(a).deaths || 0) || (at(a).net_worth || 0) - (at(b).net_worth || 0))[0];
-    h += `<div class="lvEven">Even lane: the two sides were within ${Math.max(1, Math.round(gap * 100))}% on souls.</div>`;
-    if (worst && (at(worst).deaths || 0) > 0) h += card(worst, "Most deaths", "threw");
-    return h;
-  }
+  const card = (ps, tag, cls, why, tip) => `<div class="lvVerdict ${cls}" style="--tc:${TEAMS[ps[0].team].c}"${tip ? ` title="${esc(tip)}"` : ""}>` +
+    ps.map(p => `<span class="face">${cardImg(p)}</span>`).join("") +
+    `<div><div class="tag">${tag}</div><div class="who">${esc(ps.map(heroName).join(" and "))}</div><div class="why">${why}</div></div></div>`;
+  let h = `<h3>Lane verdict</h3>`;
+  if (gap < 0.10) return h + `<div class="lvEven">Even lane: the two sides were within ${Math.max(1, Math.round(gap * 100))}% on souls.</div>`;
+  const badly = gap >= 0.25;
   const lose = sl < sr ? sides[0] : sides[1], win = sl < sr ? sides[1] : sides[0];
-  const threw = lose.slice().sort((a, b) => (at(b).deaths || 0) - (at(a).deaths || 0) || (at(a).net_worth || 0) - (at(b).net_worth || 0))[0];
   const carry = win.slice().sort((a, b) => (at(b).net_worth || 0) - (at(a).net_worth || 0) || (at(b).kills || 0) - (at(a).kills || 0))[0];
-  h += `<div class="lvEven">${esc(TEAMS[win[0].team].name)} won this lane by ${Math.abs(sl - sr).toLocaleString("en-US")} souls (${Math.round(gap * 100)}%).</div>`;
-  h += card(threw, "Threw lane", "threw") + card(carry, "Won lane", "won");
+  h += `<div class="lvEven">${esc(TEAMS[win[0].team].name)} won this lane by ${num(Math.abs(sl - sr))} souls (${Math.round(gap * 100)}%).</div>`;
+  h += card([carry], "Won lane", "won", detail(carry));
+  if (lose.length === 2) {
+    const sc = lose.map(p => S.laneScore(p.raw, norms, tv));
+    if (sc[0] != null && sc[1] != null && Math.abs(sc[0] - sc[1]) >= LANE_NAME_GAP) {
+      const i = sc[0] < sc[1] ? 0 : 1, named = lose[i], g = Math.abs(sc[0] - sc[1]).toFixed(1);
+      h += card([named], badly ? "Threw lane" : "Fell behind", "threw", detail(named),
+        `Named because their lane grade was ${g} points below their partner's. The lane grade compares kills, assists, deaths, souls, objective damage and hero damage with the average for their hero at this time.`);
+    } else h += card(lose, "Lost as a duo", "duo", "Neither stood out: their lane grades were within 1.0 of each other.");
+  } else h += card(lose, "Lost lane", "duo", "Nobody is singled out.");
   return h;
 }
 // The lane's soul lead: left pair minus right pair at every snapshot up to 15:00, with the shown time marked.
@@ -191,7 +206,7 @@ window.renderLanes = function renderLanes() {
     `<div class="lvZone lvL">${verdictHtml(lane, sides, t)}${leadChartHtml(lane, sides, t)}</div>` +
     `<div class="lvZone lvM"><div class="lvPics">${picsHtml(sides[0])}</div><div class="lvCol"><h2>${title}</h2>${vals.map(([r, v]) => barHtml(r, v, teams)).join("")}` +
     `<h2>Objectives</h2>${laneObjectives(lane).map(o => objBarHtml(o, teams)).join("")}</div><div class="lvPics">${picsHtml(sides[1])}</div></div>` +
-    `<div class="lvZone lvR"><h3>Who threw stats</h3>${extra.map(([r, v]) => barHtml(r, v, teams)).join("")}<div class="lvFoot">Hover a hero to see their part. Valve's numbers come every 3 minutes.</div></div>`;
+    `<div class="lvZone lvR"><h3>Lane detail</h3>${extra.map(([r, v]) => barHtml(r, v, teams)).join("")}<div class="lvFoot">Hover a hero to see their part. Valve's numbers come every 3 minutes.</div></div>`;
   view.querySelectorAll(".lvPic").forEach(b => {
     const slot = Number(b.dataset.slot);
     // Redrawing replaces the portrait under the mouse, so only redraw when the hovered hero actually changes.

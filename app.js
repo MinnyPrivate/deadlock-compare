@@ -229,7 +229,7 @@ const state = {
   objPref: null, itemPref: null, deathPref: null, lineOv: {}, hiddenGroups: new Set(),
   laneOf: null, laneTime: 540, laneHover: null,
   leftTeam: 0, me: null,
-  tab: "graphs", mvpPick: null, mvpMode: "impact",
+  tab: "graphs", mvpPick: null, mvpMode: "valve",
   muStat: "dmg", muWin: "all", muPair: null,
 };
 const $ = id => document.getElementById(id);
