@@ -3,6 +3,7 @@
 // The footer gets a Compare icon after the native screen icons. Clicking it shows the Compare page
 // (a CitadelHTMLPanel) above the footer. Clicking it again, any native screen icon, or ESC hides it.
 //
+// v6: hides the whole native carousel and paints the page root black (v5 left the team background art showing).
 // v4:
 // - The page loads in the background as soon as the match ID is known, and the browser panel stays invisible
 //   until the page says it has drawn ("DLC_READY" title), so opening Compare never shows the gray browser fill.
