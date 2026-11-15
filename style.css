@@ -606,3 +606,115 @@ body.laneMode .laneView {
 .divBar.wide { width: 130px; }
 .whyTable.valve { flex: none; }
 .dropLine .dropBig { display: block; }
+
+/* ---------- MVP side-by-side compare (mockup) ---------- */
+.mvpList.pins .mvpRow { grid-template-columns: 44px 52px 300px 1fr 64px 52px 30px; }
+.pinBtn { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 3px; color: var(--offWhite); opacity: 0.35; cursor: pointer; }
+.pinBtn:hover { opacity: 0.9; background: rgba(255,239,215,0.12); }
+.pinBtn.on { opacity: 1; background: var(--offWhite); color: var(--offBlack); }
+.pinBtn.on b { font-family: var(--oracle); font-weight: 700; font-size: 16px; }
+.cmpPanel { border-top-color: rgba(255,239,215,0.5); }
+.cmpTop { display: flex; align-items: baseline; gap: 14px; margin-bottom: 10px; }
+.cmpTitle { font-family: var(--oracle); font-weight: 700; font-size: 24px; color: #fff; }
+.cmpSub { font-size: 14px; opacity: 0.55; }
+.cmpClear { margin-left: auto; height: 30px; }
+.cmpGrid { display: grid; grid-template-columns: 170px repeat(var(--n), 1fr); column-gap: 6px; align-items: stretch; }
+.cmpCorner { }
+.cmpHd { position: relative; display: flex; flex-direction: column; align-items: center; text-align: center; padding: 6px 4px 10px; background: rgba(255,239,215,0.04); border-top: 4px solid var(--tc); border-radius: 3px 3px 0 0; margin-bottom: 4px; }
+.cmpHd .cardFace.cmp { width: 60px; height: 80px; border-radius: 3px; box-shadow: inset 0 -3px 0 var(--tc); }
+.cmpHd .hn { margin-top: 6px; font-family: var(--oracle); font-weight: 700; font-size: 18px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.cmpHd .meta { font-size: 12px; opacity: 0.8; display: flex; align-items: center; gap: 5px; }
+.cmpHd .meta .badge { font-size: 10px; padding: 1px 4px; }
+.cmpTot { margin-top: 4px; }
+.cmpTot b { font-family: var(--oracle); font-size: 28px; color: #fff; line-height: 1; }
+.cmpTot span { display: block; font-size: 11px; opacity: 0.55; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+.cmpX { position: absolute; top: 4px; right: 6px; font-size: 18px; line-height: 1; opacity: 0.4; cursor: pointer; }
+.cmpX:hover { opacity: 1; }
+.cmpLbl { display: flex; align-items: center; gap: 8px; font-size: 14px; border-top: 1px solid rgba(255,239,215,0.06); min-height: 44px; line-height: 1.15; }
+.cmpLbl b { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+.cmpCell { display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto; align-items: center; column-gap: 6px; padding: 5px 10px; border-top: 1px solid rgba(255,239,215,0.06); min-height: 44px; opacity: 0.72; }
+.cmpCell b { font-family: var(--oracle); font-weight: 700; font-size: 17px; color: #fff; }
+.cmpCell em { font-style: normal; font-family: var(--oracle); font-weight: 600; font-size: 14px; text-align: right; }
+.cmpCell em.pos { color: #58D86A; } .cmpCell em.neg { color: #E8604C; }
+.cmpCell .avg { grid-column: 1 / 3; font-style: normal; font-size: 11px; opacity: 0.55; }
+.cmpCell .track { grid-column: 1 / 3; height: 5px; background: rgba(255,239,215,0.08); border-radius: 2px; overflow: hidden; }
+.cmpCell .track i { display: block; height: 100%; }
+.cmpCell.sm { min-height: 34px; grid-template-rows: auto; }
+.cmpCell.lead { opacity: 1; background: rgba(255,237,121,0.10); box-shadow: inset 0 -2px 0 #FFED79; }
+.cmpCell.lead b { color: #FFED79; }
+.cmpLbl:has(+ .cmpCell.sm) { min-height: 34px; }
+.cmpSec { grid-column: 1 / -1; margin-top: 12px; height: 24px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.45; }
+
+/* B: head-to-head */
+.h2hHead { display: flex; align-items: center; justify-content: space-between; }
+.cmpSide { display: flex; align-items: center; gap: 14px; }
+.cmpSide.r { text-align: right; }
+.cmpSide .hn { font-family: var(--oracle); font-weight: 700; font-size: 26px; color: #fff; }
+.cmpSide .meta { font-size: 14px; opacity: 0.8; margin: 2px 0 6px; }
+.cmpBig b { font-family: var(--oracle); font-size: 44px; line-height: 1; color: #fff; }
+.cmpBig span { display: block; font-size: 12px; opacity: 0.55; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+.h2hPanel .vs { display: flex; flex-direction: column; align-items: center; gap: 10px; font-family: var(--oracle); font-weight: 700; font-size: 22px; opacity: 0.7; }
+.h2hPanel .vs .cmpClear { margin: 0; font-size: 13px; height: 26px; }
+.h2hRows { display: flex; flex-direction: column; }
+.h2hR { display: grid; grid-template-columns: 120px 1fr 200px 1fr 120px; align-items: center; column-gap: 10px; height: 40px; border-top: 1px solid rgba(255,239,215,0.06); }
+.h2hRows.sm .h2hR { height: 32px; }
+.h2hR.th { height: 22px; border-top: 0; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.45; }
+.h2hR .n { text-align: center; font-size: 14px; }
+.h2hR .v { display: flex; align-items: baseline; gap: 8px; opacity: 0.7; }
+.h2hR .v.r { justify-content: flex-end; }
+.h2hR .v b { font-family: var(--oracle); font-weight: 700; font-size: 18px; color: #fff; }
+.h2hR .v em { font-style: normal; font-family: var(--oracle); font-weight: 600; font-size: 14px; }
+.h2hR .v em.pos { color: #58D86A; } .h2hR .v em.neg { color: #E8604C; }
+.h2hR .v.lead { opacity: 1; } .h2hR .v.lead b { color: #FFED79; }
+.h2hTrack { height: 10px; background: rgba(255,239,215,0.06); border-radius: 2px; overflow: hidden; display: flex; }
+.h2hTrack.l { justify-content: flex-end; }
+.h2hTrack i { display: block; height: 100%; }
+
+/* C: full-width cards */
+.mvpView.cmpFull { grid-template-columns: 1fr; }
+.cmpCards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; min-height: 0; }
+.cmpCard { position: relative; padding: 16px 18px 12px; }
+.cmpCard .whyHead { gap: 12px; }
+.cmpCard .cardFace.lg { width: 72px; height: 98px; }
+.cmpCard .whyName .hn { font-size: 22px; }
+.cmpCard .whyName .meta { font-size: 13px; }
+.cmpCard .whyName .meta .badge { font-size: 10px; padding: 1px 4px; }
+.cmpCard .whyScore b { font-size: 40px; }
+.cmpCard .whyScore span { font-size: 11px; }
+.cmpCard .cmpX { top: 8px; right: 10px; }
+.cardRows { margin: 14px 0 8px; }
+.cr { display: grid; grid-template-columns: 1fr 52px 96px 46px; align-items: center; column-gap: 8px; height: 34px; font-size: 13px; border-top: 1px solid rgba(255,239,215,0.06); opacity: 0.75; }
+.cr.sm { height: 30px; }
+.cr .sn { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cr .v { font-family: var(--oracle); font-weight: 700; font-size: 15px; text-align: right; color: #fff; }
+.cr em { font-style: normal; font-family: var(--oracle); font-weight: 600; font-size: 13px; text-align: right; }
+.cr em.pos { color: #58D86A; } .cr em.neg { color: #E8604C; }
+.cr .divBar { width: 96px; height: 8px; }
+.cr .track { height: 6px; background: rgba(255,239,215,0.08); border-radius: 2px; overflow: hidden; }
+.cr .track i { display: block; height: 100%; }
+.cr.lead { opacity: 1; background: rgba(255,237,121,0.08); }
+.cr.lead .v { color: #FFED79; }
+.cmpAdd { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; border: 2px dashed rgba(255,239,215,0.18); border-radius: 4px; opacity: 0.6; }
+.cmpAdd b { font-size: 48px; font-weight: 300; line-height: 1; }
+.cmpAdd span { font-family: var(--oracle); font-weight: 700; font-size: 18px; }
+.cmpAdd .cmpAddSub { font-family: inherit; font-weight: 400; font-size: 13px; opacity: 0.7; }
+.mvpList.pins .mvpRow:has(.pinBtn.on) { background: rgba(255,239,215,0.12); }
+.mvpList.pins .mvpRow.on:not(:has(.pinBtn.on)) { background: rgba(255,239,215,0.04); }
+.cmpCard .summary.cs { margin: 10px 0 0; font-size: 14px; line-height: 1.35; opacity: 0.85; min-height: 38px; }
+.cmpCard .acc { margin-top: 12px; }
+.cmpCard .accRow { grid-template-columns: 34px 1fr auto; row-gap: 0; height: auto; padding: 4px 0; }
+.cmpCard .accRow .pips { grid-row: 1 / 3; }
+.cmpCard .accRow .an { font-size: 14px; grid-column: 2; grid-row: 1; }
+.cmpCard .accRow .ab { grid-column: 3; grid-row: 1; font-size: 12px; }
+.cmpCard .accRow .at { grid-column: 2 / 4; grid-row: 2; font-size: 12px; }
+.cmpCard .accSub { display: none; }
+.cmpPanel.dense .cmpLbl, .cmpPanel.dense .cmpCell { min-height: 33px; }
+.cmpPanel.dense .cmpCell { padding: 2px 10px; }
+.cmpPanel.dense .cmpCell b { font-size: 15px; }
+.cmpPanel.dense .cmpLbl { font-size: 13px; }
+.cmpPanel.dense .cmpHd .cardFace.cmp { width: 44px; height: 58px; }
+.cmpPanel.dense .cmpHd { padding: 4px 4px 6px; }
+.cmpPanel.dense .cmpTot b { font-size: 24px; }
+.cmpPanel.dense .cmpSec { margin-top: 6px; }
+.cmpPanel.dense .cmpCell.sm, .cmpPanel.dense .cmpLbl:has(+ .cmpCell.sm) { min-height: 28px; }
+.cmpPanel.dense .cmpTop { margin-bottom: 6px; }

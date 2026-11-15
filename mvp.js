@@ -145,8 +145,17 @@ window.renderMvp = function renderMvp() {
     ${valve ? "" : `<div class="legend">${Object.values(MVP_CATS).map(c => `<span><b style="background:${c.c}"></b>${c.name}</span>`).join("")}</div>`}
   </div>`;
 
+  const cmp = window.renderCompareHook ? window.renderCompareHook(rows, mode) : null;
+  const full = cmp && state.cmpLayout === "C";
+  view.classList.toggle("cmpFull", !!full);
+  if (full) {
+    view.innerHTML = h + cmp;
+    view.querySelectorAll("[data-mode]").forEach(b => b.onclick = () => { state.mvpMode = b.dataset.mode; renderAll(); });
+    window.bindCompare(view);
+    return;
+  }
   // ---- left: ranked list ----
-  h += `<div class="mvpList">`;
+  h += `<div class="mvpList${window.cmpPinBtn && state.cmpLayout !== "C" ? " pins" : ""}">`;
   for (const r of rows) {
     const p = r.p, T = TEAMS[p.team];
     const v = valveLabel(p);
@@ -157,14 +166,16 @@ window.renderMvp = function renderMvp() {
       ${valve ? divBar(r.score, top, "") : catBar(r, top)}
       <span class="score">${valve ? r.score.toFixed(1) : Math.round(r.score)}</span>
       <span class="valve">${v ? `<span class="badge${p.mvp > 1 ? " key" : ""}" title="Valve's pick">${p.mvp === 1 ? "MVP" : "KEY"}</span>` : ""}</span>
+      ${window.cmpPinBtn ? cmpPinBtn(p) : ""}
     </button>`;
   }
   h += `</div>`;
 
   // ---- right: why panel ----
-  h += valve ? whyValve(rows, pick) : whyScaled(rows, pick, mode);
+  h += cmp || (valve ? whyValve(rows, pick) : whyScaled(rows, pick, mode));
 
   view.innerHTML = h;
+  if (window.bindCompare) window.bindCompare(view);
   view.querySelectorAll("[data-mode]").forEach(b => b.onclick = () => { state.mvpMode = b.dataset.mode; renderAll(); });
   if ($("mvpAll")) $("mvpAll").onclick = () => { state.mvpAll = !state.mvpAll; renderAll(); };
   view.querySelectorAll(".mvpRow").forEach(b => b.onclick = () => { state.mvpPick = Number(b.dataset.slot); renderAll(); });

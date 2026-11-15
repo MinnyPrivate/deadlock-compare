@@ -627,7 +627,7 @@ function renderTop() {
     ctn.innerHTML = "";
     const ps = state.players.filter(p => p.team === team);
     for (const p of ps) {
-      const d = el("button", "player" + (sel.has(p.slot) ? " sel" : "") + (mvp && state.mvpPick === p.slot ? " pick" : ""));
+      const d = el("button", "player" + (sel.has(p.slot) ? " sel" : "") + (mvp && (state.cmpLayout === "C" && state.tab === "mvp" ? (state.mvpPins || []).includes(p.slot) : state.mvpPick === p.slot) ? " pick" : ""));
       d.setAttribute("aria-pressed", mvp ? String(state.mvpPick === p.slot) : String(sel.has(p.slot)));
       d.style.setProperty("--tc", T.c); d.style.setProperty("--coin", T.coin); d.style.setProperty("--pc", colorOf(p));
       const rk = rankOf(p.badge);
@@ -644,6 +644,7 @@ function renderTop() {
       if (p.mvp === 1) d.append(el("div", "badge", "MVP"));
       else if (p.mvp > 1) d.append(el("div", "badge key", "KEY"));
       d.onclick = ev => {
+        if (mvp && state.tab === "mvp" && state.cmpLayout === "C") { window.cmpToggle(p.slot); return; }
         if (mvp) { state.mvpPick = p.slot; state.muPair = null; renderAll(); return; }
         if (lanesG) { if (laneName(p)) { state.laneOf = laneName(p); state.laneHover = p.slot; renderAll(); } return; }
         if (leadG) return;
