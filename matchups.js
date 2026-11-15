@@ -213,20 +213,23 @@ function muHeroPanel(mu, p) {
   const foes = state.players.filter(q => q.team !== p.team);
   const dealt = foes.map(q => ({ q, parts: muParts(mu, p.slot, q.slot) }));
   const took = foes.map(q => ({ q, parts: muParts(mu, q.slot, p.slot) }));
+  // Damage from troopers, guardians, walkers, haunts and the mid boss isn't a matchup, so it's a footnote under Took From
+  // instead of a row in the hero list (Zachary's pick, Nov 15).
+  let worldNote = "";
   if (state.muStat === "dmg") {
     const w = (mu.world[p.slot] || {}).all || {};
-    took.push({ world: true, parts: MU_CATS.map(c => ({ label: c.label, c: c.c, v: w[c.id] ? muVal(mu, w[c.id]) : 0 })) });
+    const wv = muSum(MU_CATS.map(c => ({ v: w[c.id] ? muVal(mu, w[c.id]) : 0 })));
+    if (wv > 0) worldNote = `<div class="muNote">Also took ${muFmt(wv)} from non-heroes (troopers, haunts, guardians, walkers and the mid boss). Not counted above.</div>`;
   }
-  const sd = dealt.reduce((a, r) => a + muSum(r.parts), 0), st = took.filter(r => !r.world).reduce((a, r) => a + muSum(r.parts), 0);
+  const sd = dealt.reduce((a, r) => a + muSum(r.parts), 0), st = took.reduce((a, r) => a + muSum(r.parts), 0);
   const scale = Math.max(1, ...dealt.concat(took).map(r => muSum(r.parts)));
   const verb = state.muStat === "dmg" ? ["Dealt to", "Took from"] : state.muStat === "slow" ? ["They slowed", "Slowed them"] : ["They crowd controlled", "Crowd controlled them"];
-  const list = (rows, title, total) => `<div class="muList"><div class="wr th"><span>${title}</span><span class="r">${muFmt(total)}</span></div>` +
+  const list = (rows, title, total, note) => `<div class="muList"><div class="wr th"><span>${title}</span><span class="r">${muFmt(total)}</span></div>` +
     rows.sort((a, b) => muSum(b.parts) - muSum(a.parts)).map(r => {
       const v = muSum(r.parts);
-      if (r.world) return `<div class="muRow world" title="Troopers, guardians, walkers, haunts and the mid boss. Not counted in the total above."><span class="who"><span class="pt sm noimg"></span><span class="hn">Non-heroes</span></span>${muBar(r.parts, scale)}<span class="v">${muFmt(v)}</span></div>`;
       const lane = r.q.lane && r.q.lane === p.lane;
       return `<button class="muRow" data-hero="${r.q.slot}" title="Click to see ${esc(r.q.hero)}'s matchups"><span class="who">${portrait(r.q, "pt sm")}<span class="hn">${esc(heroName(r.q))}</span>${lane ? `<span class="laneTag">Lane</span>` : ""}</span>${muBar(r.parts, scale)}<span class="v">${muFmt(v)}</span></button>`;
-    }).join("") + `</div>`;
+    }).join("") + (note || "") + `</div>`;
 
   let h = `<div class="mvpWhy muPanel" style="--tc:${T.c}">
     <div class="whyHead">
@@ -235,7 +238,7 @@ function muHeroPanel(mu, p) {
         <div class="meta"><span style="color:${T.c}">${T.color}</span> · ${p.lane && LANES_BY_COLOR[p.lane] ? LANES_BY_COLOR[p.lane] + " lane" : "No lane"} · ${MU_WINDOWS[state.muWin].name}</div></div>
     </div>
     ${muLegend()}
-    <div class="muCols">${list(dealt, verb[0], sd)}${list(took, verb[1], st)}</div>`;
+    <div class="muCols">${list(dealt, verb[0], sd)}${list(took, verb[1], st, worldNote)}</div>`;
   if (state.muStat === "dmg") {
     // Left: what this hero hit enemies with. Right: which enemy hero hit them, and with what.
     const own = muSources(mu, { [p.slot]: mu.src[p.slot] }).map(r => Object.assign(r, { slot: p.slot }));
