@@ -394,7 +394,7 @@ button.muRow:hover { background: rgba(255,239,215,0.06); }
 .muRow .hn { font-family: var(--oracle); font-weight: 600; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .muRow .laneTag { flex: none; }
 .muRow .v { font-family: var(--oracle); font-weight: 700; font-size: 16px; text-align: right; }
-.muRow.world { opacity: 0.6; }
+.muNote { margin-top: 8px; font-size: 13px; line-height: 1.35; opacity: 0.6; }
 .pt.sm { --s: 28px; }
 .pt.noimg { height: var(--s); margin-top: 0; }
 .pt.noimg::before { background: rgba(255,239,215,0.12); box-shadow: none; }
