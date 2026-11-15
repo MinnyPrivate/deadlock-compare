@@ -338,81 +338,160 @@ function mouseIn(el, ev) {
 }
 
 // ---------- loading ----------
+// How a fresh match reaches us (deadlock-api's own code, Nov 2026). /metadata answers at once when the match is stored. When it
+// isn't, but someone's uploader has sent the match's salts (the keys to Valve's file), deadlock-api downloads the file from Valve
+// inside that same request. With neither, it asks Steam through one of its bots, and that is limited to 3 per hour per IP: the
+// 429 we used to call "busy" was mostly our own retries using that up before the salts arrived.
+// So: one normal request first (the bot lookup is the only quick path when nobody in the match runs the uploader). If the match
+// isn't there, wait on the free salts check, which only reads deadlock-api's database, and ask for /metadata the moment salts
+// show up (and once a minute anyway, in case the match got stored without salts). Both waiting requests pass disable_steam=true,
+// so they never spend the hourly Steam lookups. See waitForMatch.
 let loadSeq = 0;
 async function loadMatch(id) {
   const my = ++loadSeq; // only the newest request may draw
   clearMatch();
+  clearTimeout(checkTimer); clearInterval(waitTimer);
   setStatus("Loading match " + id + "...");
   const src = params.get("src"); // local test file: only files in this repo's test/ folder
-  const url = src && /^test\/[\w-]+\.json$/.test(src) ? src : API + encodeURIComponent(id) + "/metadata";
-  let data;
+  const local = src && /^test\/[\w-]+\.json$/.test(src);
   try {
-    const r = await fetch(url);
-    // Not ready yet: deadlock-api hasn't stored the match (404), its shared budget for fetching new matches from Valve is used
-    // up for now (429), or it is having trouble (502, 503, 504). Wait and retry gently by ourselves; see waitAndRetry.
-    if (WAIT_KINDS[r.status]) { if (my === loadSeq) waitAndRetry(id, my, WAIT_KINDS[r.status]); return; }
-    if (!r.ok) throw new Error("Couldn't load the match (error " + r.status + ").");
-    data = await r.json();
+    const r = await getJson(local ? src : API + encodeURIComponent(id) + "/metadata");
     if (my !== loadSeq) return;
-    const mi = data.match_info || data;
-    if (!mi || !Array.isArray(mi.players) || !mi.players.length) throw new Error("This match has no player data.");
-    state.wait = null;
-    setup(mi);
+    if (r.ok) return show(r.body, my);
+    if (!local && WAIT_STATUS.has(r.status)) return waitForMatch(id, my, r);
+    throw new Error("Couldn't load the match (error " + r.status + ").");
   } catch (e) {
-    if (my !== loadSeq) return;
-    clearMatch();
-    const msg = e instanceof TypeError ? "Couldn't reach the match server. Check your connection and try again." : e.message || String(e);
-    setStatus(msg, true, () => loadMatch(id));
+    fail(e, id, my);
   }
 }
-// The "not ready yet" screen: first retry after 20 seconds, then every 60, with a countdown and a Try Now button.
-// Few, spaced requests, so it doesn't use up the per-player allowance for new matches. How long we keep trying depends on
-// the answer. Everything is counted in real time, so pressing Try Now can't make the "nobody uploaded it" message come early.
-//   429 (busy): keep trying, it clears by itself.
-//   404 (not stored): keep trying for 3 minutes since the first miss, then stop and say nobody in the match uploaded it.
-//   502, 503, 504 (the API is having trouble): stop after 10 tries and say it looks down.
-const RETRY_STEPS = [20, 60];
-const WAIT_KINDS = { 404: "missing", 429: "busy", 502: "down", 503: "down", 504: "down" };
-const MISSING_GIVE_UP_S = 180, DOWN_GIVE_UP_TRIES = 10, TRY_NOW_COOLDOWN_S = 10;
-let waitTimer = null;
-function waitAndRetry(id, my, kind) {
+async function getJson(url) {
+  const r = await fetch(url);
+  let body = null;
+  try { body = await r.json(); } catch (e) { /* error pages may not be JSON */ }
+  return { ok: r.ok, status: r.status, body };
+}
+function show(data, my) {
+  if (my !== loadSeq) return;
+  const mi = data && (data.match_info || data);
+  if (!mi || !Array.isArray(mi.players) || !mi.players.length) throw new Error("This match has no player data.");
+  clearTimeout(checkTimer); clearInterval(waitTimer);
+  state.wait = null;
+  setup(mi);
+}
+function fail(e, id, my) {
+  if (my !== loadSeq) return;
+  clearTimeout(checkTimer); clearInterval(waitTimer);
+  clearMatch();
+  const msg = e instanceof TypeError ? "Couldn't reach the match server. Check your connection and try again." : e.message || String(e);
+  setStatus(msg, true, () => loadMatch(id));
+}
+
+// The "not ready yet" screen. Checks every 10 seconds for the first 3 minutes, then every 30, and stops after 15 minutes.
+// A 429 waits as long as deadlock-api asks. Five server errors in a row (502, 503 from the salts check, 504) stop it too.
+// Try Now runs one check at once (after a short cooldown, so clicking again and again doesn't hammer the API).
+const WAIT_STATUS = new Set([404, 429, 500, 502, 503, 504]);
+const FAST_S = 10, SLOW_S = 30, FAST_FOR_S = 180, GIVE_UP_S = 15 * 60, META_EVERY_S = 60, DOWN_GIVE_UP = 5, TRY_NOW_COOLDOWN_S = 10;
+let waitTimer = null, checkTimer = null;
+function waitForMatch(id, my, first) {
   let w = state.wait;
-  if (!w || w.id !== id) w = state.wait = { id, start: Date.now(), tries: 0, downTries: 0, last: 0 }; // a different match starts over
-  const now = Date.now();
-  w.tries++; w.last = now; w.kind = kind;
-  w.downTries = kind === "down" ? w.downTries + 1 : 0;
-  const stopped = kind === "missing" ? now - w.start >= MISSING_GIVE_UP_S * 1000 : kind === "down" && w.downTries >= DOWN_GIVE_UP_TRIES;
-  let left = RETRY_STEPS[Math.min(w.tries - 1, RETRY_STEPS.length - 1)];
-  clearInterval(waitTimer);
-  const draw = () => {
-    if (my !== loadSeq) { clearInterval(waitTimer); return; }
-    const s = $("status");
-    s.classList.remove("err");
-    const cool = Math.max(0, Math.ceil((w.last + TRY_NOW_COOLDOWN_S * 1000 - Date.now()) / 1000));
-    let title, text;
-    if (stopped && kind === "missing") {
-      title = "This match hasn't been uploaded";
-      text = "No one in this match has uploaded it to deadlock-api. Ask someone who played it to run the uploader, then press Try Now.";
-    } else if (stopped) {
-      title = "deadlock-api looks down right now";
-      text = "It keeps answering with errors, so I stopped asking. Press Try Now to ask again in a while.";
-    } else {
-      title = kind === "down" ? "deadlock-api is having trouble" : "Waiting for this match's data";
-      text = (kind === "busy" ? "deadlock-api is busy fetching new matches right now." : kind === "down" ? "deadlock-api answered with an error." : "Valve's data for a match that just ended usually takes 1 to 5 minutes to show up.") +
-        `<br>Trying again in ${fmtTime(left)}${w.tries > 1 ? ` (try ${w.tries})` : ""}.`;
+  if (!w || w.id !== id) w = state.wait = { id, start: Date.now(), tries: 1, down: 0, salts: false, lastMeta: Date.now(), last: Date.now() };
+  note(w, "metadata", first);
+  // The first request is the only one allowed to make deadlock-api ask Steam. A 429 there is the hourly Steam lookup limit and a
+  // 503 means no bot was free: neither touches the free checks we wait on, so just start waiting.
+  if (w.tries === 1 && (first.status === 429 || first.status >= 500)) { w.down = 0; w.holdUntil = 0; w.phase = "nosalts"; }
+  plan(w, id, my);
+}
+// What one answer means for the wait. `what` is "metadata" or "salts".
+function note(w, what, r) {
+  const b = r.body || {};
+  if (r.status === 429) {
+    w.phase = "limit";
+    const next = Number(b.next_request_in) || 0;
+    w.holdUntil = Date.now() + Math.max(FAST_S, next) * 1000;
+    w.detail = `deadlock-api limit hit (${b.type || "?"} scope${b.quota ? `, ${b.quota.limit} per ${fmtPeriod(b.quota.period)}` : ""}) resets in ${fmtTime(next)}`;
+    return;
+  }
+  if (r.status >= 500) {
+    w.down++;
+    w.phase = what === "metadata" && w.salts ? "valve" : "down";
+    w.detail = what === "metadata" && r.status === 503 && w.salts ? "deadlock-api couldn't get the file from Valve yet (503)" : `deadlock-api answered ${r.status} to the ${what} check`;
+    return;
+  }
+  w.down = 0;
+  if (what === "salts") {
+    if (r.ok && b.metadata_salt && b.cluster_id) { w.salts = true; w.phase = "valve"; w.detail = "deadlock-api has the match's keys"; }
+    else if (!w.salts) { w.phase = "nosalts"; w.detail = "No keys for this match on deadlock-api yet (404)"; }
+  } else if (r.status === 404) {
+    w.phase = w.salts ? "valve" : "nosalts";
+    w.detail = w.salts ? "Valve hasn't published the match file yet (404)" : "deadlock-api doesn't have this match yet (404)";
+  }
+}
+function fmtPeriod(s) { return s >= 3600 && s % 3600 === 0 ? (s === 3600 ? "hour" : s / 3600 + " hours") : s >= 60 && s % 60 === 0 ? (s === 60 ? "minute" : s / 60 + " minutes") : s + " s"; }
+// Decide when the next check runs (or that we stop), then draw the countdown.
+function plan(w, id, my) {
+  const now = Date.now(), age = (now - w.start) / 1000;
+  w.stopped = age >= GIVE_UP_S ? (w.salts ? "valve" : "missing") : w.down >= DOWN_GIVE_UP ? "down" : null;
+  const step = age < FAST_FOR_S ? FAST_S : SLOW_S;
+  w.next = Math.max(now + step * 1000, w.holdUntil || 0);
+  clearTimeout(checkTimer); clearInterval(waitTimer);
+  drawWait(w, id, my);
+  waitTimer = setInterval(() => drawWait(w, id, my), 1000); // countdowns, and the Try Now cooldown even after we stop
+  if (!w.stopped) checkTimer = setTimeout(() => check(w, id, my), w.next - now);
+}
+async function check(w, id, my) {
+  if (my !== loadSeq) return;
+  clearTimeout(checkTimer);
+  w.tries++; w.last = Date.now();
+  const base = API + encodeURIComponent(id);
+  try {
+    const s = await getJson(base + "/salts?disable_steam=true");
+    if (my !== loadSeq) return;
+    note(w, "salts", s);
+    if (s.status !== 429 && (w.salts || Date.now() - w.lastMeta >= META_EVERY_S * 1000)) {
+      w.lastMeta = Date.now();
+      const m = await getJson(base + "/metadata?disable_steam=true");
+      if (my !== loadSeq) return;
+      if (m.ok) return show(m.body, my);
+      if (!WAIT_STATUS.has(m.status)) throw new Error("Couldn't load the match (error " + m.status + ").");
+      note(w, "metadata", m);
     }
-    s.innerHTML = `<div class="waitTitle">${title}</div><div class="waitText">${text}</div>`;
-    const b = el("button", "graphOptionButton retry", cool ? `Try Now (${cool})` : "Try Now");
-    b.disabled = cool > 0; // a short cooldown, so clicking again and again doesn't hammer the API
-    b.onclick = () => { clearInterval(waitTimer); loadMatch(id); };
-    s.append(b);
-  };
-  draw();
-  waitTimer = setInterval(() => {
-    left--;
-    if (!stopped && left <= 0) { clearInterval(waitTimer); if (my === loadSeq) loadMatch(id); return; }
-    draw();
-  }, 1000);
+  } catch (e) {
+    if (!(e instanceof TypeError)) return fail(e, id, my);
+    w.down++; w.phase = "down"; w.detail = "Couldn't reach deadlock-api"; // a dropped connection: keep waiting, it may come back
+  }
+  plan(w, id, my);
+}
+function drawWait(w, id, my) {
+  if (my !== loadSeq) { clearInterval(waitTimer); return; }
+  const s = $("status");
+  s.classList.remove("err");
+  const left = Math.max(0, Math.ceil((w.next - Date.now()) / 1000));
+  const cool = Math.max(0, Math.ceil((w.last + TRY_NOW_COOLDOWN_S * 1000 - Date.now()) / 1000));
+  const waited = fmtTime((Date.now() - w.start) / 1000);
+  let title, text;
+  if (w.stopped === "missing") {
+    title = "This match hasn't been uploaded";
+    text = "After 15 minutes deadlock-api still doesn't have it. Ask someone who played it to run the deadlock-api uploader, then press Try Now.";
+  } else if (w.stopped === "valve") {
+    title = "Valve hasn't published this match yet";
+    text = "deadlock-api has the match's keys, but Valve's file still isn't there after 15 minutes. Press Try Now to check again later.";
+  } else if (w.stopped === "down") {
+    title = "deadlock-api looks down right now";
+    text = "It keeps answering with errors, so I stopped asking. Press Try Now to ask again in a while.";
+  } else {
+    title = w.phase === "down" ? "deadlock-api is having trouble" : "Waiting for this match's data";
+    text = (w.phase === "valve" ? "deadlock-api has this match's keys and is getting the file from Valve."
+      : w.phase === "limit" ? "deadlock-api asked us to slow down, so I'm waiting as long as it said."
+      : w.phase === "down" ? "It answered with an error. I'll keep trying for a bit."
+      : "deadlock-api doesn't have this match yet. The deadlock-api uploader usually sends it within 5 minutes of the game ending, if someone who played runs it. Otherwise deadlock-api's own bots get to it later. This page loads it the moment it arrives.") +
+      `<br>Checking again in ${fmtTime(left)}.`;
+  }
+  s.innerHTML = `<div class="waitTitle">${title}</div><div class="waitText">${text}</div>` +
+    `<div class="waitDetail">${esc(w.detail || "")} · try ${w.tries} · waiting ${waited}</div>`;
+  const b = el("button", "graphOptionButton retry", cool ? `Try Now (${cool})` : "Try Now");
+  b.disabled = cool > 0;
+  b.onclick = () => { clearInterval(waitTimer); clearTimeout(checkTimer); check(w, id, my); };
+  s.append(b);
 }
 function clearMatch() {
   state.match = null;
