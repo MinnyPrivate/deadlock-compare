@@ -3,6 +3,16 @@
 // The footer gets a Compare icon after the native screen icons. Clicking it shows the Compare page
 // (a CitadelHTMLPanel) above the footer. Clicking it again, any native screen icon, or ESC hides it.
 //
+// v7:
+// - Self-healing page. The page sends a heartbeat title (DLC_ALIVE:<match>:<time>) every 2 seconds. If the heartbeats stop while
+//   Compare is open (the browser swapped the page for its error screen, like the blue "-105" one), or a load never says it is
+//   ready, the browser is hidden, the "Loading" text shows and the page loads again, waiting longer each time.
+// - READY and ALIVE titles carry the match ID, so an older page still on screen while a new match loads is never shown.
+//   The old 3 second "show it anyway" fallback is gone once the page has spoken (it is what put the -105 screen in view).
+// - A native "Loading Postmortem" text fills the gap until the page has drawn, instead of a black screen.
+// - The post-game page stays alive between matches, so the script now watches the match ID and preloads every new match,
+//   not only the first one of the session. Opening Compare before the game knows the match ID waits for it instead of
+//   loading a page with no match.
 // v6: hides the whole native carousel and paints the page root black (v5 left the team background art showing).
 // v4:
 // - The page loads in the background as soon as the match ID is known, and the browser panel stays invisible
@@ -17,8 +27,17 @@
 //   Compare was opened from (for example Graphs) closes Compare.
 (function () {
     var PAGE = "https://deadlock-compare.minnymods.workers.dev/";
-    var READY_FALLBACK_S = 3.0; // show the page anyway if it never says it's ready
+    var READY_FALLBACK_S = 6.0;  // only before the page has ever spoken: show it anyway if it never says it's ready
+    var LOAD_TIMEOUT_MS = 12000; // a load that hasn't said READY by then is tried again
+    var BEAT_TIMEOUT_MS = 7000;  // no heartbeat for this long while open = the page is gone
+    var RETRY_S = [2, 4, 8, 15, 30];
     var wired = false;
+    var titlesSeen = false;      // the page has set a DLC_ title at least once this session
+    var beatsSeen = false;       // the page sends heartbeats (older pages don't)
+    var lastBeat = 0;
+    var loadStarted = 0;
+    var retries = 0;
+    var retryAt = 0;
     var tries = 0;
     var isOpen = false;
     var openedOn = null;
@@ -137,30 +156,78 @@
         try { if (overlay) overlay.hittest = on; } catch (e) {}
         try { if (web) { web.hittest = on; web.acceptsfocus = on; } } catch (e) {}
     }
+    function setWait(title, text) {
+        var t = find("DLCompareWaitTitle"), x = find("DLCompareWaitText");
+        try { if (t) t.text = title; } catch (e) {}
+        try { if (x) x.text = text || ""; } catch (e) {}
+    }
     function markReady() {
         if (ready) return;
         ready = true;
+        retries = 0;
+        retryAt = 0;
         root().AddClass("DLCompareReady");
     }
-    function load(id, hash) {
-        var web = find("DLCompareWeb");
-        if (!web) return;
-        var url = PAGE + "?embed=1" + (id ? "&match=" + id : "") + (hash ? "#" + hash : "");
+    function unready() {
         ready = false;
         root().RemoveClass("DLCompareReady");
+    }
+    function load(id, hash, why) {
+        var web = find("DLCompareWeb");
+        if (!web || !id) return;
+        var url = PAGE + "?embed=1&match=" + id + (hash ? "#" + hash : "");
+        unready();
         loadedFor = id;
         hashNow = hash;
-        $.Msg("[DLCompare] load " + url);
+        loadStarted = Date.now();
+        lastBeat = 0;
+        setWait("Loading Postmortem...", retries ? "Try " + (retries + 1) : "");
+        $.Msg("[DLCompare] load (" + (why || "open") + ") " + url);
         try { web.SetURL(url); } catch (e) { $.Msg("[DLCompare] SetURL failed: " + e); }
-        $.Schedule(READY_FALLBACK_S, function () { if (loadedFor === id) markReady(); });
+        $.Schedule(READY_FALLBACK_S, function () { if (loadedFor === id && !titlesSeen) markReady(); });
     }
-    // Load the page in the background as soon as the match ID shows up.
-    var preloadTries = 0;
-    function preload() {
-        if (loadedFor) return;
+    // Something went wrong with the page: hide the browser, say so, and load it again after a growing wait.
+    function fail(reason) {
+        if (retryAt) return;
+        unready();
+        var wait = RETRY_S[Math.min(retries, RETRY_S.length - 1)];
+        retries++;
+        retryAt = Date.now() + wait * 1000;
+        $.Msg("[DLCompare] page lost (" + reason + "), retry " + retries + " in " + wait + "s");
+        setWait("Reconnecting to Postmortem...", "The page didn't load (" + reason + "). Trying again in " + wait + "s.");
+    }
+    // Runs every half second while Compare is open: retries, missed loads and the heartbeat check.
+    var wdGen = 0;
+    function watchdog(gen) {
+        if (!isOpen || gen !== wdGen) return;
+        var now = Date.now();
         var id = matchId();
-        if (id) { load(id, hintHash()); return; }
-        if (++preloadTries < 120) $.Schedule(0.25, preload);
+        if (!id) {
+            if (ready) unready(); // never show the last match's page while the game is still loading this one
+            setWait("Waiting for the game to load this match...", "");
+        } else if (id !== loadedFor) {
+            load(id, hintHash(), "match");
+        } else if (retryAt) {
+            if (now >= retryAt) { retryAt = 0; load(loadedFor, hintHash(), "retry"); }
+        } else if (!ready && titlesSeen && now - loadStarted > LOAD_TIMEOUT_MS) {
+            fail("timed out");
+        } else if (ready && beatsSeen && lastBeat && now - lastBeat > BEAT_TIMEOUT_MS) {
+            fail("no answer");
+        }
+        $.Schedule(0.5, function () { watchdog(gen); });
+    }
+    // The post-game page stays alive between matches, so keep an eye on the match ID and load each new match in the
+    // background as soon as it shows up (a second later, so the viewer hints are there too).
+    var seenId = null;
+    function preload() {
+        var id = matchId();
+        if (id && id !== seenId) {
+            seenId = id;
+            $.Schedule(1.0, function () {
+                if (matchId() === id && loadedFor !== id && !isOpen) load(id, hintHash(), "preload");
+            });
+        }
+        $.Schedule(1.0, preload);
     }
 
     function open() {
@@ -168,12 +235,17 @@
         if (!web) return;
         var id = matchId();
         var hash = hintHash();
-        if (!loadedFor || loadedFor !== id) load(id, hash);
-        else if (hash !== hashNow) {
+        if (id && loadedFor !== id) load(id, hash, "open");
+        else if (id && hash !== hashNow) {
             // Same page, new hints: only the hash changes, so the page doesn't reload.
             hashNow = hash;
+            $.Msg("[DLCompare] hints " + hash);
             try { web.SetURL(PAGE + "?embed=1&match=" + id + "#" + hash); } catch (e) {}
         }
+        if (!id) { unready(); setWait("Waiting for the game to load this match...", ""); }
+        // Closed for a while: a live page sends a heartbeat within a few seconds of being shown again. Until then keep it
+        // hidden behind the Loading text, so a dead page (error screen) is never what you see.
+        if (ready && beatsSeen && Date.now() - lastBeat > BEAT_TIMEOUT_MS) { unready(); setWait("Loading Postmortem...", ""); lastBeat = Date.now(); loadStarted = Date.now() - LOAD_TIMEOUT_MS + 4000; }
         hookNative(); // the footer icons may have been created after the timed hooks ran
         openedOn = selectedNavIndex();
         isOpen = true;
@@ -181,6 +253,8 @@
         setInteractive(true);
         try { web.SetFocus(); } catch (e) {}
         $.Schedule(0.25, watch);
+        var gen = ++wdGen;
+        $.Schedule(0.5, function () { watchdog(gen); });
     }
 
     function close() {
@@ -226,10 +300,25 @@
         }
     }
 
+    // Titles from the page: DLC_READY:<match>:<time> once drawn, DLC_ALIVE:<match>:<time> every 2 seconds, DLC_CLOSE:<time>.
+    // Older pages sent DLC_READY:<time> with no match. Anything else (like the browser's error screen) is only logged.
     function onTitle(panel, title) {
         if (typeof title !== "string") return;
-        if (title.indexOf("DLC_CLOSE") === 0) close();
-        else if (title.indexOf("DLC_READY") === 0) markReady();
+        if (title.indexOf("DLC_CLOSE") === 0) { close(); return; }
+        var m = title.match(/^DLC_(READY|ALIVE):(\d+)(?::\d+)?$/);
+        if (!m) {
+            $.Msg("[DLCompare] title: " + title);
+            // A strange title on a page that was beating is most likely the browser's error screen: check again in 2 seconds.
+            if (ready && beatsSeen && title !== "Postmortem") lastBeat = Math.min(lastBeat, Date.now() - BEAT_TIMEOUT_MS + 2000);
+            return;
+        }
+        titlesSeen = true;
+        var forId = title.split(":").length === 3 ? m[2] : null;
+        if (forId && loadedFor && forId !== loadedFor) return; // an older page, still on screen while the new one loads
+        if (m[1] === "ALIVE") beatsSeen = true;
+        lastBeat = Date.now();
+        if (retryAt) return; // a retry is already queued; the fresh page will report in
+        markReady();
     }
 
     function wire() {

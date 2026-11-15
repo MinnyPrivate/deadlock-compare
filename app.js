@@ -24,22 +24,22 @@ const PS = "Player-Specific";
 const GRAPHS = [
   { group: "General", id: "souls", label: "Souls Collected", kind: "general", get: s => s.net_worth },
   { group: "General", id: "souls_pm", label: "Souls per Minute", kind: "general", permin: true, get: s => s.net_worth },
-  { group: "General", id: "kills", label: "Kills", kind: "general", get: s => s.kills, events: p => killTimes(p) },
-  { group: "General", id: "deaths", label: "Deaths", kind: "general", get: s => s.deaths, events: p => deathTimes(p) },
+  { group: "General", id: "kills", label: "Kills", kind: "general", whole: true, get: s => s.kills, events: p => killTimes(p) },
+  { group: "General", id: "deaths", label: "Deaths", kind: "general", whole: true, get: s => s.deaths, events: p => deathTimes(p) },
   { group: "General", id: "healing", label: "Healing", kind: "general", get: s => s.player_healing, sub: "Yourself and allies" },
   { group: "General", id: "lanes", label: "Lane Stats", kind: "lanes", sub: "Each lane's two heroes per team side by side, plus who threw" },
   // Compare's extras
   { group: "General", id: "souls_lead", label: "Team Souls Lead", kind: "lead", extra: true, sub: "Which team was ahead on souls, and by how much" },
-  { group: "General", id: "assists", label: "Assists", kind: "general", extra: true, get: s => s.assists },
+  { group: "General", id: "assists", label: "Assists", kind: "general", extra: true, whole: true, get: s => s.assists },
   { group: "General", id: "boss_damage", label: "Objective Damage", kind: "general", extra: true, obj: true, get: s => s.boss_damage,
     sub: "Guardians, Walkers, Shrines, Patron and Mid Boss" },
-  { group: "General", id: "last_hits", label: "Trooper and Haunt Kills", kind: "general", extra: true, get: s => (s.creep_kills || 0) + (s.neutral_kills || 0), sub: "Not the scoreboard's Last Hits, which counts more" },
-  { group: "General", id: "denies", label: "Denies", kind: "general", extra: true, get: s => s.denies },
+  { group: "General", id: "last_hits", label: "Trooper and Haunt Kills", kind: "general", extra: true, whole: true, get: s => (s.creep_kills || 0) + (s.neutral_kills || 0), sub: "Not the scoreboard's Last Hits, which counts more" },
+  { group: "General", id: "denies", label: "Denies", kind: "general", extra: true, whole: true, get: s => s.denies },
   { group: "General", id: "accuracy", label: "Accuracy", extra: true, sub: "All targets, troopers included", kind: "general", ratio: true, get: s => pct(s.shots_hit, (s.shots_hit || 0) + (s.shots_missed || 0)) },
   { group: "General", id: "crit", label: "Headshot Rate", extra: true, kind: "general", ratio: true, get: s => pct(s.hero_bullets_hit_crit, s.hero_bullets_hit), sub: "Crit bullets that hit heroes" },
   // Valve's first snapshot is at 3:00. The power graphs start at 0:00 from what every hero spawns with:
   // level 1, the hero's base health (heroes.vdata, gamedata.js HERO_HP) and no bonus power.
-  { group: "General", id: "level", label: "Level", kind: "general", extra: true, power: true, level: true, get: s => s.level, start: () => 1 },
+  { group: "General", id: "level", label: "Level", kind: "general", extra: true, power: true, level: true, whole: true, get: s => s.level, start: () => 1 },
   { group: "General", id: "max_health", label: "Max Health", kind: "general", extra: true, power: true, level: true, get: s => s.max_health, start: p => (window.HERO_HP || {})[p.heroId] },
   { group: "General", id: "weapon_power", label: "Weapon Power", kind: "general", extra: true, power: true, level: true, get: s => s.weapon_power, start: () => 0 },
   { group: "General", id: "spirit_power", label: "Spirit Power", kind: "general", extra: true, power: true, level: true, get: s => s.tech_power, start: () => 0 },
@@ -54,7 +54,7 @@ const GRAPHS = [
       { label: "Other", get: s => GS(s, [5, 7, 8, 9, 10, 11, 13]) },
   ], sub: "These won't add up exactly to total souls" },
   // Golden statue buffs, from power_up_buffs: the exact second of every pickup, so these lines step at the real times.
-  { group: PS, id: "perm_buffs", label: "Permanent Buffs", kind: "breakdown", steps: true, dyn: () => buffSeries(), sub: "Golden statue buffs picked up, by type" },
+  { group: PS, id: "perm_buffs", label: "Permanent Buffs", kind: "breakdown", steps: true, whole: true, dyn: () => buffSeries(), sub: "Golden statue buffs picked up, by type" },
   { group: PS, id: "dmg_breakdown", label: "Damage Breakdown", kind: "breakdown", obj: true, defaultOn: [0, 1, 3], series: [
       { label: "Enemy Players", get: s => s.player_damage },
       { label: "Troopers", get: s => s.creep_damage },
@@ -82,7 +82,7 @@ const GRAPHS = [
       { label: "Damage Taken", get: s => s.player_damage_taken },
       { label: "Damage Mitigated", get: s => s.damage_mitigated },
   ] },
-  { group: PS, id: "kill_types", label: "Kills by Type", kind: "breakdown", extra: true, series: [
+  { group: PS, id: "kill_types", label: "Kills by Type", kind: "breakdown", extra: true, whole: true, series: [
       { label: "Gun", get: s => s.bullet_kills },
       { label: "Ability", get: s => s.ability_kills },
       { label: "Melee", get: s => s.melee_kills },
@@ -174,8 +174,52 @@ function deathEvents() {
   if (mi._deaths) return mi._deaths;
   const bySlot = new Map(state.players.map(p => [p.slot, p]));
   const out = [];
-  for (const v of state.players) for (const d of v.raw.death_details || []) out.push({ t: Number(d.game_time_s) || 0, victim: v, killer: bySlot.get(Number(d.killer_player_slot)) || null });
-  return (mi._deaths = out.sort((a, b) => a.t - b.t));
+  for (const v of state.players) for (const d of v.raw.death_details || []) {
+    const dp = d.death_pos && Number.isFinite(d.death_pos.x) ? [d.death_pos.x, d.death_pos.y] : null;
+    out.push({ t: Number(d.game_time_s) || 0, victim: v, killer: bySlot.get(Number(d.killer_player_slot)) || null, pos: dp, assists: [] });
+  }
+  out.sort((a, b) => a.t - b.t);
+  assignAssists(out);
+  return (mi._deaths = out);
+}
+// Who assisted. Valve's data names the killer but not the assisters. It does have each hero's assist count at every stats
+// snapshot and every hero's position each second (match_paths), so each hero's assists between two snapshots go to the deaths
+// in that stretch they were closest to (over the 8 seconds before the death). Each hero's total matches the scoreboard;
+// which death got which assist is a best guess, so the hover box says so. Checked on 5 matches: a plain "was nearby" rule
+// alone lands within about 12% of the real totals, and the snapshot counts tighten it.
+const ASSIST_LOOKBACK_S = 8, ASSIST_MAX_DIST = 6000;
+function pathPos(slot, t) {
+  const mp = state.match.match_paths;
+  if (!mp || !Array.isArray(mp.paths)) return null;
+  const p = mp.paths.find(q => Number(q.player_slot) === slot);
+  if (!p || !p.x_pos || !p.y_pos) return null;
+  const i = Math.round(t / (mp.interval_s || 1));
+  if (i < 0 || i >= p.x_pos.length) return null;
+  const rx = mp.x_resolution || 16383, ry = mp.y_resolution || 16383;
+  return [p.x_min + (p.x_pos[i] / rx) * (p.x_max - p.x_min), p.y_min + (p.y_pos[i] / ry) * (p.y_max - p.y_min)];
+}
+function assignAssists(evs) {
+  if (!state.match.match_paths) return;
+  for (const s of state.players) {
+    const snaps = (s.stats || []).map(x => [Number(x.time_stamp_s) || 0, Number(x.assists) || 0]);
+    let prevT = -1, prevA = 0;
+    for (const [ts, a] of snaps) {
+      const n = a - prevA, lo = prevT;
+      prevT = ts; prevA = a;
+      if (n <= 0) continue;
+      const cands = [];
+      for (const e of evs) {
+        if (e.t <= lo || e.t > ts || !e.pos || e.victim.team === s.team || e.killer === s) continue;
+        let best = Infinity;
+        for (let j = 0; j <= ASSIST_LOOKBACK_S; j++) {
+          const q = pathPos(s.slot, e.t - j);
+          if (q) best = Math.min(best, Math.hypot(q[0] - e.pos[0], q[1] - e.pos[1]));
+        }
+        if (best <= ASSIST_MAX_DIST) cands.push([best, e]);
+      }
+      cands.sort((x, y) => x[0] - y[0]).slice(0, n).forEach(([, e]) => e.assists.push(s));
+    }
+  }
 }
 
 const BUFF_NAMES = {
@@ -820,7 +864,9 @@ function renderAll() {
   const g0 = graphNow();
   if (g0.kind === "lanes") { $("tooltip").hidden = true; window.renderLanes(); return; }
   const series = seriesFor(g0);
-  const g = modeNow(g0) === "share" ? Object.assign({}, g0, { ratio: true }) : g0; // % of Team reads as a percentage
+  // % of Team reads as a percentage. Per Minute and % of Team are rates, so counts lose their whole-number readout there.
+  const m0 = modeNow(g0);
+  const g = m0 === "share" ? Object.assign({}, g0, { ratio: true, whole: false }) : m0 === "permin" ? Object.assign({}, g0, { whole: false }) : g0;
   drawChart(series, g);
   renderLines(series, g);
 }
@@ -841,7 +887,7 @@ function drawChart(series, g) {
   if (vals.length) { ymax = Math.max(...vals); ymin = Math.min(0, ...vals); }
   if (g.level && vals.length) ymin = Math.min(...vals);
   if (ymax === ymin) ymax = ymin + 1;
-  const ticks = niceTicks(ymin, ymax, 4, series.length > 0 && series.every(se => se.pts.step));
+  const ticks = niceTicks(ymin, ymax, 4, (series.length > 0 && series.every(se => se.pts.step)) || !!g.whole);
   ymin = Math.min(ymin, ticks[0]); ymax = Math.max(ymax, ticks[ticks.length - 1]);
   const X = t => m.l + ((Math.max(t, t0) - t0) / (dur - t0)) * (W - m.l - m.r);
   const Y = v => H - m.b - ((v - ymin) / (ymax - ymin)) * (H - m.t - m.b);
@@ -925,8 +971,12 @@ function drawChart(series, g) {
     // The readout follows the mouse to the second, like the game's: values between Valve's snapshots are read off the drawn line.
     const t = Math.round(Math.max(0, Math.min(end, ((px - m.l) / (W - m.l - m.r)) * dur)));
     const near = evs.filter(e => Math.abs(e.t - t) <= dur * 0.012);
+    const dot = ev.target && ev.target.closest ? ev.target.closest(".deathDot") : null;
     let html = "";
-    if (times.length) {
+    if (dot && dot.dlcDeath) {
+      line.setAttribute("x1", X(dot.dlcDeath.t)); line.setAttribute("x2", X(dot.dlcDeath.t)); line.setAttribute("stroke-opacity", 0.35);
+      html = deathTipHtml(dot.dlcDeath);
+    } else if (times.length) {
       line.setAttribute("x1", X(t)); line.setAttribute("x2", X(t)); line.setAttribute("stroke-opacity", 0.35);
       html += `<div class="t">${fmtTime(t)}</div>`;
       if (near.length) html += evHtml(near);
@@ -979,6 +1029,17 @@ function heroRowsHtml(rows, g, t) {
       `<span class="face">${cardImg(p)}</span>` +
       `<span class="v">${fmtNum(v, g)}</span>${tot ? `<span class="pc">${Math.round((100 * v) / tot)}%</span>` : ""}</div>`;
   }).join("") + `</div>`;
+}
+// Death marker hover: who died, who got the kill and who assisted, as hero rows like the main readout.
+function deathTipHtml(e) {
+  const row = (p, label) => `<div class="hr" style="--tc:${TEAMS[p.team].c};--pc:${p.color}"><i class="sw"></i><span class="face">${cardImg(p)}</span>` +
+    `<span class="v hn">${esc(heroName(p))}</span>${label ? `<span class="pc">${label}</span>` : ""}</div>`;
+  let h = `<div class="t">${fmtTime(e.t)}</div><div class="heroRows deathTip">`;
+  h += `<div class="dh">Died</div>` + row(e.victim);
+  h += `<div class="dh">Killed by</div>` + (e.killer ? row(e.killer) : `<div class="dn">Not a hero (troopers, objective or fall)</div>`);
+  h += `<div class="dh">Assists</div>` + (e.assists.length ? e.assists.map(p => row(p)).join("") : `<div class="dn">${state.match.match_paths ? "No assists" : "Not in this match's data"}</div>`);
+  if (e.assists.length) h += `<div class="dnote">Assists are worked out from positions and assist counts, so one may be off.</div>`;
+  return h + `</div>`;
 }
 function evHtml(list) {
   return `<div class="ev">${list.map(e => `<div><b style="background:${e.color}"></b>${esc(e.text)} <small style="opacity:.55">${fmtTime(e.t)}</small></div>`).join("")}</div>`;
@@ -1050,9 +1111,9 @@ function drawDeaths(on, X, top, right) {
     for (const e of deathEvents().filter(e => e.victim.team === team)) {
       const x = X(e.t), lane = x - lastX[0] >= 14 ? 0 : x - lastX[1] >= 14 ? 1 : 0; // two sub-rows so close dots don't hide each other
       lastX[lane] = x;
-      const d = el("i", "deathDot" + (picked && !picked.has(e.victim.slot) && !(e.killer && picked.has(e.killer.slot)) ? " dim" : ""));
+      const d = el("i", "deathDot" + (picked && !picked.has(e.victim.slot) && !(e.killer && picked.has(e.killer.slot)) && !e.assists.some(a => picked.has(a.slot)) ? " dim" : ""));
       d.style.left = x + "px"; d.style.top = 1 + lane * 14 + "px"; d.style.setProperty("--dc", T.c);
-      d.title = `${heroName(e.victim)} died${e.killer ? ", killed by " + heroName(e.killer) : ""}\n${fmtTime(e.t)}`;
+      d.dlcDeath = e; // the hover box reads it (title tooltips don't show in the game's browser)
       row.append(d);
     }
     box.append(row);
@@ -1181,6 +1242,9 @@ function fmtTime(s) { s = Math.round(s); return `${Math.floor(s / 60)}:${String(
 function fmtSouls(v) { return v >= 1000 ? `${Math.round(v / 1000)}<span class="k">k</span>` : String(Math.round(v)); }
 function fmtNum(v, g) {
   if (g && g.ratio) return v.toFixed(1) + "%";
+  // Counts (kills, denies, level...) are whole numbers. Between Valve's 3-minute snapshots the line is a straight slope, so
+  // the value read off it there (like 6.7 denies) is rounded to the nearest whole count.
+  if (g && g.whole) return Math.round(v).toLocaleString("en-US");
   if (Math.abs(v) < 10 && v % 1) return v.toFixed(1);
   return Math.round(v).toLocaleString("en-US");
 }
@@ -1218,11 +1282,16 @@ document.addEventListener("keydown", ev => { if (ev.key === "Escape" && EMBED &&
 window.addEventListener("hashchange", () => { if (state.match) { applyViewer(); renderAll(); } });
 // Tell the mod the page has drawn, so it can show the panel without the browser's gray flash.
 // A hidden browser may not run animation frames, so a timer backs it up.
+// The match ID rides along so the mod can tell this page from an older one still on screen while a new match loads.
+// After that, a heartbeat every 2 seconds: if the browser ever swaps the page for its error screen (the blue "-105" one),
+// the heartbeat stops and the mod hides the browser, shows its own "Loading" text and loads the page again.
 if (EMBED) {
   let told = false;
-  const ready = () => { if (!told) { told = true; document.title = "DLC_READY:" + Date.now(); } };
+  const mid = /^\d+$/.test(params.get("match") || "") ? params.get("match") : "0";
+  const ready = () => { if (!told) { told = true; document.title = "DLC_READY:" + mid + ":" + Date.now(); } };
   requestAnimationFrame(() => requestAnimationFrame(ready));
   setTimeout(ready, 400);
+  setInterval(() => { if (told) document.title = "DLC_ALIVE:" + mid + ":" + Date.now(); }, 2000);
 }
 const startId = params.get("match");
 if (startId && /^\d+$/.test(startId)) loadMatch(startId);

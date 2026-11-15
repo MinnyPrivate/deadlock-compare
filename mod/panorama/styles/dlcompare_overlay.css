@@ -103,3 +103,37 @@
 {
 	opacity: 1;
 }
+/* v7: the Loading / Reconnecting text, under the browser panel. It shows while the browser is hidden (not ready yet,
+   or reconnecting after the page was lost) and is covered once the page has drawn. */
+#DLCompareWait
+{
+	width: 900px;
+	height: fit-children;
+	horizontal-align: center;
+	vertical-align: center;
+	flow-children: down;
+	opacity: 1;
+	transition-property: opacity;
+	transition-duration: 0.15s;
+}
+.DLCompareReady #DLCompareWait
+{
+	opacity: 0;
+}
+#DLCompareWaitTitle
+{
+	horizontal-align: center;
+	font-size: 30px;
+	font-weight: bold;
+	color: #FFEFD7;
+	text-transform: uppercase;
+	letter-spacing: 1px;
+}
+#DLCompareWaitText
+{
+	horizontal-align: center;
+	margin-top: 10px;
+	font-size: 20px;
+	color: #ACA395;
+	text-align: center;
+}
