@@ -471,7 +471,7 @@ function drawWait(w, id, my) {
   let title, text;
   if (w.stopped === "missing") {
     title = "This match hasn't been uploaded";
-    text = "After 15 minutes deadlock-api still doesn't have it. Ask someone who played it to run the deadlock-api uploader, then press Try Now.";
+    text = "After 15 minutes deadlock-api still doesn't have it. Either nobody who played it runs the deadlock-api uploader, or the match was abandoned (Valve keeps no data for those). If it finished normally, ask someone who played it to run the uploader, then press Try Now.";
   } else if (w.stopped === "valve") {
     title = "Valve hasn't published this match yet";
     text = "deadlock-api has the match's keys, but Valve's file still isn't there after 15 minutes. Press Try Now to check again later.";
