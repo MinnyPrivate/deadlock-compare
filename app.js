@@ -483,7 +483,7 @@ function drawWait(w, id, my) {
     text = (w.phase === "valve" ? "deadlock-api has this match's keys and is getting the file from Valve."
       : w.phase === "limit" ? "deadlock-api asked us to slow down, so I'm waiting as long as it said."
       : w.phase === "down" ? "It answered with an error. I'll keep trying for a bit."
-      : "deadlock-api doesn't have this match yet. It shows up as soon as someone who played it runs the deadlock-api uploader, or when deadlock-api's own bots get to it.") +
+      : "deadlock-api doesn't have this match yet. The deadlock-api uploader usually sends it within 5 minutes of the game ending, if someone who played runs it. Otherwise deadlock-api's own bots get to it later. This page loads it the moment it arrives.") +
       `<br>Checking again in ${fmtTime(left)}.`;
   }
   s.innerHTML = `<div class="waitTitle">${title}</div><div class="waitText">${text}</div>` +
