@@ -27,7 +27,7 @@ Local test without the API: `python -m http.server`, then `index.html?match=1360
 
 ## Waiting screen
 
-A match deadlock-api doesn't have yet shows a waiting screen with a countdown and a Try Now button (10 second cooldown). 429 (busy) keeps retrying. 404 retries until 3 minutes have passed since the first miss, then says nobody in the match uploaded it. 502, 503 and 504 stop after 10 tries and say deadlock-api looks down. The time is real time, so pressing Try Now doesn't bring the message forward.
+A match deadlock-api doesn't have yet shows a waiting screen. The first request is a normal /metadata call (deadlock-api may ask Steam once; that is limited to 3 per hour per IP). After that the page only uses calls that never ask Steam: the free `/salts?disable_steam=true` check every 10 s for 3 minutes, then every 30 s, and `/metadata?disable_steam=true` as soon as salts exist (and once a minute regardless). Once deadlock-api has the salts it downloads the match from Valve inside that request. The screen says what it's waiting on, with a small details line (last answer, try count, time waited) and a Try Now button (10 second cooldown). It stops after 15 minutes ("hasn't been uploaded" or "Valve hasn't published it") or after 5 server errors in a row ("looks down"). A 429 waits as long as its `next_request_in` says.
 
 ## Game data
 

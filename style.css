@@ -552,6 +552,7 @@ body.laneMode .laneView {
 /* ---------- waiting for a brand new match ---------- */
 .status .waitTitle { font-family: var(--oracle); font-weight: 700; font-size: 28px; color: var(--offWhite); margin-bottom: 10px; }
 .status .waitText { font-size: 18px; line-height: 1.5; opacity: 0.75; }
+.status .waitDetail { font-size: 15px; margin-top: 14px; opacity: 0.5; }
 
 /* ---------- line chips with an "only" button ---------- */
 .lineChip { display: flex; flex: none; }
