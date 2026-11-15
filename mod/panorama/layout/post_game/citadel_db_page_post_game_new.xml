@@ -102,6 +102,11 @@
 		<CitadelCommendNotification id="CommendNotification" />
 		<!-- DLCOMPARE: Compare screen, fills everything above the footer nav bar -->
 		<Panel id="DLCompareOverlay" hittest="true">
+			<!-- DLCOMPARE v7: shown until the page has drawn, and while it reconnects -->
+			<Panel id="DLCompareWait" hittest="false">
+				<Label id="DLCompareWaitTitle" text="Loading Postmortem..." />
+				<Label id="DLCompareWaitText" text="" />
+			</Panel>
 			<CitadelHTMLPanel id="DLCompareWeb" />
 		</Panel>
 	</CitadelPostGameNew>
