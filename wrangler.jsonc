@@ -1,7 +1,16 @@
 {
   "name": "deadlock-compare",
+  "main": "worker.js",
   "compatibility_date": "2026-11-01",
   "assets": {
-    "directory": "."
-  }
+    "directory": ".",
+    "binding": "ASSETS"
+  },
+  // Early-data relay for the Postmortem companion app (worker.js). One small store per match, deleted after 15 minutes.
+  "durable_objects": {
+    "bindings": [{ "name": "EARLY", "class_name": "EarlyMatch" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["EarlyMatch"] }],
+  // "false" pauses every companion app (the kill switch). The upload key is a secret, EARLY_UPLOAD_KEY, set in the dashboard.
+  "vars": { "EARLY_ENABLED": "true" }
 }
