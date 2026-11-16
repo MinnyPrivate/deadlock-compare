@@ -155,7 +155,7 @@ window.renderMvp = function renderMvp() {
       ${cardFace(p, "row")}
       <span class="who"><span class="hn">${esc(heroName(p))}${p.left ? ` <span class="leftTag" title="Left the match at ${fmtTime(p.left)}">LEFT</span>` : ""}</span>${rankHtml(p.badge) || `<span class="rank none">Unranked</span>`}</span>
       ${valve ? divBar(r.score, top, "") : catBar(r, top)}
-      <span class="score">${valve ? r.score.toFixed(1) : Math.round(r.score)}</span>
+      <span class="score ${valve ? dvClass(r.score, 1) : ""}"${valve ? ` title="${dvWord(r.score)} for the hero"` : ""}>${valve ? dv(r.score, 1) : Math.round(r.score)}</span>
       <span class="valve">${v ? `<span class="badge${p.mvp > 1 ? " key" : ""}" title="Valve's pick">${p.mvp === 1 ? "MVP" : "KEY"}</span>` : ""}</span>
     </button>`;
   }
@@ -267,6 +267,14 @@ function divBar(v, scale, cls) {
   return `<span class="divBar ${cls || ""}"><i style="${v >= 0 ? `left:50%;background:${GREEN}` : `right:50%;background:${RED}`};width:${w}%"></i></span>`;
 }
 const signed = (v, d) => (v >= 0 ? "+" : "-") + Math.abs(v).toFixed(d);
+// Green and red never carry meaning alone: a value against the hero average gets a sign and an up or down triangle (DESIGN.md section 2).
+// The color class (pos, neg or none) goes on the element that wraps this, so the triangle takes the same color.
+const dvClass = (v, d) => { const r = Number(v.toFixed(d)); return r > 0 ? "pos" : r < 0 ? "neg" : ""; };
+function dv(v, d) {
+  const c = dvClass(v, d);
+  return `<span class="dv">${c ? `<i class="tri ${c === "pos" ? "up" : "down"}" aria-hidden="true"></i>` : ""}${c ? signed(v, d) : (0).toFixed(d)}</span>`;
+}
+const dvWord = v => v > 0 ? "Above average" : v < 0 ? "Below average" : "Average";
 
 // Computed once per match.
 function valveCache() {
@@ -334,7 +342,7 @@ function whyValve(rows, pick) {
         <div class="meta"><span style="color:${T.c}">${T.color}</span> · ${won ? "Won" : "Lost"} · ${p.lane && LANES_BY_COLOR[p.lane] ? LANES_BY_COLOR[p.lane] + " lane" : "No lane"}${p.left ? ` · <span class="leftTag">Left at ${fmtTime(p.left)}</span>` : ""}</div>
         ${rankHtml(p.badge) || `<span class="rank none">Unranked</span>`}
       </div>
-      <div class="whyScore"><b>${pick.score.toFixed(2)}</b><span>${ordinal(pick.place)} of ${rows.length}</span></div>
+      <div class="whyScore"><b>${signed(pick.score, 2)}</b><span>${ordinal(pick.place)} of ${rows.length}</span></div>
     </div>
     <p class="summary">${esc(summary)}${valveLine ? `<br><span class="vl">${esc(valveLine)}</span>` : ""}</p>
     <div class="whyTable valve">
@@ -344,7 +352,7 @@ function whyValve(rows, pick) {
       <span class="sn">${esc(x.label)}</span>
       <span class="r v">${fmtStat(x.v)}</span>
       <span class="r lb">${fmtStat(x.avg)}</span>
-      <span class="pb">${divBar(x.pts, maxAbs, "wide")}<em class="${x.pts >= 0 ? "pos" : "neg"}">${signed(x.pts, 2)}</em></span>
+      <span class="pb">${divBar(x.pts, maxAbs, "wide")}<em class="${dvClass(x.pts, 2)}" title="${dvWord(x.pts)} for this hero">${dv(x.pts, 2)}</em></span>
     </div>`;
   }
   h += `</div>`;
@@ -365,7 +373,7 @@ function whenHtml(p) {
     return `${ordinal(1 + all.filter(x => x > val).length)} of ${all.length}`;
   };
   const scale = Math.max(0.5, ...ph.map(r => Math.abs(r.early_valve || 0)), ...ph.map(r => Math.abs(r.late_valve || 0)));
-  const bar = (label, key) => `<div class="whenRow"><span class="wl">${label}</span>${divBar(me[key], scale, "wide")}<span class="wv ${me[key] >= 0 ? "pos" : "neg"}">${signed(me[key], 1)}</span><span class="wk">${rankOf(key, me[key])}</span></div>`;
+  const bar = (label, key) => `<div class="whenRow"><span class="wl">${label}</span>${divBar(me[key], scale, "wide")}<span class="wv ${dvClass(me[key], 1)}" title="${dvWord(me[key])} for this hero">${dv(me[key], 1)}</span><span class="wk">${rankOf(key, me[key])}</span></div>`;
   const eLabel = me.early_time_s === 900 ? "Before 15:00" : `Before ${fmtTime(me.early_time_s)}`;
   let h = `<div class="when" title="${esc(tip)}"><div class="accHead"><span>When they contributed</span></div>${bar(eLabel, "early_valve")}`;
   if (me.late_valve == null) h += `<div class="vNote">Match too short to split.</div>`;

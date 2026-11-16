@@ -391,6 +391,8 @@ function fail(e, id, my) {
 // A 429 waits as long as deadlock-api asks. Five server errors in a row (502, 503 from the salts check, 504) stop it too.
 // Try Now runs one check at once (after a short cooldown, so clicking again and again doesn't hammer the API).
 const WAIT_STATUS = new Set([404, 429, 500, 502, 503, 504]);
+// Measured from real matches (PR 18): the match file usually appears 80 to 110 s after the game ends. The wait screen shows this range.
+const TYPICAL_LO_S = 80, TYPICAL_HI_S = 110;
 const FAST_S = 10, SLOW_S = 30, FAST_FOR_S = 180, GIVE_UP_S = 15 * 60, META_EVERY_S = 60, DOWN_GIVE_UP = 5, TRY_NOW_COOLDOWN_S = 10;
 let waitTimer = null, checkTimer = null;
 function waitForMatch(id, my, first) {
@@ -469,7 +471,7 @@ function drawWait(w, id, my) {
   const left = Math.max(0, Math.ceil((w.next - Date.now()) / 1000));
   const cool = Math.max(0, Math.ceil((w.last + TRY_NOW_COOLDOWN_S * 1000 - Date.now()) / 1000));
   const waited = fmtTime((Date.now() - w.start) / 1000);
-  let title, text;
+  let title, text, meter = "";
   if (w.stopped === "missing") {
     title = "This match hasn't been uploaded";
     text = "After 15 minutes deadlock-api still doesn't have it. Ask someone who played it to run the deadlock-api uploader, then press Try Now.";
@@ -484,15 +486,27 @@ function drawWait(w, id, my) {
     text = (w.phase === "valve" ? "deadlock-api has this match's keys and is getting the file from Valve."
       : w.phase === "limit" ? "deadlock-api asked us to slow down, so I'm waiting as long as it said."
       : w.phase === "down" ? "It answered with an error. I'll keep trying for a bit."
-      : "deadlock-api doesn't have this match yet. The deadlock-api uploader usually sends it within 5 minutes of the game ending, if someone who played runs it. Otherwise deadlock-api's own bots get to it later. This page loads it the moment it arrives.") +
+      : "deadlock-api doesn't have this match yet. Its uploader sends matches soon after they end, if someone who played runs it. Otherwise deadlock-api's own bots get to it later. This page loads it the moment it arrives.") +
       `<br>Checking again in ${fmtTime(left)}.`;
+    meter = waitMeter((Date.now() - w.start) / 1000, w.phase);
   }
-  s.innerHTML = `<div class="waitTitle">${title}</div><div class="waitText">${text}</div>` +
+  s.innerHTML = `<div class="waitTitle">${title}</div>${meter}<div class="waitText">${text}</div>${meter ? `<div class="waitNote">Nothing to do on your end. This page loads the match by itself.</div>` : ""}` +
     `<div class="waitDetail">${esc(w.detail || "")} · try ${w.tries} · waiting ${waited}</div>`;
   const b = el("button", "graphOptionButton retry", cool ? `Try Now (${cool})` : "Try Now");
   b.disabled = cool > 0;
   b.onclick = () => { clearInterval(waitTimer); clearTimeout(checkTimer); check(w, id, my); };
   s.append(b);
+}
+// Elapsed time, the typical range, and a bar that fills against that range and then holds at the end (not a fake percent).
+// Past the range the line changes to say so. It redraws every second, so the bar needs no animation and works with reduced motion.
+function waitMeter(elapsed, phase) {
+  const over = elapsed > TYPICAL_HI_S;
+  const pct = Math.min(100, (elapsed / TYPICAL_HI_S) * 100);
+  const lead = over
+    ? `Taking longer than usual.${phase === "valve" ? " Valve hasn't published it yet." : phase === "nosalts" ? " deadlock-api doesn't have it yet." : ""} You can keep this open.`
+    : `Usually ${fmtTime(TYPICAL_LO_S)} to ${fmtTime(TYPICAL_HI_S)} after a game ends. <b>${fmtTime(elapsed)}</b> so far.`;
+  return `<div class="waitRange">${lead}</div>` +
+    `<div class="waitBar${over ? " hold" : ""}" role="progressbar" aria-label="Time waited against the usual range" aria-valuemin="0" aria-valuemax="${TYPICAL_HI_S}" aria-valuenow="${Math.min(TYPICAL_HI_S, Math.round(elapsed))}"><i style="width:${pct}%"></i><span class="tick" style="left:${(TYPICAL_LO_S / TYPICAL_HI_S) * 100}%"></span></div>`;
 }
 function clearMatch() {
   state.match = null;

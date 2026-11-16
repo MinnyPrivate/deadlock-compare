@@ -141,12 +141,12 @@ body.standalone #stage { height: 1080px; }
   border-top: 2px solid rgba(46,43,38,0.55); scroll-snap-align: start;
 }
 .dropDownMenu > :first-child { border-top: 0; }
-.dropDownMenu .cat { background: rgba(0,0,0,0.2); color: rgba(255,239,215,0.36); }
+.dropDownMenu .cat { background: rgba(0,0,0,0.2); color: rgba(255,239,215,0.6); }
 .dropDownMenu .item { color: #E3D0B8; cursor: pointer; }
 /* Thin label between the game's own graphs and the ones Compare adds. */
 .dropDownMenu .extraSep {
   display: block; padding: 6px 16px 3px; border-top: 2px solid rgba(46,43,38,0.55);
-  font-family: var(--sans); font-size: 12px; letter-spacing: 0.6px; text-transform: uppercase; color: rgba(255,239,215,0.32);
+  font-family: var(--sans); font-size: 12px; letter-spacing: 0.6px; text-transform: uppercase; color: rgba(255,239,215,0.65);
 }
 .dropDownMenu .item:hover { background: rgba(255,239,215,0.1); color: var(--offWhite); }
 .dropDownMenu .item.on { background: rgba(255,239,215,0.16); color: #fff; }
@@ -154,7 +154,7 @@ body.standalone #stage { height: 1080px; }
 /* ---------- option buttons (native GraphOptionButton) ---------- */
 .graphOptionsCtn { margin-left: auto; margin-right: 20px; display: flex; align-items: center; height: 60px; }
 .graphOption { display: flex; align-items: center; }
-.optionLabel { font-size: 16px; font-style: italic; font-weight: 600; opacity: 0.35; margin: 0 10px 0 16px; white-space: nowrap; }
+.optionLabel { font-size: 16px; font-style: italic; font-weight: 600; opacity: 0.65; margin: 0 10px 0 16px; white-space: nowrap; }
 .graphOptionButton {
   min-width: 64px; padding: 8px 7px 9px; border: 1px solid rgba(255,239,215,0.53); font-weight: 600; font-size: 15px;
   color: var(--offWhite); text-align: center; white-space: nowrap;
@@ -191,9 +191,9 @@ body.standalone #stage { height: 1080px; }
 .tooltip .row img { width: 24px; height: 24px; border-radius: 50%; background: var(--coin); object-fit: cover; object-position: 50% 28%; flex: none; }
 .tooltip .row .sw { width: 14px; height: 3px; flex: none; }
 .tooltip .row .n { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tooltip .row .n small { opacity: 0.55; font-size: 13px; }
+.tooltip .row .n small { opacity: 0.7; font-size: 13px; }
 .tooltip .row .v { font-family: var(--oracle); font-weight: 700; font-size: 16px; }
-.tooltip .more { opacity: 0.5; font-size: 13px; margin-top: 4px; }
+.tooltip .more { opacity: 0.7; font-size: 13px; margin-top: 4px; }
 
 /* ---------- line category toggles ---------- */
 .lineRow { position: absolute; left: 38px; right: 38px; bottom: 18px; height: 40px; display: flex; align-items: center; }
@@ -205,12 +205,12 @@ body.standalone #stage { height: 1080px; }
 .lines .graphOptionButton svg { width: 30px; height: 8px; }
 .lines .graphOptionButton.off { opacity: 0.4; }
 .lines .graphOptionButton.off span { text-decoration: line-through; }
-.lineHint { margin-left: 18px; font-size: 14px; opacity: 0.35; flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lineHint { margin-left: 18px; font-size: 14px; opacity: 0.6; flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ---------- standalone only ---------- */
 .matchForm { position: absolute; left: 38px; top: 22px; display: none; align-items: center; gap: 10px; }
 body.standalone .matchForm { display: flex; }
-.matchForm label { font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.45; }
+.matchForm label { font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.65; }
 .matchForm input { width: 160px; padding: 8px 10px; border-radius: 3px; border: 1px solid rgba(255,239,215,0.3); background: rgba(0,0,0,0.4); color: var(--offWhite); font: 600 15px var(--sans); }
 .status { position: absolute; left: 0; right: 0; top: 46%; text-align: center; font-size: 20px; color: rgba(255,239,215,0.7); pointer-events: none; }
 .status.err { color: #ff8a7a; }
@@ -226,7 +226,7 @@ body.standalone .matchForm { display: flex; }
 .tab:hover { color: var(--offWhite); background: rgba(255,239,215,0.05); }
 .tab.on { color: #fff; border-bottom-color: var(--offWhite); background: rgba(255,239,215,0.06); }
 .lobbyRank { margin-left: auto; display: flex; align-items: center; gap: 8px; }
-.lbl { font-size: 13px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; opacity: 0.45; }
+.lbl { font-size: 13px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; opacity: 0.7; }
 .rank { display: inline-flex; align-items: center; gap: 6px; font-family: var(--oracle); font-weight: 600; font-size: 16px; white-space: nowrap; }
 /* Badge box like the game's CitadelRankedBadgeMini: square, art contained, subrank engraved as dark text.
    Game units are a 256px box, so 1 unit = var(--b) / 256. --drop is the per-rank margin-top (Panorama centers the
@@ -239,7 +239,7 @@ body.standalone .matchForm { display: flex; }
   font-family: var(--oracle); font-weight: 700; font-size: calc(var(--u) * 64); line-height: 1;
   color: #000000ee; text-shadow: 0 0 calc(var(--u) * 4) var(--glow);
 }
-.rank.none { opacity: 0.4; font-size: 14px; }
+.rank.none { opacity: 0.6; font-size: 14px; }
 .teamAvg { position: absolute; left: 0; top: 92px; width: 145px; display: flex; align-items: center; justify-content: flex-end; gap: 4px; padding-right: 8px; }
 .teamAvg.right { left: auto; right: 0; justify-content: flex-start; padding: 0 0 0 8px; }
 .teamAvg .rank { font-size: 13px; gap: 3px; }
@@ -257,14 +257,14 @@ body:not(.tabMu) #muView { display: none; }
 .mvpView { position: absolute; left: 38px; right: 38px; top: 190px; bottom: 18px; display: grid; grid-template-columns: 1010px 1fr; grid-template-rows: 60px 1fr; column-gap: 24px; row-gap: 12px; }
 .mvpHead { grid-column: 1 / 3; display: flex; align-items: center; }
 .mvpHead .optionLabel { margin-left: 0; }
-.mvpSub { margin-left: 20px; font-size: 15px; opacity: 0.5; }
+.mvpSub { margin-left: 20px; font-size: 15px; opacity: 0.7; }
 .legend { margin-left: auto; display: flex; gap: 18px; font-size: 14px; opacity: 0.85; }
 .legend span { display: flex; align-items: center; gap: 6px; }
 .legend b, .whyTable .sn b { width: 10px; height: 10px; border-radius: 2px; display: inline-block; flex: none; }
 
 .mvpList { display: flex; flex-direction: column; gap: 3px; min-height: 0; }
 .mvpRow {
-  flex: 1; max-height: 60px; display: grid; grid-template-columns: 44px 52px 300px 1fr 64px 52px; align-items: center; column-gap: 12px;
+  flex: 1; max-height: 60px; display: grid; grid-template-columns: 44px 52px 300px 1fr 96px 52px; align-items: center; column-gap: 12px;
   padding: 0 12px 0 0; text-align: left; background: rgba(255,239,215,0.04); border-left: 4px solid var(--tc); border-radius: 0 3px 3px 0;
 }
 .mvpRow:hover { background: rgba(255,239,215,0.09); }
@@ -301,7 +301,7 @@ body:not(.tabMu) #muView { display: none; }
 .summary .vl { opacity: 0.65; font-style: italic; }
 .whyTable { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .wr { flex: 1; max-height: 30px; display: grid; grid-template-columns: 1fr 76px 104px 200px; align-items: center; column-gap: 12px; font-size: 15px; border-top: 1px solid rgba(255,239,215,0.06); }
-.wr.th { flex: none; height: 26px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.45; border-top: 0; }
+.wr.th { flex: none; height: 26px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.7; border-top: 0; }
 .wr.off { opacity: 0.3; }
 .wr .r { text-align: right; }
 .wr .sn { display: flex; align-items: center; gap: 8px; white-space: nowrap; overflow: hidden; }
@@ -312,7 +312,7 @@ body:not(.tabMu) #muView { display: none; }
 .wr .track { height: 8px; background: rgba(255,239,215,0.08); border-radius: 2px; overflow: hidden; }
 .wr .track i { display: block; height: 100%; }
 .wr .pb em { font-style: normal; font-family: var(--oracle); font-weight: 600; font-size: 14px; opacity: 0.8; }
-.whyFoot { margin-top: 8px; font-size: 13px; opacity: 0.4; }
+.whyFoot { margin-top: 8px; font-size: 13px; opacity: 0.7; }
 .whyTable.compact { flex: none; }
 .whyTable.compact .wr { flex: none; height: 32px; }
 /* The full stat table keeps its rows' height; the panel scrolls instead of squeezing them over the blocks below. */
@@ -350,7 +350,7 @@ body.noMatch .topPanel, body.noMatch .tabs, body.noMatch .mainCol, body.noMatch 
 .dropDownMenu::-webkit-scrollbar-thumb { background: rgba(255,239,215,0.45); border-radius: 4px; }
 #chart text.endLab { font-size: 14px; font-weight: 600; paint-order: stroke; stroke: #000; stroke-width: 3px; stroke-opacity: 0.6; }
 .tooltip.pinned { pointer-events: auto; max-height: 100%; overflow-y: auto; box-shadow: 0 0 0 1px rgba(255,239,215,0.4); }
-.tooltip .pinNote { margin-top: 8px; font-size: 12px; opacity: 0.55; }
+.tooltip .pinNote { margin-top: 8px; font-size: 12px; opacity: 0.7; }
 .graphOption + .graphOption .optionLabel { margin-left: 14px; }
 .teamAvg { left: auto; right: calc(50% + 6px); width: auto; padding: 0; }
 .teamAvg.right { right: auto; left: calc(50% + 6px); padding: 0; }
@@ -398,7 +398,7 @@ button.muRow:hover { background: rgba(255,239,215,0.06); }
 .muRow .hn { font-family: var(--oracle); font-weight: 600; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .muRow .laneTag { flex: none; }
 .muRow .v { font-family: var(--oracle); font-weight: 700; font-size: 16px; text-align: right; }
-.muNote { margin-top: 8px; font-size: 13px; line-height: 1.35; opacity: 0.6; }
+.muNote { margin-top: 8px; font-size: 13px; line-height: 1.35; opacity: 0.7; }
 .pt.sm { --s: 28px; }
 .pt.noimg { height: var(--s); margin-top: 0; }
 .pt.noimg::before { background: rgba(255,239,215,0.12); box-shadow: none; }
@@ -440,8 +440,8 @@ button.muRow:hover { background: rgba(255,239,215,0.06); }
 /* ---------- Valve's accolades in the MVP panel ---------- */
 .acc { margin-top: 14px; }
 .accHead { display: flex; align-items: baseline; gap: 12px; height: 26px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
-.accHead > span:first-child { opacity: 0.45; }
-.accSub { text-transform: none; letter-spacing: 0; font-weight: 400; font-size: 13px; opacity: 0.4; }
+.accHead > span:first-child { opacity: 0.7; }
+.accSub { text-transform: none; letter-spacing: 0; font-weight: 400; font-size: 13px; opacity: 0.7; }
 .accRow { display: grid; grid-template-columns: 46px 210px 1fr 150px; align-items: center; column-gap: 10px; height: 32px; border-top: 1px solid rgba(255,239,215,0.06); font-size: 15px; }
 .accRow .pips { display: flex; gap: 3px; }
 .accRow .pips i { width: 10px; height: 10px; transform: rotate(45deg) scale(0.8); background: rgba(255,239,215,0.15); }
@@ -462,7 +462,7 @@ button.muRow:hover { background: rgba(255,239,215,0.06); }
 .itemIcon:hover { transform: translateX(-12px) scale(1.5); z-index: 2; }
 .tooltip .itemIcon.sm { position: static; transform: none; width: 20px; height: 20px; flex: none; }
 .tooltip .bought { margin-top: 8px; padding-top: 6px; border-top: 1px solid #ffffff22; }
-.tooltip .bought .bh { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.5; }
+.tooltip .bought .bh { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.7; }
 .tooltip .row .v.t { font-family: var(--sans); font-weight: 400; font-size: 13px; opacity: 0.6; }
 /* A hidden first button (Me + Lane when the game doesn't say who you are) must not leave the next one without a left edge. */
 .graphOption .graphOptionButton[hidden] + .graphOptionButton { border-left: 1px solid rgba(255,239,215,0.53); border-radius: 3px 0 0 3px; }
@@ -486,8 +486,8 @@ button.muRow:hover { background: rgba(255,239,215,0.06); }
 .heroRows .hr .pc { font-size: 15px; font-weight: 600; color: rgba(255,239,215,0.62); }
 .muSide .nm { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.1; }
 .muSide.r .nm { align-items: flex-end; }
-.muSide .cap { font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.55; }
-.h2hRow.th { height: 24px; border-top: 0; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.55; }
+.muSide .cap { font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.65; }
+.h2hRow.th { height: 24px; border-top: 0; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.7; }
 .h2hRow.th .l { text-align: right; }
 .tooltip .noData { font-size: 14px; opacity: 0.7; padding: 4px 8px 10px; }
 /* Player Comparison readout: hero row like the main readout, line types under it. */
@@ -551,12 +551,12 @@ body.laneMode .laneView {
 .lvLead { width: 100%; height: auto; margin-top: 2px; background: rgba(0,0,0,0.25); border-radius: 4px; }
 .lvLead text { font-size: 12px; fill: rgba(255,239,215,0.55); }
 .lvLead .lvAhead { font-size: 13px; font-weight: 600; }
-.lvFoot { margin-top: 6px; font-size: 13px; opacity: 0.45; }
+.lvFoot { margin-top: 6px; font-size: 13px; opacity: 0.7; }
 
 /* ---------- waiting for a brand new match ---------- */
 .status .waitTitle { font-family: var(--oracle); font-weight: 700; font-size: 28px; color: var(--offWhite); margin-bottom: 10px; }
 .status .waitText { font-size: 18px; line-height: 1.5; opacity: 0.75; }
-.status .waitDetail { font-size: 15px; margin-top: 14px; opacity: 0.5; }
+.status .waitDetail { font-size: 15px; margin-top: 14px; opacity: 0.65; }
 
 /* ---------- line chips with an "only" button ---------- */
 .lineChip { display: flex; flex: none; }
@@ -573,11 +573,11 @@ body.laneMode .laneView {
 .deathDot:hover { transform: scale(1.5); z-index: 2; opacity: 1; }
 /* Death marker hover: Died / Killed by / Assists, each with hero rows. */
 .heroRows.deathTip { gap: 4px; }
-.deathTip .dh { margin: 8px 2px 0; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: rgba(255,239,215,0.6); }
+.deathTip .dh { margin: 8px 2px 0; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: rgba(255,239,215,0.7); }
 .deathTip .dh:first-child { margin-top: 0; }
 .deathTip .hr .hn { font-family: var(--oracle); font-size: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .deathTip .dn { padding: 6px 4px; font-size: 14px; opacity: 0.7; }
-.deathTip .dnote { margin: 8px 2px 0; font-size: 12px; line-height: 1.3; opacity: 0.55; }
+.deathTip .dnote { margin: 8px 2px 0; font-size: 12px; line-height: 1.3; opacity: 0.7; }
 #deathRows { filter: drop-shadow(0 0 1.5px #000); --skull: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2C6.9 2 3 5.8 3 10.5c0 2.8 1.4 5.2 3.5 6.7V21h3v-2h1v2h3v-2h1v2h3v-3.8c2.1-1.5 3.5-3.9 3.5-6.7C21 5.8 17.1 2 12 2zM8 12.5a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm8 0a2 2 0 1 1 0-4 2 2 0 0 1 0 4zM12 14l1.3 2.4h-2.6z'/%3E%3C/svg%3E"); }
 
 /* ---------- the game's rectangular card art (MVP tab) ---------- */
@@ -595,7 +595,7 @@ body.laneMode .laneView {
 .wr .pb em.pos, .whenRow .wv.pos { color: #58D86A; }
 .wr .pb em.neg, .whenRow .wv.neg { color: #E8604C; }
 .whyTable.valve .wr { flex: none; height: 32px; }
-.vNote { margin-top: 6px; font-size: 13px; opacity: 0.55; }
+.vNote { margin-top: 6px; font-size: 13px; opacity: 0.7; }
 .staleNote { margin-left: 10px; color: #FFD23F; opacity: 0.9; }
 .when, .dropped { margin-top: 12px; }
 .whenRow { display: grid; grid-template-columns: 110px 150px 56px 1fr; align-items: center; column-gap: 12px; height: 28px; font-size: 15px; }
@@ -610,3 +610,34 @@ body.laneMode .laneView {
 .divBar.wide { width: 130px; }
 .whyTable.valve { flex: none; }
 .dropLine .dropBig { display: block; }
+
+/* ---------- polish pass (DESIGN.md sections 2 to 4) ---------- */
+/* Keyboard focus on everything clickable. The portraits keep their own inset outline. */
+button:focus-visible, input:focus-visible, .dropDown:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid var(--offWhite); outline-offset: -2px;
+}
+.mvpRow:focus-visible, .muHead:focus-visible, .muCell:focus-visible { outline-offset: -3px; }
+.tab:focus-visible { outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}
+
+/* Green and red are never the only cue: a sign plus an up or down triangle in the same color. */
+.dv { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.tri { display: inline-block; width: 9px; height: 8px; flex: none; background: currentColor; clip-path: polygon(50% 0, 0 100%, 100% 100%); }
+.tri.down { transform: scaleY(-1); }
+.mvpRow .score .tri { width: 12px; height: 10px; }
+.mvpRow .score { display: flex; align-items: center; justify-content: flex-end; }
+.mvpRow .score.pos { color: #58D86A; }
+.mvpRow .score.neg { color: #E8604C; }
+.wr .pb em { opacity: 1; } /* the key number in the row, so it is not dimmed */
+
+/* Waiting screen: elapsed time, the typical range, and a bar that fills against it and then holds. */
+.status .waitRange { font-size: 18px; margin-bottom: 12px; color: var(--offWhite); }
+.status .waitRange b { font-family: var(--oracle); font-weight: 700; }
+.waitBar { position: relative; width: 420px; max-width: 80%; height: 6px; margin: 0 auto 18px; border-radius: 3px; overflow: hidden; background: rgba(255,239,215,0.14); }
+.waitBar i { display: block; height: 100%; background: var(--offWhite); opacity: 0.85; }
+.waitBar.hold i { opacity: 0.5; }
+.waitBar .tick { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--offBlack); }
+.status .waitNote { font-size: 14px; margin-top: 12px; opacity: 0.7; }
+.status .waitText { max-width: 660px; margin-left: auto; margin-right: auto; } /* lines stay under about 80 characters */
