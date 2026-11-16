@@ -26,6 +26,14 @@ Data: [deadlock-api](https://deadlock-api.com/) `/v1/matches/{id}/metadata`. Her
 
 Local test without the API: `python -m http.server`, then `index.html?match=136014932&src=test/match_136014932.json`. Add `tab=matchups` or `tab=mvp` to open another tab.
 
+## Profile (prototype)
+
+`profile.html` is a separate page for one player: form (last 20 games vs the 20 before), heroes with games per hero, patterns (after a win or loss, game in a session, time of day, game length, Hidden King vs Archmother), rank journey and the match list grouped by day. Each match gets one blunt word graded against that hero's average (`heronorms.js`), with its rule on hover. Clicking a match opens it on the Compare page.
+
+Open `profile.html?id=<account id>`, or type a Steam name, Steam profile link, SteamID64 or account ID in the search box. Data: deadlock-api `/v1/players/{id}/match-history` (stored history), `/v1/players/steam` (name and avatar) and `/v1/players/steam-search` (name search). Street Brawl, bot and private lobby games are left out.
+
+Local test without the API: `profile.html?id=12345678&src=test/profile_fixture.json` (synthetic history, not a real player).
+
 ## Waiting screen
 
 A match deadlock-api doesn't have yet shows a waiting screen. The first request is a normal /metadata call (deadlock-api may ask Steam once; that is limited to 3 per hour per IP). After that the page only uses calls that never ask Steam: the free `/salts?disable_steam=true` check every 10 s for 3 minutes, then every 30 s, and `/metadata?disable_steam=true` as soon as salts exist (and once a minute regardless). Once deadlock-api has the salts it downloads the match from Valve inside that request. The screen says what it's waiting on, with a small details line (last answer, try count, time waited) and a Try Now button (10 second cooldown). It stops after 15 minutes ("hasn't been uploaded" or "Valve hasn't published it") or after 5 server errors in a row ("looks down"). A 429 waits as long as its `next_request_in` says.
