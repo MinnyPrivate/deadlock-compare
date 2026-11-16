@@ -112,19 +112,26 @@ function laneInfo(p) {
 }
 const num0 = n => Math.round(n).toLocaleString("en-US");
 // Fights: every death in the lobby, grouped while they are less than 15 s apart. 3 or more deaths = a fight.
+// A fight = 2+ deaths close in both time and place: each death joins a group if it is within FIGHT_GAP_S of that group's
+// last death and within FIGHT_DIST of any death in it. Two groups can run at once on different parts of the map.
+// Round 3 rule (estimate, to be checked over 20 matches). The old rule (3+ deaths anywhere, under 15 s apart) split real
+// fights and merged separate ones.
+const FIGHT_GAP_S = 30, FIGHT_DIST = 3000;
 function fights() {
-  const evs = deathEvents();
-  const out = [];
-  let cur = null;
+  if (state.match._fights) return state.match._fights;
+  const evs = deathEvents(), open = [], all = [];
+  const near = (a, b) => !a.pos || !b.pos || Math.hypot(a.pos[0] - b.pos[0], a.pos[1] - b.pos[1]) <= FIGHT_DIST;
   for (const e of evs) {
-    if (cur && e.t - cur.end <= 15) { cur.evs.push(e); cur.end = e.t; }
-    else { cur = { start: e.t, end: e.t, evs: [e] }; out.push(cur); }
+    let hit = null;
+    for (const f of open) if (e.t - f.end <= FIGHT_GAP_S && f.evs.some(x => near(x, e))) { hit = f; break; }
+    if (hit) { hit.evs.push(e); hit.end = e.t; }
+    else { const f = { start: e.t, end: e.t, evs: [e] }; open.unshift(f); all.push(f); }
   }
-  return out.filter(f => f.evs.length >= 3).map(f => {
+  return (state.match._fights = all.filter(f => f.evs.length >= 2).map(f => {
     const d = [0, 0];
     for (const e of f.evs) d[e.victim.team]++;
     return Object.assign(f, { deaths: d, winner: d[0] === d[1] ? null : d[0] < d[1] ? 0 : 1 });
-  });
+  }));
 }
 function fightRole(f, p) {
   const k = f.evs.filter(e => e.killer === p).length, d = f.evs.filter(e => e.victim === p).length, a = f.evs.filter(e => e.assists.includes(p)).length;
@@ -294,7 +301,7 @@ function fightsBlockHtml(p, W, H, opts) {
   const s = fightSummary(p);
   const bestTxt = s.best ? `Best fight: ${fmtTime(s.best.f.start)}, ${s.best.r.k} kill${s.best.r.k === 1 ? "" : "s"} and ${s.best.r.a} assist${s.best.r.a === 1 ? "" : "s"}${s.best.f.winner === p.team ? ", won it" : ""}.` : "";
   return `<div class="sumBlock sumFights">
-    <div class="accHead"><span>Fights</span><span class="accSub">${s.fs.length} fights of 3+ deaths. You were in ${s.mine.length}, your team won ${s.won} of those. ${esc(bestTxt)}</span>
+    <div class="accHead"><span>Fights</span><span class="accSub">${s.fs.length} fights (2+ deaths close in time and place). You were in ${s.mine.length}, your team won ${s.won} of those. ${esc(bestTxt)}</span>
       <span class="tlKey"><span><i class="kTri"></i>your kills</span><span><i class="kX"></i>your deaths</span><span><i class="kRing"></i>you were in it</span><span><i class="kFill"></i>fill = who won it</span></span></div>
     ${timelineHtml(p, W, H, opts)}
   </div>`;

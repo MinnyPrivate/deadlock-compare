@@ -62,7 +62,7 @@ function heroColumn(p, early) {
     <div class="s2meta"><span style="color:${T.c}">${T.color}</span> · ${p.lane && LANES_BY_COLOR[p.lane] ? LANES_BY_COLOR[p.lane] + " lane" : "No lane"} · ${fmtTime(state.match.duration_s)}</div>
     <div class="s2kda"><b>${k.kills}</b><i>/</i><b class="d">${k.deaths}</b><i>/</i><b>${k.assists}</b><span>${fmtStat(p.souls)} souls</span></div>
     ${early ? "" : accHtml(p).replace(/top \d+, hover for the stat/, "hover for the stat")}
-    ${itemsHtml(p).replace(/\d+ items, hover for when/, "hover for when")}
+    ${itemGrid(p)}
   </div>`;
 }
 function verdictBlock(p, early) {
@@ -93,15 +93,79 @@ function highlightsHtml(p, early) {
   </div>`;
 }
 function viewOne(p, early) {
-  const hero = p.hero, g = gradedStats(p);
-  return `${controlBar("one", p)}<div class="s2one">
+  const hero = p.hero, g = gradedStats(p), ln = laneInfo(p), nm = nemesis(p), mg = mvpGap(p);
+  const card = (lbl, main, sub, extra) => `<button class="s2hl sm${early ? " wait" : ""}"><span class="hlL">${lbl}</span><span class="hlM">${main}</span><span class="hlS">${sub}</span>${extra || ""}</button>`;
+  const hls = early ? ["Lane", "Nemesis", "Favorite target"].map(l => card(l, `<span class="waitTxt">With full stats</span>`, "Needs the full match file")).join("") :
+    card("Lane", `<span class="sumTag ${ln.tone}"><b>${signTag(ln.tone)}</b>${esc(ln.word)}</span>`, esc(ln.why), `<span class="hlFaces">${ln.mates.map(q => faceHtml(q, "xs")).join("")}<em>vs</em>${ln.opp.map(q => faceHtml(q, "xs")).join("")}</span>`) +
+    card("Nemesis", `${faceHtml(nm.nem.q, "sm")}<span class="hlBig">${nm.nem.them}<i>–</i>${nm.nem.you}</span>`, `${esc(nm.nem.q.hero)} killed you ${nm.nem.them} times, you got them ${nm.nem.you}`) +
+    card("Favorite target", `${faceHtml(nm.prey.q, "sm")}<span class="hlBig">${nm.prey.you}<i>–</i>${nm.prey.them}</span>`, `You killed ${esc(nm.prey.q.hero)} ${nm.prey.you} times, they got you ${nm.prey.them}`);
+  return `${controlBar("one", p)}<div class="s2one v3">
     ${heroColumn(p, early)}
     <div class="s2main">
       ${verdictBlock(p, early)}
-      <div class="s2tiles">${g.map(s => tileHtml(s, hero)).join("")}</div>
-      ${highlightsHtml(p, early)}
-      <div class="s2foot">${early ? `<span class="earlyTag">EARLY</span> From the game's scoreboard. Lane, fights and the rest fill in by themselves in about a minute.` : `Click any number for how it happened. Percentiles compare with every ${esc(hero)} game in the last two weeks.`}</div>
+      <div class="s2tiles row">${g.map(s => tileHtml(s, hero, { compact: true })).join("")}</div>
+      ${early ? `<div class="s2gameBox wait"><div class="dHead"><span class="dTitle">Your game</span></div><div class="waitBig">Your damage over time, kills, deaths and fights fill in here in about a minute.</div></div>` : gameChart(p, 1384, 336)}
+      <div class="s2hls three">${hls}</div>
+      ${early ? `<div class="s2foot"><span class="earlyTag">EARLY</span> From the game's scoreboard. The rest fills in by itself.</div>` : ""}
     </div>
+  </div>`;
+}
+
+// Final build the way the game shows it: filled tiles, 2 rows of 6, empty slots kept so the grid never jumps.
+function itemGrid(p) {
+  const its = itemsOf(p).filter(it => !it.sold);
+  const cells = its.map(it => `<i class="s2item" style="--sc:${ITEM_SLOTS[it.slot].c};background-image:url('assets/items/${it.icon}.webp')" title="${esc(it.name)}, bought ${fmtTime(it.t)}"></i>`);
+  while (cells.length < 12) cells.push(`<i class="s2item empty"></i>`);
+  return `<div class="s2build"><div class="accHead"><span>Final build</span><span class="accSub">hover for when</span></div><div class="s2grid">${cells.join("")}</div></div>`;
+}
+
+// ---------- "Your game": one chart on the page at rest ----------
+// Bars = damage you dealt in each stats window (Valve snapshots). Top row = your kills (up triangle) and assists (ring),
+// second row = your deaths (x). Shaded = a fight you were in: green won, red lost, light = even. The peak bar is gold.
+function gameChart(p, W, H) {
+  const dur = state.match.duration_s, fs = fights(), evs = deathEvents();
+  const m = { l: 52, r: 16, t: 58, b: 30 };
+  const X = t => m.l + (t / dur) * (W - m.l - m.r);
+  const bars = []; let prev = 0, pt = 0;
+  for (const s of p.stats) { const v = s.player_damage || 0; if (s.time_stamp_s > pt) bars.push({ t0: pt, t1: s.time_stamp_s, v: v - prev }); prev = v; pt = s.time_stamp_s; }
+  const total = Math.max(1, prev), peak = bars.reduce((a, b) => (b.v > a.v ? b : a), bars[0] || { v: 0 });
+  const vmax = Math.max(1, ...bars.map(b => b.v)) * 1.12;
+  const Y = v => H - m.b - (v / vmax) * (H - m.t - m.b);
+  let svg = `<svg width="${W}" height="${H}" class="s2chart s2game">`;
+  // fights you were in
+  for (const f of fs) {
+    const r = fightRole(f, p); if (!r.in) continue;
+    const c = f.winner === p.team ? "#58D86A" : f.winner == null ? "#FFEFD7" : "#E8604C";
+    const x0 = X(f.start) - 4, w = Math.max(8, X(f.end) - X(f.start) + 8);
+    const res = f.winner === p.team ? "Won" : f.winner == null ? "Even" : "Lost";
+    svg += `<rect class="fband" x="${x0}" y="6" width="${w}" height="${H - m.b - 6}" fill="${c}" opacity="0.11"><title>${res} fight ${fmtTime(f.start)} to ${fmtTime(f.end)}, ${f.deaths[1 - p.team]} to ${f.deaths[p.team]} in kills. You: ${r.k} kills, ${r.a} assists, ${r.d} deaths. Click for the play by play.</title></rect>`;
+  }
+  // grid + axis
+  const stepV = vmax > 40000 ? 10000 : vmax > 16000 ? 5000 : 2000;
+  for (let v = 0; v < vmax; v += stepV) svg += `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="rgba(255,239,215,${v ? 0.06 : 0.18})"/><text x="${m.l - 10}" y="${Y(v) + 4}" class="tlTick" style="text-anchor:end">${v ? fmtStat(v) : "0"}</text>`;
+  for (let t = 300; t < dur - 60; t += 300) svg += `<text x="${X(t)}" y="${H - 8}" class="tlTick" style="text-anchor:middle">${fmtTime(t)}</text>`;
+  // bars
+  for (const b of bars) {
+    const isPeak = b === peak, x = X(b.t0) + 3, w = Math.max(2, X(b.t1) - X(b.t0) - 6);
+    svg += `<rect x="${x}" y="${Y(b.v)}" width="${w}" height="${Y(0) - Y(b.v)}" rx="2" fill="var(--tc)" opacity="${isPeak ? 0.95 : 0.4}"><title>${fmtTime(b.t0)} to ${fmtTime(b.t1)}: ${fmtStat(b.v)} damage, ${Math.round(b.v / total * 100)}% of your total</title></rect>`;
+  }
+  if (peak) svg += `<text x="${X((peak.t0 + peak.t1) / 2)}" y="${Y(peak.v) - 8}" class="pkLbl" style="text-anchor:middle">Peak ${Math.round(peak.v / total * 100)}%</text>`;
+  // your events: row 1 kills + assists, row 2 deaths
+  const r1 = 18, r2 = 38;
+  svg += `<text x="${m.l - 10}" y="${r1 + 4}" class="tlTick rowLbl" style="text-anchor:end">You</text><text x="${m.l - 10}" y="${r2 + 4}" class="tlTick rowLbl" style="text-anchor:end">Died</text>`;
+  for (const e of evs) {
+    const x = X(e.t), tt = fmtTime(e.t);
+    if (e.killer === p) svg += `<path d="M${x},${r1 - 6}L${x + 6},${r1 + 5}H${x - 6}Z" fill="#58D86A"><title>${tt} killed ${esc(e.victim.hero)}</title></path>`;
+    else if (e.assists.includes(p)) svg += `<circle cx="${x}" cy="${r1}" r="4" fill="none" stroke="#FFEFD7" stroke-width="1.6" opacity="0.8"><title>${tt} assist on ${esc(e.victim.hero)} (best guess)</title></circle>`;
+    if (e.victim === p) svg += `<path d="M${x - 5},${r2 - 5}L${x + 5},${r2 + 5}M${x + 5},${r2 - 5}L${x - 5},${r2 + 5}" stroke="#E8604C" stroke-width="2.4"><title>${tt} killed by ${esc(e.killer ? e.killer.hero : "the map")}</title></path>`;
+  }
+  svg += `</svg>`;
+  const mine = fs.filter(f => fightRole(f, p).in), won = mine.filter(f => f.winner === p.team).length;
+  return `<div class="s2gameBox" style="--tc:${TEAMS[p.team].c}">
+    <div class="dHead"><span class="dTitle">Your game</span><span class="dSub">Damage you dealt every ${Math.round((bars[1] ? bars[1].t1 - bars[1].t0 : 300) / 60)} minutes. Peak ${fmtTime(peak.t0)} to ${fmtTime(peak.t1)}.</span>
+      <span class="dKey"><span><i class="kTri"></i>kill</span><span><i class="kRing"></i>assist</span><span><i class="kX"></i>death</span><span><i class="kBand g"></i>fight won</span><span><i class="kBand r"></i>fight lost</span></span></div>
+    ${svg}
+    <div class="s2gameFoot">In ${mine.length} of ${fs.length} fights, your team won ${won}. Hover anything for details, click a fight for the play by play.</div>
   </div>`;
 }
 
@@ -127,7 +191,7 @@ function killsDetail(p) {
   let log = "", lastF = null;
   for (const e of mine) {
     const f = fs.find(x => e.t >= x.start && e.t <= x.end);
-    if (f && f !== lastF) { log += `<div class="lgFight"><span>Fight at ${fmtTime(f.start)}</span><span class="${f.winner === p.team ? "pos" : f.winner == null ? "" : "neg"}">${f.winner === p.team ? "won" : f.winner == null ? "traded" : "lost"}, ${f.deaths[p.team]} for ${f.deaths[1 - p.team]}</span></div>`; }
+    if (f && f !== lastF) { log += `<div class="lgFight"><span>Fight at ${fmtTime(f.start)}</span><span class="${f.winner === p.team ? "pos" : f.winner == null ? "" : "neg"}">${f.winner === p.team ? "won" : f.winner == null ? "traded" : "lost"}, ${f.deaths[1 - p.team]} to ${f.deaths[p.team]}</span></div>`; }
     if (!f) lastF = null; else lastF = f;
     const kind = e.killer === p ? "k" : e.victim === p ? "d" : "a";
     const who = kind === "d" ? e.killer : e.victim;
