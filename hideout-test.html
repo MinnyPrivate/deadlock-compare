@@ -20,7 +20,9 @@
 <div class="row"><span class="k">Loaded at</span><code id="now"></code></div>
 <div class="row"><span class="k">URL</span><code id="url"></code></div>
 <div class="row"><span class="k">User agent</span><code id="ua"></code></div>
-<div class="row"><span class="k">Window size</span><code id="size"></code></div>
+<div class="row"><span class="k">Window size at load</span><code id="size"></code></div>
+<div class="row"><span class="k">Window size now</span><code id="sizeNow"></code></div>
+<div class="row"><span class="k">Player id passed (me=)</span><code id="me"></code></div>
 <hr>
 <div class="row"><b>Storage test (answer 3b)</b></div>
 <div class="row"><span class="k">localStorage works</span><code id="ls"></code></div>
@@ -33,7 +35,15 @@
   $("now").textContent = new Date().toString();
   $("url").textContent = location.href;
   $("ua").textContent = navigator.userAgent;
-  $("size").textContent = innerWidth + " x " + innerHeight + " (dpr " + devicePixelRatio + ")";
+  function size() { return innerWidth + " x " + innerHeight + " (dpr " + devicePixelRatio + ")"; }
+  $("size").textContent = size();
+  // The in-game browser can report 1 x 1 before it is shown, so keep measuring.
+  function now() { $("sizeNow").textContent = size(); }
+  now();
+  addEventListener("resize", now);
+  setInterval(now, 1000);
+  var me = new URLSearchParams(location.search).get("me");
+  $("me").textContent = me || "(none)";
   try {
     var k = "dlhideout_test";
     var raw = localStorage.getItem(k);
