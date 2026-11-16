@@ -47,7 +47,7 @@ Where the colored number sits today (change a pick only with Zachary's yes):
 | MVP list row, Valve score | The score: sign, triangle, green or red | Name, rank and bar plain |
 | MVP panel header | None. Big score is white with a sign | |
 | MVP stat table | The Points column: sign, triangle, green or red | Value white, hero average dim |
-| When they contributed | The Before and After number | Rank text plain |
+| When they contributed | The Before and After number | Rank text plain. These two grades are on their own scale and do not add up to the total |
 | MVP Impact and Raw | Gold on a lobby-best value only | Score white |
 | Matchups | None. Team colors say who dealt it, the winner's number is bolder | |
 | Lane Stats | The verdict pill: a word plus gold or red | |
@@ -59,17 +59,17 @@ These are the parts of that skill that fit. Its advice to pick bold, unusual fon
 
 1. **One main thing per panel.** Each panel has one primary number or name at the largest size, and everything else steps down in size and weight. Do not give three things equal weight.
 2. **Contrast floor.** Text that carries information should stay at or above about 0.6 opacity of `--offWhite`. Below that is only for decoration that nobody needs to read. Tiny text (under 14 units) should stay at or above 0.7.
-3. **Visible focus.** Every button, tab, row and portrait that can be clicked shows a clear outline on keyboard focus, like `.player:focus-visible` does now.
+3. **Visible focus.** Everything that can be clicked shows a clear outline on keyboard focus. Buttons keep the browser's own ring, which is big and easy to read (Zachary likes it, so do not replace it). Custom elements that remove it, like the dropdown, get a cream ring drawn outside the element.
 4. **Reduced motion.** Respect `prefers-reduced-motion`. Motion is short (about 150 ms or less), reacts to something the user did, and never plays on its own.
 5. **Lines and dividers mean something.** Use them to separate groups or show a scale, not as decoration. Numbering only for real sequences.
 6. **Small caps labels are fine** (the game uses them for tabs and menu titles). Keep them to short labels, never sentences, and do not stack a label over content that explains itself.
-7. **Waits over 10 seconds** show an elapsed timer, the typical range from measured data (currently about 1:20 to 1:50), and a bar that fills against that range and then holds. When the range is exceeded, change the message to "Taking longer than usual" and keep Try Now. No skeleton screens for long waits. Say nothing is needed from the user. The bar respects `prefers-reduced-motion`. Other empty and error states say what is happening, what the user can do, and offer one clear action.
+7. **Waits over 10 seconds** show an elapsed timer, the typical range from measured data (currently about 1:20 to 1:50), and a bar that fills against that range and then holds. When the range is exceeded, change the message to "Taking longer than usual" and keep Try Now. No skeleton screens for long waits. Keep the screen short: a title, the range and timer, the bar, and "Checking again in X". Do not explain what deadlock-api or Valve is doing, and show no Try Now button while it is still checking; it appears only after the wait gives up. When the companion app exists, the "Taking longer than usual" line adds a link to it (`COMPANION_APP` in `app.js`). The bar respects `prefers-reduced-motion`. Other empty and error states say what is happening, what the user can do, and offer one clear action.
 8. **Copy.** Write from the user's side, in active voice, with one name per thing everywhere (for example "Souls Dropped on Death" is always that).
 9. **Readable at the real size.** Text stays sharp (the page scales with CSS `zoom`) and long lines stay under about 80 characters.
 
 ## 4. Known gaps
 
-Done in the first polish pass: faint labels raised to the contrast floor, keyboard focus on every button and input, reduced motion, signs and triangles on every green or red value, and the rebuilt waiting screen. Still open:
+Done in the first polish pass: faint labels raised to the contrast floor, reduced motion, signs and triangles on every green or red value, and the rebuilt waiting screen. Still open:
 
 - Check the hierarchy inside the MVP panel and Matchups side panel (score, name, verdict read in that order) at the phone layout stage.
 - Tag chips do not exist yet. When they do, they follow rule 7 of section 2b and the sign and triangle rule.

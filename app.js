@@ -468,42 +468,44 @@ function drawWait(w, id, my) {
   if (my !== loadSeq) { clearInterval(waitTimer); return; }
   const s = $("status");
   s.classList.remove("err");
+  s.dataset.detail = `${w.detail || ""} | try ${w.tries} | phase ${w.phase || ""}`; // for debugging only, not shown
   const left = Math.max(0, Math.ceil((w.next - Date.now()) / 1000));
+  if (!w.stopped) {
+    // Keep it short: say it is waiting, how long that usually takes, and when it checks next.
+    const title = w.phase === "down" ? "deadlock-api is having trouble" : "Waiting for this match's data";
+    s.innerHTML = `<div class="waitTitle">${title}</div>${waitMeter((Date.now() - w.start) / 1000)}<div class="waitCheck">Checking again in ${fmtTime(left)}.</div>`;
+    return;
+  }
+  // Stopped after 15 minutes or too many errors: this is the one place with a Try Now button, so there is a way to start again.
   const cool = Math.max(0, Math.ceil((w.last + TRY_NOW_COOLDOWN_S * 1000 - Date.now()) / 1000));
   const waited = fmtTime((Date.now() - w.start) / 1000);
-  let title, text, meter = "";
+  let title, text;
   if (w.stopped === "missing") {
     title = "This match hasn't been uploaded";
     text = "After 15 minutes deadlock-api still doesn't have it. Ask someone who played it to run the deadlock-api uploader, then press Try Now.";
   } else if (w.stopped === "valve") {
     title = "Valve hasn't published this match yet";
     text = "deadlock-api has the match's keys, but Valve's file still isn't there after 15 minutes. Press Try Now to check again later.";
-  } else if (w.stopped === "down") {
+  } else {
     title = "deadlock-api looks down right now";
     text = "It keeps answering with errors, so I stopped asking. Press Try Now to ask again in a while.";
-  } else {
-    title = w.phase === "down" ? "deadlock-api is having trouble" : "Waiting for this match's data";
-    text = (w.phase === "valve" ? "deadlock-api has this match's keys and is getting the file from Valve."
-      : w.phase === "limit" ? "deadlock-api asked us to slow down, so I'm waiting as long as it said."
-      : w.phase === "down" ? "It answered with an error. I'll keep trying for a bit."
-      : "deadlock-api doesn't have this match yet. Its uploader sends matches soon after they end, if someone who played runs it. Otherwise deadlock-api's own bots get to it later. This page loads it the moment it arrives.") +
-      `<br>Checking again in ${fmtTime(left)}.`;
-    meter = waitMeter((Date.now() - w.start) / 1000, w.phase);
   }
-  s.innerHTML = `<div class="waitTitle">${title}</div>${meter}<div class="waitText">${text}</div>${meter ? `<div class="waitNote">Nothing to do on your end. This page loads the match by itself.</div>` : ""}` +
-    `<div class="waitDetail">${esc(w.detail || "")} · try ${w.tries} · waiting ${waited}</div>`;
+  s.innerHTML = `<div class="waitTitle">${title}</div><div class="waitText">${text}</div><div class="waitDetail">waited ${waited}</div>`;
   const b = el("button", "graphOptionButton retry", cool ? `Try Now (${cool})` : "Try Now");
   b.disabled = cool > 0;
   b.onclick = () => { clearInterval(waitTimer); clearTimeout(checkTimer); check(w, id, my); };
   s.append(b);
 }
+// Set to { name, url } once the companion app exists. Until then the long-wait message does not mention it.
+const COMPANION_APP = null;
 // Elapsed time, the typical range, and a bar that fills against that range and then holds at the end (not a fake percent).
 // Past the range the line changes to say so. It redraws every second, so the bar needs no animation and works with reduced motion.
-function waitMeter(elapsed, phase) {
+function waitMeter(elapsed) {
   const over = elapsed > TYPICAL_HI_S;
   const pct = Math.min(100, (elapsed / TYPICAL_HI_S) * 100);
+  const app = COMPANION_APP ? ` <a href="${esc(COMPANION_APP.url)}" target="_blank" rel="noopener">Get ${esc(COMPANION_APP.name)} for faster loads.</a>` : "";
   const lead = over
-    ? `Taking longer than usual.${phase === "valve" ? " Valve hasn't published it yet." : phase === "nosalts" ? " deadlock-api doesn't have it yet." : ""} You can keep this open.`
+    ? `Taking longer than usual. You can keep this open.${app}`
     : `Usually ${fmtTime(TYPICAL_LO_S)} to ${fmtTime(TYPICAL_HI_S)} after a game ends. <b>${fmtTime(elapsed)}</b> so far.`;
   return `<div class="waitRange">${lead}</div>` +
     `<div class="waitBar${over ? " hold" : ""}" role="progressbar" aria-label="Time waited against the usual range" aria-valuemin="0" aria-valuemax="${TYPICAL_HI_S}" aria-valuenow="${Math.min(TYPICAL_HI_S, Math.round(elapsed))}"><i style="width:${pct}%"></i><span class="tick" style="left:${(TYPICAL_LO_S / TYPICAL_HI_S) * 100}%"></span></div>`;

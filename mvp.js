@@ -251,7 +251,7 @@ function whyScaled(rows, pick, mode) {
     </div>`;
   }
   h += `</div>`;
-  h += whenHtml(p) + soulsDropHtml(p);
+  h += whenHtml(p);
   if (!state.mvpAll) h += accoladesHtml(p);
   h += `<button class="graphOptionButton allBtn" id="mvpAll">${state.mvpAll ? "Show fewer" : `Show all stats (${pick.parts.length})`}</button><div class="whyFoot">${mode === "impact" ? `Deaths count in reverse: fewest deaths in the match gets full points.${mvpSplit() ? "" : " This game was too short to split early and late, so damage and assists count once."}` : "Raw counts each scoreboard stat the same. Deaths count in reverse."} Crowd control isn't scored; see it on the Matchups tab.</div></div>`;
   return h;
@@ -358,7 +358,7 @@ function whyValve(rows, pick) {
   h += `</div>`;
   if (Math.abs(v.offset) >= 0.05) h += `<div class="vNote">Includes a hero adjustment of ${signed(v.offset, 2)}.</div>`;
   for (const n of notes) h += `<div class="vNote">${esc(n)}</div>`;
-  h += whenHtml(p) + soulsDropHtml(p);
+  h += whenHtml(p);
   h += `<div class="whyFoot">Six stats, each compared with the average for that hero over about 24,000 recent matches. Matches Valve's MVP in about 98 of 100 matches. Kills, assists and hero damage plus ally healing count fully, objective damage half, deaths minus half, souls one fifth.</div></div>`;
   return h;
 }
@@ -386,31 +386,3 @@ function whenHtml(p) {
   return h + `</div>`;
 }
 
-// ---- "Souls dropped on death": Valve's gold_death_loss counter. Not part of any score. ----
-function soulsDropHtml(p) {
-  const lossOf = q => { const st = q.stats; return st.length ? st[st.length - 1].gold_death_loss || 0 : 0; };
-  const total = lossOf(p);
-  if (!total) return "";
-  const most = Math.max(...state.players.map(lossOf));
-  const teamSum = tm => state.players.filter(q => q.team === tm).reduce((a, q) => a + lossOf(q), 0);
-  const fmt = n => Math.round(n).toLocaleString("en-US");
-  // The snapshot interval with the largest increase, and the deaths inside it.
-  let prev = 0, pt = 0, bestInc = 0, bt0 = 0, bt1 = 0;
-  for (const s of p.stats) {
-    const inc = (s.gold_death_loss || 0) - prev;
-    if (inc > bestInc) { bestInc = inc; bt0 = pt; bt1 = s.time_stamp_s; }
-    prev = s.gold_death_loss || 0; pt = s.time_stamp_s;
-  }
-  let big = "";
-  if (bestInc > 0) {
-    const ds = (p.raw.death_details || []).filter(d => (d.game_time_s || 0) > bt0 && (d.game_time_s || 0) <= bt1);
-    if (ds.length === 1) big = `${fmt(bestInc)} at ${fmtTime(ds[0].game_time_s)}`;
-    else if (ds.length > 1) big = `about ${fmt(bestInc)} over ${ds.length} deaths between ${fmtTime(bt0)} and ${fmtTime(bt1)}`;
-    else big = `about ${fmt(bestInc)} between ${fmtTime(bt0)} and ${fmtTime(bt1)}`;
-  }
-  const tip = "Valve's counter of unsecured souls a player was carrying when they died. The data does not say who picked them up.";
-  const a = state.leftTeam, b = 1 - a;
-  return `<div class="dropped" title="${esc(tip)}"><div class="accHead"><span>Souls dropped on death</span></div>
-    <div class="dropLine"><b>${fmt(total)} souls</b>${total === most ? " (most in the match)" : ""}${big ? ` <span class="dropBig">Biggest drop: ${esc(big)}.</span>` : ""}</div>
-    <div class="dropTeams">${esc(TEAMS[a].name)} dropped ${fmt(teamSum(a))} in total, ${esc(TEAMS[b].name)} ${fmt(teamSum(b))}.</div></div>`;
-}

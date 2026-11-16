@@ -597,27 +597,20 @@ body.laneMode .laneView {
 .whyTable.valve .wr { flex: none; height: 32px; }
 .vNote { margin-top: 6px; font-size: 13px; opacity: 0.7; }
 .staleNote { margin-left: 10px; color: #FFD23F; opacity: 0.9; }
-.when, .dropped { margin-top: 12px; }
+.when { margin-top: 12px; }
 .whenRow { display: grid; grid-template-columns: 110px 150px 56px 1fr; align-items: center; column-gap: 12px; height: 28px; font-size: 15px; }
 .whenRow .wv { font-family: var(--oracle); font-weight: 700; font-size: 16px; text-align: right; }
 .whenRow .wk { opacity: 0.6; font-size: 13px; }
 .whenCap { margin-top: 4px; font-size: 14px; font-style: italic; opacity: 0.8; }
-.dropLine { font-size: 15px; margin-top: 4px; }
-.dropLine .dropBig, .dropTeams { opacity: 0.65; font-size: 14px; }
 .mvpWhy { overflow-y: auto; }
 .lvVerdict.duo .tag { background: #A99BFF; color: #10130D; }
 .lvVerdict { flex-wrap: nowrap; }
 .divBar.wide { width: 130px; }
 .whyTable.valve { flex: none; }
-.dropLine .dropBig { display: block; }
 
 /* ---------- polish pass (DESIGN.md sections 2 to 4) ---------- */
-/* Keyboard focus on everything clickable. The portraits keep their own inset outline. */
-button:focus-visible, input:focus-visible, .dropDown:focus-visible, [tabindex]:focus-visible {
-  outline: 2px solid var(--offWhite); outline-offset: -2px;
-}
-.mvpRow:focus-visible, .muHead:focus-visible, .muCell:focus-visible { outline-offset: -3px; }
-.tab:focus-visible { outline-offset: 2px; }
+/* Keyboard focus: buttons keep the browser's own ring (big and easy to read). Only the dropdown, which removes it, gets a matching outside ring. */
+.dropDown:focus-visible, [tabindex]:focus-visible:not(.player) { outline: 2px solid var(--offWhite); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
 }
@@ -639,5 +632,6 @@ button:focus-visible, input:focus-visible, .dropDown:focus-visible, [tabindex]:f
 .waitBar i { display: block; height: 100%; background: var(--offWhite); opacity: 0.85; }
 .waitBar.hold i { opacity: 0.5; }
 .waitBar .tick { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--offBlack); }
-.status .waitNote { font-size: 14px; margin-top: 12px; opacity: 0.7; }
+.status .waitCheck { font-size: 16px; opacity: 0.7; }
+.status .waitRange a { color: var(--offWhite); text-decoration: underline; pointer-events: auto; }
 .status .waitText { max-width: 660px; margin-left: auto; margin-right: auto; } /* lines stay under about 80 characters */
