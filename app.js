@@ -34,6 +34,7 @@ const GRAPHS = [
   { group: "General", id: "boss_damage", label: "Objective Damage", kind: "general", extra: true, obj: true, get: s => s.boss_damage,
     sub: "Guardians, Walkers, Shrines, Patron and Mid Boss" },
   { group: "General", id: "last_hits", label: "Trooper and Haunt Kills", kind: "general", extra: true, whole: true, get: s => (s.creep_kills || 0) + (s.neutral_kills || 0), sub: "Not the scoreboard's Last Hits, which counts more" },
+  { group: "General", id: "souls_dropped", label: "Souls Dropped on Death", kind: "general", extra: true, get: s => s.gold_death_loss, sub: "Unsecured souls carried when they died. Valve's counter, updated every 3 minutes" },
   { group: "General", id: "denies", label: "Denies", kind: "general", extra: true, whole: true, get: s => s.denies },
   { group: "General", id: "accuracy", label: "Accuracy", extra: true, sub: "All targets, troopers included", kind: "general", ratio: true, get: s => pct(s.shots_hit, (s.shots_hit || 0) + (s.shots_missed || 0)) },
   { group: "General", id: "crit", label: "Headshot Rate", extra: true, kind: "general", ratio: true, get: s => pct(s.hero_bullets_hit_crit, s.hero_bullets_hit), sub: "Crit bullets that hit heroes" },

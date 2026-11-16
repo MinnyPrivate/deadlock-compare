@@ -315,6 +315,10 @@ body:not(.tabMu) #muView { display: none; }
 .whyFoot { margin-top: 8px; font-size: 13px; opacity: 0.4; }
 .whyTable.compact { flex: none; }
 .whyTable.compact .wr { flex: none; height: 32px; }
+/* The full stat table keeps its rows' height; the panel scrolls instead of squeezing them over the blocks below. */
+.whyTable:not(.compact) { flex: none; }
+.whyTable:not(.compact) .wr { flex: none; height: 26px; max-height: none; }
+.whyTable:not(.compact) .wr.th { height: 26px; }
 .wr.th.sec { margin-top: 10px; }
 .allBtn { align-self: flex-start; margin-top: 12px; }
 .mvpWhy .whyFoot { margin-top: auto; padding-top: 8px; }

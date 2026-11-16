@@ -10,6 +10,7 @@ Open `index.html?match=<match id>`.
 - View As on the General graphs: Value, Per Minute, % of Team (each hero's share of their team), Teams (six heroes added together) and Lanes (each lane pair added together).
 - Teams and Lanes lines can be hidden one by one (Ctrl+Click shows only one).
 - Kills and Deaths are whole numbers that step at the exact second (from `death_details`). The Deaths marker draws a skull for every kill, one row per team, with who killed whom on hover; it is on by default on those two graphs.
+- Souls Dropped on Death is a General graph (Valve's unsecured-souls-lost counter per hero, every 3 minutes), so it compares players like any other.
 - Markers: Objectives, Deaths and Items toggle on any hero graph. Item buys show under the lines for 1 to 3 heroes (on by default for the Power and damage graphs); hovering lists what was bought since the last point.
 - Player Comparison graphs can show one team or all twelve heroes at once.
 - Hover readout like the game's: one row per hero, highest first, tinted by team, with the line color on the left and the hero's share of the lobby. It follows the mouse to the second; values between Valve's snapshots are read off the drawn line.
