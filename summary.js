@@ -163,8 +163,7 @@ function tagsFor(p, early) {
   if (ln && ln.tone === "g" && ln.gap >= 0.2) tags.push({ name: "Lane bully", tone: "g", z: 1.1, rule: ln.why });
   const fsum = fightSummary(p);
   if (fsum.first >= 3) tags.push({ name: "Fight starter", tone: "g", z: 1.0, rule: `Got the first kill in ${fsum.first} of the ${fsum.fs.length} fights.` });
-  const loss = q => (q.stats[q.stats.length - 1] || {}).gold_death_loss || 0;
-  if (loss(p) === Math.max(...state.players.map(loss))) tags.push({ name: "Dropped the bag", tone: "r", z: 1.0, rule: `Dropped ${num0(loss(p))} souls on death, the most in the match.` });
+  // No "Dropped the bag" tag: Valve's counter includes bags picked up from others (Graphs plan, answer 23A).
   // Red always shows; then the strongest greens and yellows. At most 4 on the card, the rest behind "+N".
   return tags.sort((a, b) => (b.tone === "r") - (a.tone === "r") || b.z - a.z);
 }
