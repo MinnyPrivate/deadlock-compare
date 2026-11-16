@@ -28,6 +28,7 @@
     <button class="tab on" data-tab="graphs">Graphs</button>
     <button class="tab" data-tab="matchups">Matchups</button>
     <button class="tab" data-tab="mvp">MVP</button>
+    <span id="earlyChip" class="earlyChip" hidden title="Read from the game by a player's Postmortem app right after the match. Valve's official file replaces it on its own."><i></i>Early data<span>official file in about a minute</span></span>
     <span id="lobbyRank" class="lobbyRank"></span>
   </nav>
 
@@ -99,6 +100,7 @@
     <button type="submit" class="graphOptionButton">Load</button>
   </form>
   <div id="status" class="status"></div>
+  <div id="toast" class="toast" hidden></div>
 </div>
 
 <script src="heroes.js"></script>

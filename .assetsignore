@@ -6,5 +6,6 @@ test
 tools
 README.md
 wrangler.jsonc
+worker.js
 .assetsignore
 node_modules

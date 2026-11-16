@@ -276,6 +276,7 @@ const state = {
   leftTeam: 0, me: null,
   tab: "graphs", mvpPick: null, mvpMode: "valve",
   muStat: "dmg", muWin: "all", muPair: null,
+  early: false, // the match on screen came from the companion app's relay, not deadlock-api (see "early data" below)
 };
 const $ = id => document.getElementById(id);
 const graphNow = () => GRAPHS.find(g => g.id === state.graph);
@@ -351,15 +352,26 @@ let loadSeq = 0;
 async function loadMatch(id) {
   const my = ++loadSeq; // only the newest request may draw
   clearMatch();
-  clearTimeout(checkTimer); clearInterval(waitTimer);
+  clearTimeout(checkTimer); clearInterval(waitTimer); clearTimeout(earlyTimer);
+  earlyUntil = 0;
   setStatus("Loading match " + id + "...");
   const src = params.get("src"); // local test file: only files in this repo's test/ folder
   const local = src && /^test\/[\w-]+\.json$/.test(src);
+  if (!local && EARLY_MODE === "only") return loadEarlyOnly(id, my);
+  // Ask the relay at the same time as deadlock-api, so early data never waits behind a slow first answer.
+  const early = !local && EARLY_MODE !== "off" ? getEarly(id).then(e => { if (e) showEarly(e, my); }) : null;
   try {
     const r = await getJson(local ? src : API + encodeURIComponent(id) + "/metadata");
     if (my !== loadSeq) return;
     if (r.ok) return show(r.body, my);
-    if (!local && WAIT_STATUS.has(r.status)) return waitForMatch(id, my, r);
+    if (!local && WAIT_STATUS.has(r.status)) {
+      if (early) {
+        await early;
+        if (my !== loadSeq) return;
+        if (!state.early) pollEarly(id, my);
+      }
+      return waitForMatch(id, my, r); // with early data on screen this keeps polling deadlock-api quietly, then swaps
+    }
     throw new Error("Couldn't load the match (error " + r.status + ").");
   } catch (e) {
     fail(e, id, my);
@@ -375,16 +387,74 @@ function show(data, my) {
   if (my !== loadSeq) return;
   const mi = data && (data.match_info || data);
   if (!mi || !Array.isArray(mi.players) || !mi.players.length) throw new Error("This match has no player data.");
-  clearTimeout(checkTimer); clearInterval(waitTimer);
+  clearTimeout(checkTimer); clearInterval(waitTimer); clearTimeout(earlyTimer);
   state.wait = null;
+  // Valve's file replacing early data: same match and slots, so keep the heroes you picked (graph and tab are kept anyway).
+  const wasEarly = state.early, sel = state.sel;
+  state.early = false;
   setup(mi);
+  if (wasEarly) { state.sel = sel; $("tooltip").hidden = true; renderAll(); toast("Official data loaded. Assist names added."); }
 }
 function fail(e, id, my) {
   if (my !== loadSeq) return;
   clearTimeout(checkTimer); clearInterval(waitTimer);
+  if (state.early) return; // early data stays on screen; it just won't be swapped for Valve's file
   clearMatch();
   const msg = e instanceof TypeError ? "Couldn't reach the match server. Check your connection and try again." : e.message || String(e);
   setStatus(msg, true, () => loadMatch(id));
+}
+
+// ---------- early data ----------
+// The Postmortem companion app (a small Windows app, optional) reads the finished match from the game about 9 s after it ends
+// and uploads it to our Worker's relay (worker.js), which keeps it 15 minutes. It is the same data as Valve's file except
+// match_paths (movement), so only the assist names on death markers wait for the official file. While deadlock-api doesn't
+// have the match, the page checks the relay every 2 s for the first 2 minutes. Early data draws with an "Early data" chip, and
+// the normal deadlock-api wait keeps running behind it; when Valve's file arrives it replaces the early copy without a reload.
+// Relay data is outside data: it must be this match, with 12 players, or it is ignored.
+// ?early=off skips the relay; ?early=only shows only the relay's copy (for testing the app on a match deadlock-api already has).
+const RELAY = "/api/early/", EARLY_EVERY_S = 2, EARLY_FOR_S = 120;
+const EARLY_MODE = ["off", "only"].includes(params.get("early")) ? params.get("early") : "on";
+let earlyTimer = null, earlyUntil = 0;
+async function getEarly(id) {
+  try {
+    const r = await fetch(RELAY + encodeURIComponent(id), { cache: "no-store" });
+    if (!r.ok) return null;
+    const b = await r.json();
+    const mi = b && b.match_info;
+    const ok = mi && String(mi.match_id) === String(id) && Array.isArray(mi.players) && mi.players.length === 12 && Number(mi.duration_s) > 0;
+    return ok ? b : null;
+  } catch (e) {
+    return null; // no relay (local test, offline) or a bad answer: carry on the normal way
+  }
+}
+function showEarly(data, my) {
+  if (my !== loadSeq || state.match) return; // Valve's file got here first, or another match was asked for
+  clearTimeout(earlyTimer);
+  state.early = true;
+  setup(data.match_info);
+}
+function pollEarly(id, my) {
+  earlyUntil = Date.now() + EARLY_FOR_S * 1000;
+  const tick = async () => {
+    if (my !== loadSeq || state.match || Date.now() >= earlyUntil) return;
+    const e = await getEarly(id);
+    if (e) return showEarly(e, my);
+    if (my === loadSeq && !state.match) earlyTimer = setTimeout(tick, EARLY_EVERY_S * 1000);
+  };
+  earlyTimer = setTimeout(tick, EARLY_EVERY_S * 1000);
+}
+async function loadEarlyOnly(id, my) {
+  const e = await getEarly(id);
+  if (my !== loadSeq) return;
+  if (e) return showEarly(e, my);
+  setStatus("The relay has no early data for this match.", true, () => loadMatch(id));
+}
+let toastTimer = null;
+function toast(msg) {
+  const t = $("toast");
+  t.textContent = msg; t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.hidden = true; }, 4000);
 }
 
 // The "not ready yet" screen. Checks every 10 seconds for the first 3 minutes, then every 30, and stops after 15 minutes.
@@ -464,6 +534,7 @@ async function check(w, id, my) {
 }
 function drawWait(w, id, my) {
   if (my !== loadSeq) { clearInterval(waitTimer); return; }
+  if (state.early) return; // early data is on screen: keep checking deadlock-api, but draw nothing
   const s = $("status");
   s.classList.remove("err");
   const left = Math.max(0, Math.ceil((w.next - Date.now()) / 1000));
@@ -487,7 +558,8 @@ function drawWait(w, id, my) {
       : "deadlock-api doesn't have this match yet. The deadlock-api uploader usually sends it within 5 minutes of the game ending, if someone who played runs it. Otherwise deadlock-api's own bots get to it later. This page loads it the moment it arrives.") +
       `<br>Checking again in ${fmtTime(left)}.`;
   }
-  s.innerHTML = `<div class="waitTitle">${title}</div><div class="waitText">${text}</div>` +
+  const earlyLine = Date.now() < earlyUntil ? `<div class="waitEarly">Also checking for early data from the Postmortem app.</div>` : "";
+  s.innerHTML = `<div class="waitTitle">${title}</div><div class="waitText">${text}</div>` + earlyLine +
     `<div class="waitDetail">${esc(w.detail || "")} · try ${w.tries} · waiting ${waited}</div>`;
   const b = el("button", "graphOptionButton retry", cool ? `Try Now (${cool})` : "Try Now");
   b.disabled = cool > 0;
@@ -496,6 +568,8 @@ function drawWait(w, id, my) {
 }
 function clearMatch() {
   state.match = null;
+  state.early = false;
+  $("earlyChip").hidden = true;
   document.body.classList.add("noMatch");
   $("tooltip").hidden = true;
 }
@@ -540,6 +614,7 @@ function setup(mi) {
   state.events = buildEvents(mi);
   $("matchInput").value = mi.match_id || "";
   $("clock").textContent = fmtTime(mi.duration_s || 0);
+  $("earlyChip").hidden = !state.early;
   setStatus("");
   renderAll();
 }
@@ -1117,7 +1192,7 @@ function deathTipHtml(e) {
   let h = `<div class="t">${fmtTime(e.t)}</div><div class="heroRows deathTip">`;
   h += `<div class="dh">Died</div>` + row(e.victim);
   h += `<div class="dh">Killed by</div>` + (e.killer ? row(e.killer) : `<div class="dn">Not a hero (troopers, objective or fall)</div>`);
-  h += `<div class="dh">Assists</div>` + (e.assists.length ? e.assists.map(p => row(p)).join("") : `<div class="dn">${state.match.match_paths ? "No assists" : "Not in this match's data"}</div>`);
+  h += `<div class="dh">Assists</div>` + (e.assists.length ? e.assists.map(p => row(p)).join("") : `<div class="dn">${state.match.match_paths ? "No assists" : state.early ? "Fills in when the official file lands, about a minute after the match" : "Not in this match's data"}</div>`);
   if (e.assists.length) h += `<div class="dnote">Assists are worked out from positions and assist counts, so one may be off.</div>`;
   return h + `</div>`;
 }
