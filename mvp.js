@@ -375,7 +375,7 @@ function whenHtml(p) {
   const scale = Math.max(0.5, ...ph.map(r => Math.abs(r.early_valve || 0)), ...ph.map(r => Math.abs(r.late_valve || 0)));
   const bar = (label, key) => `<div class="whenRow"><span class="wl">${label}</span>${divBar(me[key], scale, "wide")}<span class="wv ${dvClass(me[key], 1)}" title="${dvWord(me[key])} for this hero">${dv(me[key], 1)}</span><span class="wk">${rankOf(key, me[key])}</span></div>`;
   const eLabel = me.early_time_s === 900 ? "Before 15:00" : `Before ${fmtTime(me.early_time_s)}`;
-  let h = `<div class="when" title="${esc(tip)}"><div class="accHead"><span>When they contributed</span></div>${bar(eLabel, "early_valve")}`;
+  let h = `<div class="when" title="${esc(tip)}"><div class="accHead"><span>When they contributed</span><span class="accSub">Graded separately from the total</span></div>${bar(eLabel, "early_valve")}`;
   if (me.late_valve == null) h += `<div class="vNote">Match too short to split.</div>`;
   else {
     h += bar("After 15:00", "late_valve");
