@@ -615,7 +615,7 @@ function rankHtml(badge, cls, plain) {
 
 // ---------- top bar ----------
 function renderTop() {
-  const mvp = state.tab === "mvp" || state.tab === "matchups"; // tabs that focus one hero
+  const mvp = state.tab === "mvp" || state.tab === "matchups" || state.tab === "summary"; // tabs that focus one hero
   const lanesG = !mvp && graphNow().kind === "lanes"; // Lane Stats: a portrait picks its lane
   const leadG = !mvp && !lanesG && (graphNow().kind === "lead" || grouped(graphNow())); // views where hero picks don't apply
   const curLane = lanesG ? laneNow() : null;
@@ -934,10 +934,12 @@ function renderAll() {
   document.querySelectorAll("#tabs .tab").forEach(b => b.classList.toggle("on", b.dataset.tab === state.tab));
   document.body.classList.toggle("tabMvp", state.tab === "mvp");
   document.body.classList.toggle("tabMu", state.tab === "matchups");
+  document.body.classList.toggle("tabSum", state.tab === "summary");
   document.body.classList.toggle("tabPick", state.tab !== "graphs");
   const lb = avgBadge(state.players.map(p => p.badge));
   $("lobbyRank").innerHTML = lb ? `<span class="lbl">Lobby</span>${rankHtml(lb, "", true)}` : "";
   renderTop();
+  if (state.tab === "summary") { window.renderSummary(); return; }
   if (state.tab === "mvp") { window.renderMvp(); return; }
   if (state.tab === "matchups") { window.renderMatchups(); return; }
   renderOptions();
@@ -1347,7 +1349,7 @@ fit();
 window.addEventListener("resize", () => { fit(); renderAll(); });
 wireDropDown();
 document.querySelectorAll("#tabs .tab").forEach(b => b.onclick = () => { state.tab = b.dataset.tab; closeMenu(); renderAll(); });
-if (["mvp", "matchups"].includes(params.get("tab"))) state.tab = params.get("tab");
+if (["mvp", "matchups", "summary"].includes(params.get("tab"))) state.tab = params.get("tab");
 buildDropDown();
 if (params.get("graph") && GRAPHS.some(g => g.id === params.get("graph"))) state.graph = params.get("graph");
 $("matchForm").onsubmit = ev => {

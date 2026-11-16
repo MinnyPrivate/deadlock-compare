@@ -7,6 +7,7 @@
 <link rel="preload" href="assets/fonts/valveoracle-semibold.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="assets/fonts/radiance-semibold.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="summary.css">
 </head>
 <body>
 <div id="stage">
@@ -25,6 +26,7 @@
   </header>
 
   <nav id="tabs" class="tabs">
+    <button class="tab" data-tab="summary">Summary</button>
     <button class="tab on" data-tab="graphs">Graphs</button>
     <button class="tab" data-tab="matchups">Matchups</button>
     <button class="tab" data-tab="mvp">MVP</button>
@@ -90,6 +92,7 @@
     </div>
   </main>
 
+  <section id="sumView" class="sumView"></section>
   <section id="mvpView" class="mvpView"></section>
   <section id="muView" class="mvpView muView"></section>
 
@@ -109,5 +112,6 @@
 <script src="mvp.js"></script>
 <script src="matchups.js"></script>
 <script src="lanes.js"></script>
+<script src="summary.js"></script>
 </body>
 </html>
