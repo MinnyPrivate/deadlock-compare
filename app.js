@@ -172,11 +172,14 @@ function deathEvents() {
   const bySlot = new Map(state.players.map(p => [p.slot, p]));
   const out = [];
   for (const v of state.players) for (const d of v.raw.death_details || []) {
+    const t = Number(d.game_time_s);
+    if (!Number.isFinite(t) || t < 0) continue;
     const dp = d.death_pos && Number.isFinite(d.death_pos.x) ? [d.death_pos.x, d.death_pos.y] : null;
-    out.push({ t: Number(d.game_time_s) || 0, victim: v, killer: bySlot.get(Number(d.killer_player_slot)) || null, pos: dp, assists: [] });
+    const seconds = Number(d.death_duration_s);
+    const duration = Number.isFinite(seconds) ? Math.max(0, seconds) : 0;
+    out.push({ t, duration, victim: v, killer: bySlot.get(Number(d.killer_player_slot)) || null, pos: dp, assists: [] });
   }
   out.sort((a, b) => a.t - b.t);
-  assignAssists(out);
   return (mi._deaths = out);
 }
 // Who assisted. Valve's data names the killer but not the assisters. It does have each hero's assist count at every stats
@@ -217,6 +220,12 @@ function assignAssists(evs) {
       cands.sort((x, y) => x[0] - y[0]).slice(0, n).forEach(([, e]) => e.assists.push(s));
     }
   }
+}
+
+function ensureAssists(events) {
+  if (state.match._estimatedAssists) return;
+  assignAssists(events);
+  state.match._estimatedAssists = true;
 }
 
 const BUFF_NAMES = {
@@ -263,8 +272,8 @@ const EMBED = params.get("embed") === "1";
 const state = {
   match: null, players: [], events: [],
   sel: null, // the heroes you picked; null until you pick, then it stays the same on every graph
-  graph: "souls", mode: "value", diff: false,
-  objPref: null, itemPref: null, deathPref: null, lineOv: {}, hiddenGroups: new Set(),
+  graph: "souls", mode: "value", diff: false, showGraph: false,
+  lineOv: {}, hiddenGroups: new Set(),
   focus: null, folds: {}, tray: [], // hover focus key ("t3" a line type, "s5" a hero), legend groups opened, overview compare tray
   laneOf: null, laneTime: 540, laneHover: null,
   leftTeam: 0, me: null,
@@ -277,7 +286,7 @@ const graphNow = () => GRAPHS.find(g => g.id === state.graph);
 // they stay picked on every graph until you change them. (kind is kept for the callers; every graph shares one pick.)
 const selFor = kind => state.sel || new Set();
 const selNow = () => selFor(graphNow().kind);
-const setSel = s => { state.sel = s; };
+const setSel = s => { state.sel = s; state.showGraph = true; };
 // Picked heroes in order, for the graphs that color them by pick order.
 const pickedList = kind => [...selFor(kind)].map(s => state.players.find(p => p.slot === s)).filter(Boolean);
 // On the Player-Specific graphs color means the line type, so a hero is told apart by solid or dashed instead.
@@ -292,21 +301,17 @@ function lineOn(g, i) {
   return !!(ov && ov.get(g.series[i].label));
 }
 function openGraph(id) {
+  GraphMarkers.close();
   state.graph = id;
+  state.showGraph = false;
+  state.mode = "value";
+  state.diff = false;
+  state.hiddenGroups.clear();
   delete state.lineOv[id];
   state.focus = null;
 }
 function setLine(g, i, on) { (state.lineOv[g.id] = state.lineOv[g.id] || new Map()).set(g.series[i].label, on); }
 function visibleCats(g) { return g.series.map((s, i) => i).filter(i => lineOn(g, i)); }
-// Markers start off for a new viewer. Once you turn one on or off it stays that way on every graph and every match.
-const MARK_KEY = "postmortem.markers";
-function loadMarks() {
-  try { const m = JSON.parse(localStorage.getItem(MARK_KEY) || "{}"); state.objPref = m.obj ?? null; state.itemPref = m.items ?? null; state.deathPref = m.deaths ?? null; } catch (e) { /* storage blocked: defaults */ }
-}
-function saveMarks() {
-  try { localStorage.setItem(MARK_KEY, JSON.stringify({ obj: state.objPref, items: state.itemPref, deaths: state.deathPref })); } catch (e) { /* storage blocked */ }
-}
-function objOn(g) { return !!state.objPref; }
 // View As: Value and Per Minute work on most graphs; % of Team, Teams and Lanes only on the General graphs that add up.
 function modeNow(g) {
   const m = state.mode;
@@ -514,6 +519,8 @@ function waitMeter(elapsed) {
     `<div class="waitBar${over ? " hold" : ""}" role="progressbar" aria-label="Time waited against the usual range" aria-valuemin="0" aria-valuemax="${TYPICAL_HI_S}" aria-valuenow="${Math.min(TYPICAL_HI_S, Math.round(elapsed))}"><i style="width:${pct}%"></i><span class="tick" style="left:${(TYPICAL_LO_S / TYPICAL_HI_S) * 100}%"></span></div>`;
 }
 function clearMatch() {
+  stopChartHover();
+  GraphMarkers.close();
   state.match = null;
   document.body.classList.add("noMatch");
   $("tooltip").hidden = true;
@@ -554,6 +561,8 @@ function setup(mi) {
 
   const sel = (params.get("players") || "").split(",").filter(x => /^\d+$/.test(x.trim())).map(Number).filter(n => state.players.some(p => p.slot === n));
   state.sel = sel.length ? new Set(sel) : null;
+  state.showGraph = !!sel.length;
+  state.hiddenGroups.clear();
   state.laneOf = null;
   state.lineOv = {}; state.tray = []; state.focus = null; // a new match opens with nothing drawn
   prepDynamicGraphs(true);
@@ -583,22 +592,22 @@ function buildEvents(mi) {
     const t = o.destroyed_time_s;
     if (!t) continue;
     const id = o.team_objective_id, team = TEAMS[o.team] || TEAMS[0];
-    let what, icon, lane = null;
-    if (id >= 1 && id <= 4) { what = "Guardian"; icon = "objective_t1"; lane = LANES[id]; }
-    else if (id >= 5 && id <= 8) { what = "Walker"; icon = "objective_t2"; lane = LANES[id - 4]; }
-    else if (id >= 12 && id <= 15) { what = "Base Guardians"; icon = "objective_t2"; lane = LANES[id - 11]; }
-    else if (id === 10 || id === 11) { what = "Shrine"; icon = "team"; }
-    else if (id === 9) { what = "Patron (first phase)"; icon = "team"; }
-    else if (id === 0) { what = "Patron"; icon = "team"; }
+    let what, type, icon, lane = null;
+    if (id >= 1 && id <= 4) { what = "Guardian"; type = "guardian"; icon = "objective_t1"; lane = LANES[id]; }
+    else if (id >= 5 && id <= 8) { what = "Walker"; type = "walker"; icon = "objective_t2"; lane = LANES[id - 4]; }
+    else if (id >= 12 && id <= 15) { what = "Base Guardians"; type = "base"; icon = "objective_t2"; lane = LANES[id - 11]; }
+    else if (id === 10 || id === 11) { what = "Shrine"; type = "shrine"; icon = "team"; }
+    else if (id === 9) { what = "Patron (first phase)"; type = "patron"; icon = "team"; }
+    else if (id === 0) { what = "Patron"; type = "patron"; icon = "team"; }
     else continue;
     const name = lane ? `${team.color}'s ${lane} ${what}` : `${team.color}'s ${what}`;
-    ev.push({ t, kind: what, text: `${name} destroyed`, color: team.c, icon: icon === "team" ? team.icon : `assets/ui/${icon}.svg`, team: o.team });
+    ev.push({ t, type, text: `${name} destroyed`, color: team.c, icon: icon === "team" ? team.icon : `assets/ui/${icon}.svg` });
   }
   for (const mb of mi.mid_boss || []) {
     if (!mb.destroyed_time_s) continue;
     const tm = mb.team_claimed ?? mb.team_killed;
     const by = TEAMS[tm] ? TEAMS[tm].color : "";
-    ev.push({ t: mb.destroyed_time_s, kind: "Mid Boss", text: `Mid Boss taken${by ? " by " + by : ""}`, color: "#70F8C1", icon: "assets/ui/icon_soul.svg", mid: true });
+    ev.push({ t: mb.destroyed_time_s, type: "mid", text: `Mid Boss taken${by ? " by " + by : ""}`, color: "#70F8C1", icon: "assets/ui/icon_soul.svg", mid: true });
   }
   return ev.sort((a, b) => a.t - b.t);
 }
@@ -771,6 +780,7 @@ function renderOptions() {
   document.body.classList.toggle("laneMode", lanes);
   $("optLane").hidden = $("optLaneTime").hidden = !lanes;
   if (lanes) {
+    GraphMarkers.close();
     $("optPick").hidden = $("optMode").hidden = $("optDiff").hidden = $("optMarks").hidden = true;
     window.renderLaneOptions();
     $("ddLabel").textContent = g.label;
@@ -780,7 +790,7 @@ function renderOptions() {
   renderPicks();
   const modeOk = !g.ratio && !g.level && g.kind !== "lead";
   const okFor = v => v === "value" || (modeOk && (v === "permin" || g.kind === "general"));
-  seg("optMode", modeNow(g), v => { state.mode = v; renderAll(); });
+  seg("optMode", modeNow(g), v => { state.mode = v; state.showGraph = true; renderAll(); });
   $("optMode").querySelectorAll("button").forEach(b => {
     b.disabled = !okFor(b.dataset.v);
     if (b.disabled) b.title = g.kind === "breakdown" ? "Only for the General graphs" : "Not for this graph";
@@ -789,18 +799,8 @@ function renderOptions() {
   if (!canDiff) state.diff = false;
   $("optDiff").hidden = !canDiff;
   seg("optDiff", state.diff ? "on" : "off", v => { state.diff = v === "on"; renderAll(); });
-  // Objectives and item buys are both markers on the time axis, so they share one row of on/off toggles.
-  const mo = $("markObj"), mi = $("markItems"), md = $("markDeaths");
-  mo.hidden = !state.events.length;
-  mi.hidden = !itemsFit(g);
-  md.hidden = !deathsFit(g);
-  $("optMarks").hidden = mo.hidden && mi.hidden && md.hidden;
-  md.classList.toggle("on", deathsOn(g)); md.setAttribute("aria-pressed", String(deathsOn(g)));
-  md.onclick = () => { state.deathPref = !deathsOn(g); saveMarks(); renderAll(); };
-  mo.classList.toggle("on", objOn(g)); mo.setAttribute("aria-pressed", String(objOn(g)));
-  mi.classList.toggle("on", itemsOn(g)); mi.setAttribute("aria-pressed", String(itemsOn(g)));
-  mo.onclick = () => { state.objPref = !objOn(g); saveMarks(); renderAll(); };
-  mi.onclick = () => { state.itemPref = !itemsOn(g); saveMarks(); renderAll(); };
+  $("optMarks").hidden = false;
+  GraphMarkers.renderOptions();
   $("ddLabel").textContent = g.label;
 }
 
@@ -870,13 +870,14 @@ function brkView(g) {
   return n >= 5 ? "lobby" : n >= 3 ? "panels" : "overlay";
 }
 function seriesFor(g) {
-  if (g.kind === "lead") return [leadLine()];
+  if (g.kind === "lead") return state.showGraph ? [leadLine()] : [];
   const sel = g.kind === "breakdown" ? pickedList("breakdown") : state.players.filter(p => selNow().has(p.slot));
   const mode = modeNow(g);
   if (mode === "team" || mode === "lane") return groupLines(g, mode).filter(se => !state.hiddenGroups.has(se.label));
   const { build } = lineMaker(g, mode);
   const diffOk = state.diff && sel.length === 2;
   if (g.kind === "general") {
+    if (!state.showGraph) return [];
     const get = mode === "share" ? shareGet(g) : g.get;
     const lines = sel.map(p => ({ player: p, label: p.hero, color: colorOf(p), dash: "", key: "s" + p.slot, pts: build(p, get) }));
     if (diffOk) return [diffLine(lines[0], lines[1], null)];
@@ -989,6 +990,11 @@ function valueAt(pts, t) {
 function renderAll() {
   if (state.match) prepDynamicGraphs();
   if (!state.match) return;
+  stopChartHover();
+  const ctn = $("graphCtn"), overview = $("overview");
+  if (ctn.parentElement === overview) overview.before(ctn);
+  ctn.style.height = "";
+  ctn.classList.remove("overviewMarkers");
   const t0 = performance.now();
   document.querySelectorAll("#tabs .tab").forEach(b => b.classList.toggle("on", b.dataset.tab === state.tab));
   document.body.classList.toggle("tabMvp", state.tab === "mvp");
@@ -997,7 +1003,10 @@ function renderAll() {
   const lb = avgBadge(state.players.map(p => p.badge));
   $("lobbyRank").innerHTML = lb ? `<span class="lbl">Lobby</span>${rankHtml(lb, "", true)}` : "";
   renderTop();
-  if (state.tab !== "graphs") { document.body.classList.remove("hasLegend", "lobbyView"); }
+  if (state.tab !== "graphs") {
+    GraphMarkers.close();
+    document.body.classList.remove("hasLegend", "lobbyView");
+  }
   if (state.tab === "mvp") { window.renderMvp(); return; }
   if (state.tab === "matchups") { window.renderMatchups(); return; }
   renderOptions();
@@ -1010,39 +1019,50 @@ function renderAll() {
   const lobby = brkView(g0) === "lobby";
   document.body.classList.toggle("lobbyView", lobby);
   renderLegend(g0, g);
-  if (lobby) { $("tooltip").hidden = true; renderOverview(g0, g); }
-  else drawChart(series, g);
+  const markers = GraphMarkers.layout(g0, brkView(g0));
+  if (lobby) {
+    renderOverview(g0, g);
+    if (markers.visible) {
+      ctn.classList.add("overviewMarkers");
+      ctn.style.height = (GraphMarkers.height(markers.rows.concat(markers.teams)) + (markers.objectives.length ? 33 : 9) + 32) + "px";
+      overview.querySelector(".ovTable").before(ctn);
+      drawChart([], g, markers);
+    }
+  } else drawChart(series, g, markers);
   renderLines(series, g);
   perfNote("render", performance.now() - t0);
 }
 
 // The chart area holds one plot, or one panel per hero when 3 or 4 heroes are picked on a Player-Specific graph.
 // Every plot shares the time axis and the value scale, so panels can be compared at a glance.
-function plotLayout(W, H, m, view, series) {
+function plotLayout(W, H, m, view, series, markers) {
   if (view !== "panels") {
     return [{ l: m.l, r: W - m.r, t: m.t, b: H - m.b, labX: W - 4, timeY: H - 12, series }];
   }
   const heroes = pickedList("breakdown"), n = heroes.length, cols = n === 3 ? 3 : 2, rows = n === 3 ? 1 : 2;
-  const gx = 28, gy = 26, top = 6, bottom = 6, gut = 62, head = 50, foot = 30;
+  const gx = 28, gy = 26, top = 6, bottom = 6 + (markers.teams.length ? GraphMarkers.height(markers.teams) + 38 : 0);
+  const gut = 62, head = markers.objectives.length ? 76 : 50, foot = 30;
   const cw = (W - m.l - gx * (cols - 1)) / cols, ch = (H - top - bottom - gy * (rows - 1)) / rows;
   return heroes.map((p, k) => {
     const cx = m.l + (k % cols) * (cw + gx), cy = top + Math.floor(k / cols) * (ch + gy);
-    return { p, cx, cy, cw, ch, l: cx, r: cx + cw - gut, t: cy + head, b: cy + ch - foot, labX: cx + cw - 4, timeY: cy + ch - 8,
+    const rows = markers.rows.filter(row => row.p === p);
+    return { p, cx, cy, cw, ch, rows, l: cx, r: cx + cw - gut, t: cy + head,
+      b: cy + ch - foot - (rows.length ? GraphMarkers.height(rows) + 4 : 0), labX: cx + cw - 4, timeY: cy + ch - 8,
       series: series.filter(se => se.player === p) };
   });
 }
-function drawChart(series, g) {
+function drawChart(series, g, markers) {
   const ctn = $("graphCtn"), svg = $("chart");
   const W = ctn.offsetWidth, H = ctn.offsetHeight;
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
   const view = brkView(g);
-  const m = { l: 18, r: 96, t: 34, b: 40 };
+  const timeline = view === "lobby", panels = view === "panels";
+  const rows = markers.rows.concat(markers.teams);
+  const m = { l: 18, r: timeline || (rows.length && !panels) ? 152 : 96, t: 34, b: timeline ? 32 : 40 };
   const keyH = view === "overlay" && pickedList("breakdown").length ? 36 : 0; // the solid/dashed key sits above everything
   m.t += keyH;
-  $("markers").style.top = keyH + "px";
-  const buyers = itemBuyers(g), dots = deathsOn(g);
-  if (buyers) m.b += buyers.length * 32 + 8; // item rows sit between the lines and the time axis
-  if (dots) m.b += 2 * DEATH_ROW + 6; // death dots sit above those, still below the lines
+  if (!panels && rows.length) m.b += GraphMarkers.height(rows) + 6;
+  if (timeline) m.t = Math.max(0, H - m.b - 1);
   const dur = state.match.duration_s || Math.max(60, ...series.flatMap(s => s.pts.map(p => p[0])));
   const vals = series.flatMap(s => s.pts.map(p => p[1]));
   let ymin = 0, ymax = 1;
@@ -1051,14 +1071,15 @@ function drawChart(series, g) {
   if (ymax === ymin) ymax = ymin + 1;
   const ticks = niceTicks(ymin, ymax, view === "panels" && pickedList("breakdown").length > 3 ? 3 : 4, (series.length > 0 && series.every(se => se.pts.step)) || !!g.whole);
   ymin = Math.min(ymin, ticks[0]); ymax = Math.max(ymax, ticks[ticks.length - 1]);
-  const plots = plotLayout(W, H, m, view, series);
-  const evs = objOn(g) ? state.events : [];
+  const plots = plotLayout(W, H, m, view, series, markers);
+  const evs = markers.objectives;
   const outline = series.length <= 12;
   let ls = ""; // a dark edge under each line helps a few lines; with many it only costs drawing time
   const two = view === "overlay" && series.some(se => se.hi === 1);
   let s = "";
-  for (const P of plots) {
-    P.X = t => P.l + (Math.max(t, 0) / dur) * (P.r - P.l);
+  const layer = document.createDocumentFragment(), markerNodes = new Map();
+  for (const [idx, P] of plots.entries()) {
+    P.X = t => P.l + (Math.max(0, Math.min(t, dur)) / dur) * (P.r - P.l);
     P.Y = v => P.b - ((v - ymin) / (ymax - ymin)) * (P.b - P.t);
     const { X, Y } = P;
     for (const v of series.length ? ticks : []) {
@@ -1074,7 +1095,9 @@ function drawChart(series, g) {
     }
     const y0 = Y(ymin === 0 || ymin < 0 ? 0 : ymin);
     s += `<line x1="${P.l}" x2="${P.r + 8}" y1="${y0}" y2="${y0}" stroke="#ffffff" stroke-opacity="${ymin < 0 ? 0.35 : 0.12}"/>`;
-    for (const e of evs) s += `<line x1="${X(e.t)}" x2="${X(e.t)}" y1="${P.t - 4}" y2="${P.b}" stroke="${e.color}" stroke-opacity="0.38" stroke-dasharray="3 5" stroke-width="1.5"/>`;
+    if (!timeline) for (const e of markers.guides) s += `<line class="objectiveGuide" x1="${X(e.t)}" x2="${X(e.t)}" y1="${P.t - 4}" y2="${P.b}" stroke="${e.color}" stroke-opacity="0.38" stroke-dasharray="3 5" stroke-width="1.5"/>`;
+    const masks = GraphMarkers.deadMasks(P, idx);
+    if (masks.svg) s += `<defs>${masks.svg}</defs>`;
     const lead = P.series.find(se => se.lead);
     if (lead && lead.pts.length > 1) {
       const z = Y(0), xs = lead.pts.map(([t, v]) => `${X(t).toFixed(1)} ${Y(v).toFixed(1)}`).join(" L");
@@ -1089,7 +1112,8 @@ function drawChart(series, g) {
     for (const se of P.series) {
       if (!se.pts.length) continue;
       const k = se.pts.real || 0, d = path(se.pts.slice(k));
-      let s = `<g data-k="${esc(se.key || "")}">`;
+      const mask = masks.ids.get(se.player);
+      let s = `<g data-k="${esc(se.key || "")}"${mask ? ` mask="url(#${mask})"` : ""}>`;
       // Before Valve's first snapshot a rate has no value: that stretch is a faint dotted line from 0.
       if (k) s += `<path d="${path(se.pts.slice(0, k + 1))}" fill="none" stroke="${se.color}" stroke-opacity="0.45" stroke-width="2" stroke-linecap="round" stroke-dasharray="1 6"/>`;
       if (outline) s += `<path d="${d}" fill="none" stroke="#000" stroke-opacity="0.3" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="${se.dash}"/>`;
@@ -1101,6 +1125,17 @@ function drawChart(series, g) {
       }
       ls += s + `</g>`;
     }
+    GraphMarkers.drawObjectives(layer, evs, P, panels ? P.cy + 44 : keyH);
+    GraphMarkers.drawRows(layer, panels ? P.rows : rows, P, P.b + 6, dur, !panels, markerNodes);
+  }
+  if (panels && markers.teams.length) {
+    const h = GraphMarkers.height(markers.teams);
+    const P = { l: m.l, r: W - 152, t: H - h - 32, b: H - 32 };
+    P.X = t => P.l + (Math.max(0, Math.min(t, dur)) / dur) * (P.r - P.l);
+    GraphMarkers.drawRows(layer, markers.teams, P, P.t, dur, true, markerNodes);
+    for (let t = 0; t <= dur; t += dur > 1500 ? 600 : 300) {
+      s += `<text x="${P.X(t)}" y="${H - 8}" text-anchor="${t ? "middle" : "start"}">${fmtTime(t)}</text>`;
+    }
   }
   // The lines sit on their own layer above the axes. Focus fades that whole layer (no redraw) and copies the focused
   // lines onto a small layer on top, so hovering stays cheap even with dozens of lines.
@@ -1108,21 +1143,24 @@ function drawChart(series, g) {
   const lv = $("chartLines"), fv = $("chartFocus");
   lv.setAttribute("viewBox", `0 0 ${W} ${H}`); fv.setAttribute("viewBox", `0 0 ${W} ${H}`);
   lv.innerHTML = ls; fv.innerHTML = "";
-  const P0 = plots[0];
-  drawMarkers(view === "panels" ? [] : evs, P0.X, W);
-  const itemsH = buyers ? buyers.length * 32 : 0;
-  drawItems(buyers, P0.X, H - 40 - itemsH, W - m.r);
-  drawDeaths(dots, P0.X, H - 40 - itemsH - (buyers ? 4 : 0) - 2 * DEATH_ROW, W - m.r);
+  $("markers").replaceChildren(layer);
   drawHeads(plots, view, series);
 
   const emp = $("empty");
   const none = !selNow().size && g.kind !== "lead" && !grouped(g);
-  emp.hidden = series.length > 0;
-  if (!series.length) emp.textContent = none ? "Pick heroes at the top to add their lines."
-    : grouped(g) ? "Every line is hidden. Pick lines on the right."
-    : g.kind === "breakdown" ? "Pick lines on the right to start." : "Nothing to show for these heroes.";
+  emp.hidden = timeline || series.length > 0;
+  if (!emp.hidden) {
+    if (!state.showGraph && (g.kind === "lead" || (!none && g.kind === "general" && !grouped(g)))) {
+      const show = el("button", "graphOptionButton", g.kind === "lead" ? "Show team lead" : "Show picked heroes");
+      show.onclick = () => { state.showGraph = true; renderAll(); };
+      emp.replaceChildren(show);
+    } else {
+      emp.textContent = none ? "Pick heroes at the top to add their lines." : grouped(g) ? "Every line is hidden. Pick lines on the right."
+        : g.kind === "breakdown" ? "Pick lines on the right to start." : "Nothing to show for these heroes.";
+    }
+  }
   emp.classList.toggle("hint", series.length === 0);
-  wireHover(plots, series, g, dur, W, H, buyers, evs);
+  wireHover(plots, series, g, dur, W, H, evs, timeline, markerNodes);
 }
 // Hero names above each panel, or a small key in the corner saying which hero is solid and which is dashed.
 function drawHeads(plots, view, series) {
@@ -1147,73 +1185,127 @@ function drawHeads(plots, view, series) {
 // The hover box, the crosshair and the focus only change when the second under the mouse (or what it points at) changes,
 // and at most once per screen refresh. The lines themselves are never redrawn on hover: the game's browser draws on the
 // CPU, and redrawing 80 lines on every mouse move is what made it lag there.
-function wireHover(plots, series, g, dur, W, H, buyers, evs) {
+let stopChartHover = () => {};
+function wireHover(plots, series, g, dur, W, H, evs, timeline, markerNodes) {
   const ctn = $("graphCtn"), tip = $("tooltip"), xh = $("xhairs");
   xh.innerHTML = plots.map(P => `<i class="xhair" style="left:${P.l}px;top:${P.t}px;height:${P.b - P.t}px"></i>`).join("");
   const bars = [...xh.children];
   const times = [...new Set(series.flatMap(se => se.pts.map(p => p[0])))].sort((a, b) => a - b);
   const end = times.length ? times[times.length - 1] : dur;
-  const first = series.length ? Math.min(...series.filter(se => se.pts.length).map(se => se.pts[se.pts.real || 0][0])) : 0;
-  let raf = 0, lastEv = null, lastKey = "", hoverFocus = null, tw = 0, th = 0;
+  const first = times.length ? Math.min(...series.filter(se => se.pts.length).map(se => se.pts[se.pts.real || 0][0])) : 0;
+  const itemHover = $("markerHover"), [owned, from, to] = itemHover.children;
+  let raf = 0, lastKey = "", lastHit = null, active = [], tw = 0, th = 0;
   state.pinned = false;
   tip.classList.remove("pinned");
   state.hoverFocus = null;
   applyFocus();
   const hideX = () => bars.forEach(b => b.classList.remove("on"));
-  const place = (px, py) => {
-    let left = px + 22; if (left + tw > W) left = px - tw - 22;
-    tip.style.transform = `translate(${Math.round(left)}px,${Math.round(Math.max(0, Math.min(py - 20, H - th)))}px)`;
+  const highlight = hit => {
+    active.forEach(node => node.classList.remove("active"));
+    active = [];
+    itemHover.hidden = !hit || hit.type !== "item";
+    if (itemHover.hidden) return;
+    const { P, item, t, end, barY } = hit;
+    const left = P.X(t), right = P.X(end);
+    owned.style.cssText = `left:${left}px;top:${barY}px;width:${Math.max(0, right - left)}px`;
+    for (const [el, x] of [[from, left], [to, right]]) {
+      el.style.cssText = `left:${x}px;top:${P.t}px;height:${Math.max(0, P.b - P.t)}px`;
+    }
+    active = [markerNodes.get(item), markerNodes.get(item.next)].filter(Boolean);
+    active.forEach(node => node.classList.add("active"));
   };
-  const hover = ev => {
+  const clear = () => {
+    tip.hidden = true;
+    hideX();
+    setHoverFocus(null);
+    if (lastHit) highlight(null);
+    lastHit = null;
+    lastKey = "";
+  };
+  const place = (px, py, hit) => {
+    const left = Math.max(0, Math.min(W - tw, px + tw + 22 > W ? px - tw - 22 : px + 22));
+    // A short timeline in the overview may need the space above it for a full card.
+    const minY = timeline ? -ctn.offsetTop : 0;
+    const top = Math.max(minY, Math.min(hit ? py - th - 16 : py - 20, H - th));
+    tip.style.transform = `translate(${Math.round(left)}px,${Math.round(top)}px)`;
+  };
+  const hover = (ev, marker) => {
     const h0 = performance.now();
-    const { x: px, y: py } = mouseIn(ctn, ev);
-    const P = plots.find(q => px >= q.l - 4 && px <= q.r + 10 && py >= q.t - 40 && py <= q.b + 60) || (plots.length === 1 ? plots[0] : null);
-    if (!P || px < P.l || px > P.r + 10) { tip.hidden = true; hideX(); setHoverFocus(null); lastKey = ""; return; }
+    const hit = marker?.markerHit || ev.target.closest?.(".graphMarker")?.markerHit || null;
+    if (hit && hit === lastHit && !tip.hidden) return;
+    const { x: px, y: py } = marker ? hit : mouseIn(ctn, ev);
+    const P = hit?.P || plots.find(q => px >= q.l && px <= q.r + 10 && py >= q.t && py <= q.b + 6);
+    if (!P) { clear(); return; }
     const t = Math.round(Math.max(0, Math.min(end, ((px - P.l) / (P.r - P.l)) * dur)));
-    const near = evs.filter(e => Math.abs(e.t - t) <= dur * 0.012);
-    const dot = ev.target && ev.target.closest ? ev.target.closest(".deathDot") : null;
     // The line nearest the mouse (within 12 pixels) is brought forward and the rest dim, on every graph.
     let best = null, bd = 12;
-    if (!dot) for (const se of P.series) { const v = lerpAt(se.pts, t); if (v == null) continue; const d = Math.abs(P.Y(v) - py); if (d < bd) { bd = d; best = se.key; } }
+    if (!hit) for (const se of P.series) { const v = lerpAt(se.pts, t); if (v == null) continue; const d = Math.abs(P.Y(v) - py); if (d < bd) { bd = d; best = se.key; } }
     setHoverFocus(best);
-    const tt = dot && dot.dlcDeath ? dot.dlcDeath.t : t;
-    plots.forEach((Q, k) => { bars[k].style.transform = `translateX(${(Q.X(tt) - Q.l).toFixed(1)}px)`; bars[k].classList.add("on"); });
-    const key = `${plots.indexOf(P)}|${t}|${dot ? dot.dlcDeath && dot.dlcDeath.t : ""}|${state.focus || state.hoverFocus || ""}`;
-    if (key !== lastKey) {
+    if (hit?.type === "item") hideX();
+    else plots.forEach((Q, k) => { bars[k].style.transform = `translateX(${(Q.X(hit ? hit.t : t) - Q.l).toFixed(1)}px)`; bars[k].classList.add("on"); });
+    const key = hit ? "" : `${plots.indexOf(P)}|${t}|${state.focus || state.hoverFocus || ""}`;
+    if (key !== lastKey || hit !== lastHit) {
+      if (hit !== lastHit) highlight(hit);
       lastKey = key;
+      lastHit = hit;
+      const near = hit ? [] : evs.filter(e => Math.abs(e.t - t) <= dur * 0.012);
       let html = "";
-      if (dot && dot.dlcDeath) html = deathTipHtml(dot.dlcDeath);
+      if (hit) html = hit.tip();
       else if (times.length) {
         html += `<div class="t">${fmtTime(t)}</div>`;
         if (near.length) html += evHtml(near);
         if (t < first) html += `<div class="noData">No data until ${fmtTime(first)}, Valve's first snapshot.</div>`;
         // With panels, the box reads out the hovered hero only; the crosshair still marks the same second in every panel.
         else html += readoutHtml((plots.length > 1 ? P.series : series).map(se => ({ se, v: lerpAt(se.pts, t) })).filter(r => r.v != null), g, t);
-        if (buyers) { const prev = times.filter(x => x < t).pop(); html += boughtHtml(buyers, prev ?? -1, t); }
       } else if (near.length) html = evHtml(near);
       if (!html) { tip.hidden = true; return; }
       tip.innerHTML = html;
       tip.classList.toggle("heroTip", html.includes('class="heroRows'));
+      tip.classList.toggle("purchaseTip", hit?.type === "item");
       tip.hidden = false;
       tw = tip.offsetWidth; th = tip.offsetHeight;
     }
-    if (!tip.hidden) place(px, py);
+    if (!tip.hidden) place(hit ? hit.x : px, hit ? hit.y : py, hit);
     perfNote("hover", performance.now() - h0);
+  };
+  let pending;
+  const schedule = action => {
+    pending = action;
+    if (!raf) raf = requestAnimationFrame(() => { raf = 0; pending(); });
   };
   ctn.onclick = ev => {
     if (tip.contains(ev.target)) return;
-    if (state.pinned) { state.pinned = false; tip.classList.remove("pinned"); lastKey = ""; hover(ev); return; }
-    if (tip.hidden) return;
-    state.pinned = true;
-    tip.classList.add("pinned");
-    tip.insertAdjacentHTML("beforeend", `<div class="pinNote">Pinned. Click the graph to unpin.</div>`);
+    const marker = ev.target.closest(".graphMarker");
+    schedule(() => {
+      if (state.pinned) { state.pinned = false; tip.classList.remove("pinned"); lastKey = "unpin"; lastHit = null; highlight(null); }
+      else {
+        hover(ev, marker);
+        if (tip.hidden) return;
+        state.pinned = true;
+        tip.classList.add("pinned");
+        tip.insertAdjacentHTML("beforeend", `<div class="pinNote">Pinned. Click the graph to unpin.</div>`);
+        return;
+      }
+      hover(ev, marker);
+    });
   };
-  ctn.onmousemove = ev => {
-    if (state.pinned) return;
-    lastEv = ev;
-    if (!raf) raf = requestAnimationFrame(() => { raf = 0; if (!state.pinned) hover(lastEv); });
+  ctn.onmousemove = ev => { if (!state.pinned) schedule(() => hover(ev)); };
+  ctn.onmouseleave = () => { if (!state.pinned) schedule(clear); };
+  const focusMarker = ev => {
+    const marker = ev.target.closest(".graphMarker");
+    if (marker && !state.pinned) schedule(() => hover(ev, marker));
   };
-  ctn.onmouseleave = () => { if (state.pinned) return; if (raf) { cancelAnimationFrame(raf); raf = 0; } tip.hidden = true; hideX(); setHoverFocus(null); lastKey = ""; };
+  const blurMarker = () => { if (!state.pinned) schedule(clear); };
+  ctn.addEventListener("focusin", focusMarker);
+  ctn.addEventListener("focusout", blurMarker);
+  stopChartHover = () => {
+    if (raf) cancelAnimationFrame(raf);
+    ctn.onclick = ctn.onmousemove = ctn.onmouseleave = null;
+    ctn.removeEventListener("focusin", focusMarker);
+    ctn.removeEventListener("focusout", blurMarker);
+    tip.hidden = true;
+    highlight(null);
+  };
   state.plots = plots;
 }
 // Focus: the hovered legend row or the line nearest the mouse stays bright, everything else steps back,
@@ -1284,17 +1376,6 @@ function heroRowsHtml(rows, g, t) {
       `<span class="v">${fmtNum(v, g)}</span>${tot ? `<span class="pc">${Math.round((100 * v) / tot)}%</span>` : ""}</div>`;
   }).join("") + `</div>`;
 }
-// Death marker hover: who died, who got the kill and who assisted, as hero rows like the main readout.
-function deathTipHtml(e) {
-  const row = (p, label) => `<div class="hr" style="--tc:${TEAMS[p.team].c};--pc:${p.color}"><i class="sw"></i><span class="face">${cardImg(p)}</span>` +
-    `<span class="v hn">${esc(heroName(p))}</span>${label ? `<span class="pc">${label}</span>` : ""}</div>`;
-  let h = `<div class="t">${fmtTime(e.t)}</div><div class="heroRows deathTip">`;
-  h += `<div class="dh">Died</div>` + row(e.victim);
-  h += `<div class="dh">Killed by</div>` + (e.killer ? row(e.killer) : `<div class="dn">Not a hero (troopers, objective or fall)</div>`);
-  h += `<div class="dh">Assists</div>` + (e.assists.length ? e.assists.map(p => row(p)).join("") : `<div class="dn">${state.match.match_paths ? "No assists" : "Not in this match's data"}</div>`);
-  if (e.assists.length) h += `<div class="dnote">Assists are worked out from positions and assist counts, so one may be off.</div>`;
-  return h + `</div>`;
-}
 function evHtml(list) {
   return `<div class="ev">${list.map(e => `<div><b style="background:${e.color}"></b>${esc(e.text)} <small style="opacity:.55">${fmtTime(e.t)}</small></div>`).join("")}</div>`;
 }
@@ -1318,108 +1399,10 @@ function rowHtml(se, v, g) {
   return `<div class="row"><img src="${(se.diff ? (v >= 0 ? p : se.other) : p).img}" style="--coin:${T.coin}"><span class="sw" style="background:${se.color}"></span><span class="n">${name}</span><span class="v">${val}</span></div>`;
 }
 
-function drawMarkers(evs, X, W) {
-  const box = $("markers");
-  box.innerHTML = "";
-  const placed = [];
-  for (const e of evs) {
-    const x = X(e.t);
-    let row = 0;
-    while (placed.some(q => q.row === row && Math.abs(q.x - x) < 22)) row++;
-    placed.push({ x, row });
-    const mk = el("div", "marker");
-    mk.style.left = x + "px";
-    mk.style.top = (-6 + row * 24) + "px";
-    const i = el("i", e.mid ? "mid" : "");
-    i.style.setProperty("--mc", e.color);
-    i.style.setProperty("--icon", `url("${e.icon}")`);
-    mk.title = `${e.text} at ${fmtTime(e.t)}`;
-    mk.append(i);
-    box.append(mk);
-  }
-}
-
-// ---------- item purchases ----------
-// players[].items holds every purchase with its time; item_id is a hash of the item's class name (gamedata.js ITEMS).
-// Any graph that draws heroes can show them, for 1 to 3 picked heroes, one row each, so the icons stay readable.
-// On by default where buys explain the line: the Power graphs and the damage graphs.
-const itemsFit = g => g.kind !== "lead" && !grouped(g) && !["panels", "lobby"].includes(brkView(g));
-const itemsOn = g => itemsFit(g) && !!state.itemPref;
-const ITEM_SLOTS = { w: { name: "Weapon", c: "#E89A3C" }, v: { name: "Vitality", c: "#7FC241" }, s: { name: "Spirit", c: "#B77CF0" } };
-// Kills and deaths as dots: one row per team (the team of the hero who died), a dot at the exact second. On by default on the
-// Kills and Deaths graphs. Once heroes are picked, the dots that involve them stay bright and the rest fade.
-const deathsFit = g => g.kind !== "lead" && g.kind !== "lanes" && !["panels", "lobby"].includes(brkView(g)) && state.match && deathEvents().length > 0;
-const deathsOn = g => deathsFit(g) && !!state.deathPref;
-const DEATH_ROW = 30;
-function drawDeaths(on, X, top, right) {
-  const box = $("deathRows");
-  box.innerHTML = "";
-  if (!on) return;
-  const picked = state.sel && state.sel.size ? state.sel : null;
-  [state.leftTeam, 1 - state.leftTeam].forEach((team, r) => {
-    const T = TEAMS[team], row = el("div", "deathRow");
-    row.style.top = top + r * DEATH_ROW + "px";
-    row.innerHTML = `<span class="who" style="left:${right + 14}px;color:${T.c}">${esc(T.name)} deaths</span>`;
-    const lastX = [-99, -99];
-    for (const e of deathEvents().filter(e => e.victim.team === team)) {
-      const x = X(e.t), lane = x - lastX[0] >= 14 ? 0 : x - lastX[1] >= 14 ? 1 : 0; // two sub-rows so close dots don't hide each other
-      lastX[lane] = x;
-      const d = el("i", "deathDot" + (picked && !picked.has(e.victim.slot) && !(e.killer && picked.has(e.killer.slot)) && !e.assists.some(a => picked.has(a.slot)) ? " dim" : ""));
-      d.style.left = x + "px"; d.style.top = 1 + lane * 14 + "px"; d.style.setProperty("--dc", T.c);
-      d.dlcDeath = e; // the hover box reads it (title tooltips don't show in the game's browser)
-      row.append(d);
-    }
-    box.append(row);
-  });
-}
-function itemsOf(p) {
-  const I = window.ITEMS || {};
-  return (p.raw.items || []).filter(it => I[it.item_id]).map(it => {
-    const [name, slot, tier, icon] = I[it.item_id];
-    return { t: Number(it.game_time_s) || 0, sold: Number(it.sold_time_s) || 0, name, slot, tier, icon };
-  }).sort((a, b) => a.t - b.t);
-}
-function itemBuyers(g) {
-  if (!itemsOn(g)) return null;
-  const sel = g.kind === "breakdown" ? pickedList("breakdown") : state.players.filter(p => selNow().has(p.slot));
-  return sel.length >= 1 && sel.length <= 3 ? sel : null;
-}
-function drawItems(buyers, X, top, right) {
-  const box = $("itemRows");
-  box.innerHTML = "";
-  if (!buyers) return;
-  buyers.forEach((p, r) => {
-    const y = top + r * 32;
-    const row = el("div", "itemRow");
-    row.style.top = y + "px";
-    row.innerHTML = `<span class="who" style="left:${right + 14}px;--pc:${colorOf(p)}">${portraitImg(p)}</span>`;
-    let lastX = -99;
-    for (const it of itemsOf(p)) {
-      const x = Math.max(X(it.t), lastX + 25); // X clamps buys before the axis start to its left edge
-      lastX = x;
-      const i = el("i", "itemIcon" + (it.sold ? " sold" : "")); // sold later: full color, with a corner mark
-      i.style.left = x + "px";
-      i.style.setProperty("--sc", ITEM_SLOTS[it.slot].c);
-      i.style.backgroundImage = `url("assets/items/${it.icon}.webp")`;
-      i.title = `${p.hero}: ${it.name} (${ITEM_SLOTS[it.slot].name}, tier ${it.tier})\nBought ${fmtTime(it.t)}${it.sold ? ", sold " + fmtTime(it.sold) : ""}`;
-      row.append(i);
-    }
-    box.append(row);
-  });
-}
 // The game's own painted card, uncropped, for the places Valve shows it as a rectangle (Lane Stats, the hover box, the MVP tab).
 // The round chips keep the masked art. Heroes without card art leave the gray gradient empty.
 function cardImg(p) { return p.card ? `<img src="${p.card}" alt="" onerror="this.remove()">` : ""; }
 function portraitImg(p) { return `<img src="${p.img}" alt="" style="--coin:${TEAMS[p.team].coin}">`; }
-function boughtHtml(buyers, t0, t1) {
-  const rows = [];
-  for (const p of buyers) for (const it of itemsOf(p)) if (it.t > t0 && it.t <= t1) rows.push({ p, it });
-  if (!rows.length) return "";
-  rows.sort((a, b) => a.it.t - b.it.t);
-  return `<div class="bought"><div class="bh">Bought since ${fmtTime(Math.max(0, t0))}</div>` + rows.map(({ p, it }) =>
-    `<div class="row"><span class="sw" style="background:${colorOf(p)}"></span><i class="itemIcon sm" style="--sc:${ITEM_SLOTS[it.slot].c};background-image:url('assets/items/${it.icon}.webp')"></i><span class="n">${esc(it.name)}${buyers.length > 1 ? ` <small>${esc(p.hero)}</small>` : ""}</span><span class="v t">${fmtTime(it.t)}</span></div>`).join("") + `</div>`;
-}
-
 // ---------- hints under the chart ----------
 function renderLines(series, g) {
   const row = $("lineRow"), box = $("lines");
@@ -1428,7 +1411,6 @@ function renderLines(series, g) {
   const hints = [];
   if (g.kind === "lead") hints.push(`Above the line: ${TEAMS[state.leftTeam].color} ahead. Below: ${TEAMS[1 - state.leftTeam].color} ahead. Hero picks don't change this graph.`);
   if (d) hints.push(`Above the line: ${d.player.hero} ahead. Below: ${d.other.hero} ahead.`);
-  if (itemsOn(g) && !itemBuyers(g) && brkView(g) !== "lobby") hints.push("Pick 1 to 3 heroes to see when they bought each item.");
   for (const h of hints) box.append(el("span", "lineHint", h));
   row.hidden = !hints.length;
   document.body.classList.toggle("noLines", row.hidden);
@@ -1590,15 +1572,15 @@ function renderOverview(g0, g) {
 
   // Team totals over time, sampled every 30 seconds.
   const times = []; for (let t = 0; t < dur; t += 30) times.push(t); times.push(dur);
-  const teams = [state.leftTeam, 1 - state.leftTeam].map(tm => {
+  const teams = (on.length ? [state.leftTeam, 1 - state.leftTeam] : []).map(tm => {
     const ps = heroes.filter(p => p.team === tm);
     const per = ps.map(p => heroTotalPts(g0, p, times));
     return { tm, n: ps.length, pts: times.map((t, k) => [t, per.reduce((a, pts) => a + pts[k][1], 0)]) };
   }).filter(x => x.n);
-  const W = box.offsetWidth || 1480, CH = 176, l = 14, r = W - 120, top = 40, bot = CH - 30;
+  const W = box.offsetWidth || 1480, CW = W - 28, CH = 176, l = 4, r = CW - 138, top = 40, bot = CH - 30;
   const ymax = Math.max(1, ...teams.flatMap(x => x.pts.map(q => q[1])));
   const X = t => l + (t / dur) * (r - l), Y = v => bot - (v / ymax) * (bot - top);
-  let svg = `<svg class="ovChart" viewBox="0 0 ${W} ${CH}" width="${W}" height="${CH}">`;
+  let svg = `<svg class="ovChart" viewBox="0 0 ${CW} ${CH}" width="${CW}" height="${CH}">`;
   svg += `<line x1="${l}" x2="${r}" y1="${bot}" y2="${bot}" stroke="#fff" stroke-opacity=".12"/>`;
   for (let t = 0; t <= dur; t += dur > 1500 ? 600 : 300) svg += `<text x="${X(t)}" y="${CH - 8}" text-anchor="${t ? "middle" : "start"}">${fmtTime(t)}</text>`;
   const ends = teams.map(x => ({ x, y: Y(x.pts[x.pts.length - 1][1]) })).sort((a, b) => a.y - b.y);
@@ -1609,7 +1591,7 @@ function renderOverview(g0, g) {
     svg += `<text class="ovEnd" x="${r + 10}" y="${y + 6}" style="fill:${c}">${fmtShort(x.pts[x.pts.length - 1][1], g)}</text>`;
   }
   svg += `</svg>`;
-  let h = `<div class="ovTop"><div class="cap">${everyone ? "Team totals" : "Team totals, picked heroes"}<span class="sub">All line types added up</span></div>${svg}</div>`;
+  let h = on.length ? `<div class="ovTop"><div class="cap">${everyone ? "Team totals" : "Team totals, picked heroes"}<span class="sub">All line types added up</span></div>${svg}</div>` : "";
 
   // The ranked table, grouped by team.
   const colW = cols.length ? Math.min(150, Math.floor((W - 420) / cols.length)) : 0;
@@ -1721,10 +1703,11 @@ function setStatus(msg, err, retry) {
 
 // ---------- boot ----------
 if (!EMBED) document.body.classList.add("standalone");
-loadMarks();
+GraphMarkers.load();
 fit();
 window.addEventListener("resize", () => { fit(); renderAll(); });
 wireDropDown();
+GraphMarkers.wireMenus();
 document.querySelectorAll("#tabs .tab").forEach(b => b.onclick = () => { state.tab = b.dataset.tab; closeMenu(); renderAll(); });
 if (["mvp", "matchups"].includes(params.get("tab"))) state.tab = params.get("tab");
 buildDropDown();
@@ -1750,7 +1733,11 @@ $("matchForm").onsubmit = ev => {
   loadMatch(id);
 };
 // In game, ESC or the overlay's own Close closes it. The page can also ask Panorama to close via the title.
-document.addEventListener("keydown", ev => { if (ev.key === "Escape" && EMBED && $("ddMenu").hidden) document.title = "DLC_CLOSE:" + Date.now(); });
+document.addEventListener("keydown", ev => {
+  if (ev.key !== "Escape") return;
+  if (GraphMarkers.close(true)) { ev.preventDefault(); return; }
+  if (EMBED && $("ddMenu").hidden) document.title = "DLC_CLOSE:" + Date.now();
+});
 window.addEventListener("hashchange", () => { if (state.match) { applyViewer(); renderAll(); } });
 // Tell the mod the page has drawn, so it can show the panel without the browser's gray flash.
 // A hidden browser may not run animation frames, so a timer backs it up.

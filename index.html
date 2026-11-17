@@ -65,9 +65,58 @@
         <div class="graphOption" id="optLaneTime" hidden></div>
         <div class="graphOption" id="optMarks">
           <span class="optionLabel">Markers:</span>
-          <button class="graphOptionButton toggle" id="markObj" title="Guardians, Walkers, Shrines, Patron and Mid Boss. Click to show or hide.">Objectives</button>
-          <button class="graphOptionButton toggle" id="markDeaths" title="Every kill: a dot at the exact second, one row per team (the team of the hero who died). Hover a dot for who killed whom. Click to show or hide.">Deaths</button>
-          <button class="graphOptionButton toggle" id="markItems" title="When each picked hero bought each item (1 to 3 heroes). A red dot means they sold it later. Click to show or hide.">Items</button>
+          <div class="markControl">
+            <button class="graphOptionButton markToggle" id="markObj" data-mark="obj" aria-pressed="false">Objectives</button>
+            <button class="graphOptionButton markArrow" aria-label="Objective marker options" aria-expanded="false" aria-controls="objMenu"></button>
+            <div class="markMenu" id="objMenu" role="group" aria-label="Objectives" hidden>
+              <div class="markHeading">Objectives</div>
+              <div id="markTypes"></div>
+              <fieldset>
+                <legend>Lines down the graph</legend>
+                <div class="markChoices">
+                  <label><input type="radio" name="guides" value="big"><span>Big ones</span></label>
+                  <label><input type="radio" name="guides" value="all"><span>All</span></label>
+                  <label><input type="radio" name="guides" value="none"><span>None</span></label>
+                </div>
+              </fieldset>
+            </div>
+          </div>
+          <div class="markControl">
+            <button class="graphOptionButton markToggle" id="markDeaths" data-mark="deaths" aria-pressed="false">Deaths</button>
+            <button class="graphOptionButton markArrow" aria-label="Death marker options" aria-expanded="false" aria-controls="deathMenu"></button>
+            <div class="markMenu" id="deathMenu" role="group" aria-label="Deaths" hidden>
+              <div class="markHeading">Deaths</div>
+              <fieldset>
+                <legend>Show fights for</legend>
+                <div class="markChoices">
+                  <label><input type="radio" name="scope" value="picked"><span>Picked heroes</span></label>
+                  <label><input type="radio" name="scope" value="everyone"><span>Everyone</span></label>
+                </div>
+              </fieldset>
+              <label class="markCheck"><input type="checkbox" name="skulls"><span>Deaths, with time dead</span></label>
+              <label class="markCheck"><input type="checkbox" name="kills"><span>Kills, with victim portraits</span></label>
+              <label class="markCheck"><input type="checkbox" name="assists"><span>Assists <small>(best guess)</small></span></label>
+              <label class="markCheck markSplit"><input type="checkbox" name="fadeDead"><span>Fade a hero's lines while dead</span></label>
+            </div>
+          </div>
+          <div class="markControl">
+            <button class="graphOptionButton markToggle" id="markItems" data-mark="items" aria-pressed="false">Items</button>
+            <button class="graphOptionButton markArrow" aria-label="Item marker options" aria-expanded="false" aria-controls="itemMenu"></button>
+            <div class="markMenu" id="itemMenu" role="group" aria-label="Items" hidden>
+              <div class="markHeading">Items</div>
+              <fieldset>
+                <legend>Show</legend>
+                <div class="markChoices">
+                  <label><input type="radio" name="buys" value="all"><span>Every buy</span></label>
+                  <label><input type="radio" name="buys" value="tier3"><span>Tier 3 and up</span></label>
+                  <label><input type="radio" name="buys" value="final"><span>Final build only</span></label>
+                </div>
+              </fieldset>
+              <label class="markCheck"><input type="checkbox" name="upgradeBadge"><i class="purchaseBadge upgrade" aria-hidden="true"></i><span>Upgrade badges</span></label>
+              <label class="markCheck"><input type="checkbox" name="saleBadge"><i class="purchaseBadge sale" aria-hidden="true"></i><span>Sale badges</span></label>
+              <p>Faded items left the build.</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -80,8 +129,9 @@
       <div id="plotHeads" class="plotHeads"></div>
       <div id="focusTags" class="focusTags"></div>
       <div id="markers" class="markers"></div>
-      <div id="itemRows" class="itemRows"></div>
-      <div id="deathRows" class="itemRows"></div>
+      <div id="markerHover" class="markerHover" aria-hidden="true" hidden>
+        <i class="ownedBar"></i><i class="itemGuide"></i><i class="itemGuide end"></i>
+      </div>
       <div id="tooltip" class="tooltip" hidden></div>
       <div id="empty" class="empty" hidden></div>
     </div>
@@ -114,6 +164,7 @@
 <script src="gamedata.js"></script>
 <script src="heronorms.js"></script>
 <script src="scoring.js"></script>
+<script src="graph-markers.js"></script>
 <script src="app.js"></script>
 <script src="mvp.js"></script>
 <script src="matchups.js"></script>
