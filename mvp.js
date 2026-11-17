@@ -155,7 +155,7 @@ window.renderMvp = function renderMvp() {
       ${cardFace(p, "row")}
       <span class="who"><span class="hn">${esc(heroName(p))}${p.left ? ` <span class="leftTag" title="Left the match at ${fmtTime(p.left)}">LEFT</span>` : ""}</span>${rankHtml(p.badge) || `<span class="rank none">Unranked</span>`}</span>
       ${valve ? divBar(r.score, top, "") : catBar(r, top)}
-      <span class="score">${valve ? r.score.toFixed(1) : Math.round(r.score)}</span>
+      <span class="score ${valve ? dvClass(r.score, 1) : ""}"${valve ? ` title="${dvWord(r.score)} for the hero"` : ""}>${valve ? dv(r.score, 1) : Math.round(r.score)}</span>
       <span class="valve">${v ? `<span class="badge${p.mvp > 1 ? " key" : ""}" title="Valve's pick">${p.mvp === 1 ? "MVP" : "KEY"}</span>` : ""}</span>
     </button>`;
   }
@@ -251,7 +251,7 @@ function whyScaled(rows, pick, mode) {
     </div>`;
   }
   h += `</div>`;
-  h += whenHtml(p) + soulsDropHtml(p);
+  h += whenHtml(p);
   if (!state.mvpAll) h += accoladesHtml(p);
   h += `<button class="graphOptionButton allBtn" id="mvpAll">${state.mvpAll ? "Show fewer" : `Show all stats (${pick.parts.length})`}</button><div class="whyFoot">${mode === "impact" ? `Deaths count in reverse: fewest deaths in the match gets full points.${mvpSplit() ? "" : " This game was too short to split early and late, so damage and assists count once."}` : "Raw counts each scoreboard stat the same. Deaths count in reverse."} Crowd control isn't scored; see it on the Matchups tab.</div></div>`;
   return h;
@@ -267,6 +267,14 @@ function divBar(v, scale, cls) {
   return `<span class="divBar ${cls || ""}"><i style="${v >= 0 ? `left:50%;background:${GREEN}` : `right:50%;background:${RED}`};width:${w}%"></i></span>`;
 }
 const signed = (v, d) => (v >= 0 ? "+" : "-") + Math.abs(v).toFixed(d);
+// Green and red never carry meaning alone: a value against the hero average gets a sign and an up or down triangle (DESIGN.md section 2).
+// The color class (pos, neg or none) goes on the element that wraps this, so the triangle takes the same color.
+const dvClass = (v, d) => { const r = Number(v.toFixed(d)); return r > 0 ? "pos" : r < 0 ? "neg" : ""; };
+function dv(v, d) {
+  const c = dvClass(v, d);
+  return `<span class="dv">${c ? `<i class="tri ${c === "pos" ? "up" : "down"}" aria-hidden="true"></i>` : ""}${c ? signed(v, d) : (0).toFixed(d)}</span>`;
+}
+const dvWord = v => v > 0 ? "Above average" : v < 0 ? "Below average" : "Average";
 
 // Computed once per match.
 function valveCache() {
@@ -334,7 +342,7 @@ function whyValve(rows, pick) {
         <div class="meta"><span style="color:${T.c}">${T.color}</span> · ${won ? "Won" : "Lost"} · ${p.lane && LANES_BY_COLOR[p.lane] ? LANES_BY_COLOR[p.lane] + " lane" : "No lane"}${p.left ? ` · <span class="leftTag">Left at ${fmtTime(p.left)}</span>` : ""}</div>
         ${rankHtml(p.badge) || `<span class="rank none">Unranked</span>`}
       </div>
-      <div class="whyScore"><b>${pick.score.toFixed(2)}</b><span>${ordinal(pick.place)} of ${rows.length}</span></div>
+      <div class="whyScore"><b>${signed(pick.score, 2)}</b><span>${ordinal(pick.place)} of ${rows.length}</span></div>
     </div>
     <p class="summary">${esc(summary)}${valveLine ? `<br><span class="vl">${esc(valveLine)}</span>` : ""}</p>
     <div class="whyTable valve">
@@ -344,13 +352,13 @@ function whyValve(rows, pick) {
       <span class="sn">${esc(x.label)}</span>
       <span class="r v">${fmtStat(x.v)}</span>
       <span class="r lb">${fmtStat(x.avg)}</span>
-      <span class="pb">${divBar(x.pts, maxAbs, "wide")}<em class="${x.pts >= 0 ? "pos" : "neg"}">${signed(x.pts, 2)}</em></span>
+      <span class="pb">${divBar(x.pts, maxAbs, "wide")}<em class="${dvClass(x.pts, 2)}" title="${dvWord(x.pts)} for this hero">${dv(x.pts, 2)}</em></span>
     </div>`;
   }
   h += `</div>`;
   if (Math.abs(v.offset) >= 0.05) h += `<div class="vNote">Includes a hero adjustment of ${signed(v.offset, 2)}.</div>`;
   for (const n of notes) h += `<div class="vNote">${esc(n)}</div>`;
-  h += whenHtml(p) + soulsDropHtml(p);
+  h += whenHtml(p);
   h += `<div class="whyFoot">Six stats, each compared with the average for that hero over about 24,000 recent matches. Matches Valve's MVP in about 98 of 100 matches. Kills, assists and hero damage plus ally healing count fully, objective damage half, deaths minus half, souls one fifth.</div></div>`;
   return h;
 }
@@ -365,9 +373,9 @@ function whenHtml(p) {
     return `${ordinal(1 + all.filter(x => x > val).length)} of ${all.length}`;
   };
   const scale = Math.max(0.5, ...ph.map(r => Math.abs(r.early_valve || 0)), ...ph.map(r => Math.abs(r.late_valve || 0)));
-  const bar = (label, key) => `<div class="whenRow"><span class="wl">${label}</span>${divBar(me[key], scale, "wide")}<span class="wv ${me[key] >= 0 ? "pos" : "neg"}">${signed(me[key], 1)}</span><span class="wk">${rankOf(key, me[key])}</span></div>`;
+  const bar = (label, key) => `<div class="whenRow"><span class="wl">${label}</span>${divBar(me[key], scale, "wide")}<span class="wv ${dvClass(me[key], 1)}" title="${dvWord(me[key])} for this hero">${dv(me[key], 1)}</span><span class="wk">${rankOf(key, me[key])}</span></div>`;
   const eLabel = me.early_time_s === 900 ? "Before 15:00" : `Before ${fmtTime(me.early_time_s)}`;
-  let h = `<div class="when" title="${esc(tip)}"><div class="accHead"><span>When they contributed</span></div>${bar(eLabel, "early_valve")}`;
+  let h = `<div class="when" title="${esc(tip)}"><div class="accHead"><span>When they contributed</span><span class="accSub">Graded separately from the total</span></div>${bar(eLabel, "early_valve")}`;
   if (me.late_valve == null) h += `<div class="vNote">Match too short to split.</div>`;
   else {
     h += bar("After 15:00", "late_valve");
@@ -378,31 +386,3 @@ function whenHtml(p) {
   return h + `</div>`;
 }
 
-// ---- "Souls dropped on death": Valve's gold_death_loss counter. Not part of any score. ----
-function soulsDropHtml(p) {
-  const lossOf = q => { const st = q.stats; return st.length ? st[st.length - 1].gold_death_loss || 0 : 0; };
-  const total = lossOf(p);
-  if (!total) return "";
-  const most = Math.max(...state.players.map(lossOf));
-  const teamSum = tm => state.players.filter(q => q.team === tm).reduce((a, q) => a + lossOf(q), 0);
-  const fmt = n => Math.round(n).toLocaleString("en-US");
-  // The snapshot interval with the largest increase, and the deaths inside it.
-  let prev = 0, pt = 0, bestInc = 0, bt0 = 0, bt1 = 0;
-  for (const s of p.stats) {
-    const inc = (s.gold_death_loss || 0) - prev;
-    if (inc > bestInc) { bestInc = inc; bt0 = pt; bt1 = s.time_stamp_s; }
-    prev = s.gold_death_loss || 0; pt = s.time_stamp_s;
-  }
-  let big = "";
-  if (bestInc > 0) {
-    const ds = (p.raw.death_details || []).filter(d => (d.game_time_s || 0) > bt0 && (d.game_time_s || 0) <= bt1);
-    if (ds.length === 1) big = `${fmt(bestInc)} at ${fmtTime(ds[0].game_time_s)}`;
-    else if (ds.length > 1) big = `about ${fmt(bestInc)} over ${ds.length} deaths between ${fmtTime(bt0)} and ${fmtTime(bt1)}`;
-    else big = `about ${fmt(bestInc)} between ${fmtTime(bt0)} and ${fmtTime(bt1)}`;
-  }
-  const tip = "Valve's counter of unsecured souls a player was carrying when they died. The data does not say who picked them up.";
-  const a = state.leftTeam, b = 1 - a;
-  return `<div class="dropped" title="${esc(tip)}"><div class="accHead"><span>Souls dropped on death</span></div>
-    <div class="dropLine"><b>${fmt(total)} souls</b>${total === most ? " (most in the match)" : ""}${big ? ` <span class="dropBig">Biggest drop: ${esc(big)}.</span>` : ""}</div>
-    <div class="dropTeams">${esc(TEAMS[a].name)} dropped ${fmt(teamSum(a))} in total, ${esc(TEAMS[b].name)} ${fmt(teamSum(b))}.</div></div>`;
-}
