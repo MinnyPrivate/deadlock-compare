@@ -74,6 +74,11 @@
 
     <div class="graphCtn" id="graphCtn">
       <svg id="chart" role="img" aria-label="Match graph"></svg>
+      <svg id="chartLines" class="chartLayer" aria-hidden="true"></svg>
+      <svg id="chartFocus" class="chartLayer" aria-hidden="true"></svg>
+      <div id="xhairs" class="xhairs"></div>
+      <div id="plotHeads" class="plotHeads"></div>
+      <div id="focusTags" class="focusTags"></div>
       <div id="markers" class="markers"></div>
       <div id="itemRows" class="itemRows"></div>
       <div id="deathRows" class="itemRows"></div>
@@ -81,12 +86,14 @@
       <div id="empty" class="empty" hidden></div>
     </div>
 
+    <div id="overview" class="overview"></div>
+    <aside id="lineLegend" class="lineLegend" hidden></aside>
+
     <div id="laneView" class="laneView"></div>
 
     <div class="lineRow" id="lineRow" hidden>
       <span class="optionLabel">Lines:</span>
       <div id="lines" class="lines"></div>
-      <span class="lineHint" id="lineHintStatic">Click to hide a line type. Ctrl+Click to show only that one.</span>
     </div>
   </main>
 
@@ -99,6 +106,7 @@
     <button type="submit" class="graphOptionButton">Load</button>
   </form>
   <div id="status" class="status"></div>
+  <div id="perf" class="perf" hidden></div>
 </div>
 
 <script src="heroes.js"></script>

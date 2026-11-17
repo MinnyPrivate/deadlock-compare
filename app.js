@@ -8,8 +8,10 @@ const PLAYER_COLORS = [
   "#FF9A3C", "#C3A6FF", "#38E8B0", "#FF8FB1", "#C6EE4A", "#5C9DFF",
 ];
 // Player comparison graphs show few heroes, so they get the most distinct colors in pick order.
-const PAIR_COLORS = ["#58D86A", "#8C83FF", "#FFD23F", "#F25CE0", "#3FCBFF", "#FF9A3C"];
-const DASHES = ["", "10 6", "2 5", "14 5 3 5", "1 8", "22 6", "6 3 1 3 1 3"];
+// Player-Specific graphs: color is the line type (Fountain always cyan), and with two heroes the second one is dashed.
+const TYPE_PAL = ["#3FCBFF", "#F25CE0", "#FFD23F", "#FF9A3C", "#58D86A", "#C3A6FF", "#FF5A5F", "#5C9DFF", "#C6EE4A", "#FF8FB1", "#38E8B0", "#8C83FF"];
+const TYPE_FIXED = { "Fountain": "#3FCBFF" };
+const HERO_DASH = ["", "9 6"];
 const TEAMS = {
   0: { name: "Hidden King", color: "Hidden King", c: "#D4860B", coin: "#6F3806", icon: "assets/ui/icon_team1.png" },
   1: { name: "Archmother", color: "Archmother", c: "#4D75C3", coin: "#243265", icon: "assets/ui/icon_team2.png" },
@@ -45,7 +47,7 @@ const GRAPHS = [
   { group: "General", id: "weapon_power", label: "Weapon Power", kind: "general", extra: true, power: true, level: true, get: s => s.weapon_power, start: () => 0 },
   { group: "General", id: "spirit_power", label: "Spirit Power", kind: "general", extra: true, power: true, level: true, get: s => s.tech_power, start: () => 0 },
 
-  { group: PS, id: "souls_source", label: "Souls by Source", kind: "breakdown", defaultOn: [0, 2, 3], series: [
+  { group: PS, id: "souls_source", label: "Souls by Source", kind: "breakdown", series: [
       { label: "Enemy Kills", get: s => GS(s, [1]) },
       { label: "Kill Assists", get: s => GS(s, [6]) },
       { label: "Troopers", get: s => GS(s, [2]) },
@@ -56,14 +58,14 @@ const GRAPHS = [
   ], sub: "These won't add up exactly to total souls" },
   // Golden statue buffs, from power_up_buffs: the exact second of every pickup, so these lines step at the real times.
   { group: PS, id: "perm_buffs", label: "Permanent Buffs", kind: "breakdown", steps: true, whole: true, dyn: () => buffSeries(), sub: "Golden statue buffs picked up, by type" },
-  { group: PS, id: "dmg_breakdown", label: "Damage Breakdown", kind: "breakdown", obj: true, defaultOn: [0, 1, 3], series: [
+  { group: PS, id: "dmg_breakdown", label: "Damage Breakdown", kind: "breakdown", obj: true, series: [
       { label: "Enemy Players", get: s => s.player_damage },
       { label: "Troopers", get: s => s.creep_damage },
       { label: "Haunts", get: s => s.neutral_damage },
       { label: "Objectives", get: s => s.boss_damage },
   ] },
   // From Valve's damage matrix (every 3 minutes). Damage by type counts every target: heroes, troopers, haunts and objectives.
-  { group: PS, id: "dmg_type", label: "Damage Dealt by Type", kind: "breakdown", defaultOn: [0, 1, 2], series: [
+  { group: PS, id: "dmg_type", label: "Damage Dealt by Type", kind: "breakdown", series: [
       { label: "Gun", tl: p => mtxLine(p, 0, ["Bullet"]) },
       { label: "Ability", tl: p => mtxLine(p, 0, ["Ability"]) },
       { label: "Melee", tl: p => mtxLine(p, 0, ["Melee"]) },
@@ -131,9 +133,8 @@ function sourceLabel(n) {
   for (const [rx, label] of REGEN_NAMES) if (rx.test(n)) return label;
   return typeof muSourceName === "function" ? muSourceName(n.split("/")[0]) : n;
 }
-const TOP_SOURCES = 5;
 // Healing and Regen by Type: one line type per source (same names merged), ranked by the picked heroes' totals.
-// The top 5 and "Other" (everything else added up) are on at first; every other source is one click away.
+// Every source gets its own row in the legend, so nothing is lumped into "Other".
 function sourceSeries(type) {
   const m = mtxParse();
   if (!m) return [];
@@ -149,12 +150,7 @@ function sourceSeries(type) {
     }
   }
   const ranked = Object.keys(tot).filter(l => tot[l] > 0).sort((a, b) => tot[b] - tot[a]);
-  const top = ranked.slice(0, TOP_SOURCES), rest = ranked.slice(TOP_SOURCES);
-  const series = top.map(l => ({ label: l, tl: p => mtxLine(p, type, [...keys[l]]) }));
-  if (rest.length) series.push({ label: "Other", tl: p => mtxLine(p, type, rest.flatMap(l => [...keys[l]])) });
-  for (const l of rest) series.push({ label: l, tl: p => mtxLine(p, type, [...keys[l]]) });
-  series.defaultOn = series.map((_, i) => i).slice(0, top.length + (rest.length ? 1 : 0));
-  return series;
+  return ranked.map(l => ({ label: l, tl: p => mtxLine(p, type, [...keys[l]]) }));
 }
 // Kills and deaths: death_details has the exact second of every death and who got the kill, so these are whole numbers that
 // step at the real time. (Valve's 3-minute snapshots would draw slopes, like 4.3 deaths.) Older matches without it use the snapshots.
@@ -237,9 +233,7 @@ function buffSeries() {
     tot[k] = (tot[k] || 0) + (b.pickup_times_s || []).length;
   }
   const kinds = Object.keys(tot).filter(k => tot[k] > 0).sort((a, b) => tot[b] - tot[a]);
-  const series = [{ label: "All Buffs", tl: p => buffLine(p, null) }].concat(kinds.map(k => ({ label: BUFF_NAMES[k] || k, tl: p => buffLine(p, k) })));
-  series.defaultOn = series.map((_, i) => i).slice(0, 4);
-  return series;
+  return [{ label: "All Buffs", tl: p => buffLine(p, null) }].concat(kinds.map(k => ({ label: BUFF_NAMES[k] || k, tl: p => buffLine(p, k) })));
 }
 function buffLine(p, kind) {
   const times = [];
@@ -257,7 +251,6 @@ function prepDynamicGraphs(force) {
   for (const g of GRAPHS) if (g.dyn && (force || g._key !== key)) {
     g._key = key;
     g.series = g.dyn();
-    g.defaultOn = g.series.defaultOn;
   }
 }
 
@@ -272,6 +265,7 @@ const state = {
   sel: null, // the heroes you picked; null until you pick, then it stays the same on every graph
   graph: "souls", mode: "value", diff: false,
   objPref: null, itemPref: null, deathPref: null, lineOv: {}, hiddenGroups: new Set(),
+  focus: null, folds: {}, tray: [], // hover focus key ("t3" a line type, "s5" a hero), legend groups opened, overview compare tray
   laneOf: null, laneTime: 540, laneHover: null,
   leftTeam: 0, me: null,
   tab: "graphs", mvpPick: null, mvpMode: "valve",
@@ -279,31 +273,40 @@ const state = {
 };
 const $ = id => document.getElementById(id);
 const graphNow = () => GRAPHS.find(g => g.id === state.graph);
-// Until you pick heroes, the General graphs show everyone and the Player-Specific ones show nobody (each hero there
-// has several lines, so you choose whose to look at). Once you pick, those heroes stay picked on every graph until you change them.
-const selFor = kind => state.sel || new Set(kind === "breakdown" ? [] : state.players.map(p => p.slot));
+// You build the view: nothing is drawn until you pick it. No hero is picked when a match opens; once you pick heroes,
+// they stay picked on every graph until you change them. (kind is kept for the callers; every graph shares one pick.)
+const selFor = kind => state.sel || new Set();
 const selNow = () => selFor(graphNow().kind);
 const setSel = s => { state.sel = s; };
 // Picked heroes in order, for the graphs that color them by pick order.
 const pickedList = kind => [...selFor(kind)].map(s => state.players.find(p => p.slot === s)).filter(Boolean);
+// On the Player-Specific graphs color means the line type, so a hero is told apart by solid or dashed instead.
+// Their portrait bar is then off-white (dashed for the second hero) rather than a color that would mean a line type.
 function colorOf(p) {
-  if (graphNow().kind !== "breakdown") return p.color;
-  const sel = selFor("breakdown");
-  if (sel.size > PAIR_COLORS.length) return p.color; // more heroes than pair colors: everyone keeps their own
-  const i = [...sel].indexOf(p.slot);
-  return i >= 0 ? PAIR_COLORS[i] : p.color;
+  return graphNow().kind === "breakdown" ? "#FFEFD7" : p.color;
 }
-// Player comparison graphs open with at most 3 line types (g.defaultOn); the rest are one click away.
-// What you turn on or off is kept by line name, so it stays when the lines are re-ranked for other heroes.
+// Every graph opens with no line types on (openGraph clears them). What you turn on is kept by name while you stay
+// on the graph, so it survives the lines being re-ranked when you pick other heroes.
 function lineOn(g, i) {
-  const ov = state.lineOv[g.id], label = g.series[i].label;
-  if (ov && ov.has(label)) return ov.get(label);
-  return (g.defaultOn || [0, 1, 2]).includes(i);
+  const ov = state.lineOv[g.id];
+  return !!(ov && ov.get(g.series[i].label));
+}
+function openGraph(id) {
+  state.graph = id;
+  delete state.lineOv[id];
+  state.focus = null;
 }
 function setLine(g, i, on) { (state.lineOv[g.id] = state.lineOv[g.id] || new Map()).set(g.series[i].label, on); }
 function visibleCats(g) { return g.series.map((s, i) => i).filter(i => lineOn(g, i)); }
-// Markers: one setting for every graph once you change it.
-function objOn(g) { return state.objPref ?? !!g.obj; }
+// Markers start off for a new viewer. Once you turn one on or off it stays that way on every graph and every match.
+const MARK_KEY = "postmortem.markers";
+function loadMarks() {
+  try { const m = JSON.parse(localStorage.getItem(MARK_KEY) || "{}"); state.objPref = m.obj ?? null; state.itemPref = m.items ?? null; state.deathPref = m.deaths ?? null; } catch (e) { /* storage blocked: defaults */ }
+}
+function saveMarks() {
+  try { localStorage.setItem(MARK_KEY, JSON.stringify({ obj: state.objPref, items: state.itemPref, deaths: state.deathPref })); } catch (e) { /* storage blocked */ }
+}
+function objOn(g) { return !!state.objPref; }
 // View As: Value and Per Minute work on most graphs; % of Team, Teams and Lanes only on the General graphs that add up.
 function modeNow(g) {
   const m = state.mode;
@@ -536,6 +539,7 @@ function setup(mi) {
   const sel = (params.get("players") || "").split(",").filter(x => /^\d+$/.test(x.trim())).map(Number).filter(n => state.players.some(p => p.slot === n));
   state.sel = sel.length ? new Set(sel) : null;
   state.laneOf = null;
+  state.lineOv = {}; state.tray = []; state.focus = null; // a new match opens with nothing drawn
   prepDynamicGraphs(true);
   state.events = buildEvents(mi);
   $("matchInput").value = mi.match_id || "";
@@ -628,7 +632,8 @@ function renderTop() {
     ctn.innerHTML = "";
     const ps = state.players.filter(p => p.team === team);
     for (const p of ps) {
-      const d = el("button", "player" + (sel.has(p.slot) ? " sel" : "") + (mvp && state.mvpPick === p.slot ? " pick" : ""));
+      const dash2 = !mvp && !lanesG && brkView(graphNow()) === "overlay" && [...sel].indexOf(p.slot) === 1; // the dashed hero
+      const d = el("button", "player" + (sel.has(p.slot) ? " sel" : "") + (mvp && state.mvpPick === p.slot ? " pick" : "") + (dash2 ? " dash2" : ""));
       d.setAttribute("aria-pressed", mvp ? String(state.mvpPick === p.slot) : String(sel.has(p.slot)));
       d.style.setProperty("--tc", T.c); d.style.setProperty("--coin", T.coin); d.style.setProperty("--pc", colorOf(p));
       const rk = rankOf(p.badge);
@@ -681,7 +686,7 @@ function buildDropDown() {
     const b = el("button", "item" + (g.id === state.graph ? " on" : ""), g.label);
     const note = g.sub || (g.kind === "breakdown" && GROUP_SUB[g.group]);
     if (note) b.title = note;
-    b.onclick = ev => { ev.stopPropagation(); state.graph = g.id; closeMenu(); renderAll(); };
+    b.onclick = ev => { ev.stopPropagation(); openGraph(g.id); closeMenu(); renderAll(); };
     menu.append(b);
   }
   $("ddLabel").textContent = graphNow().label;
@@ -702,7 +707,7 @@ function wireDropDown() {
     if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
       ev.preventDefault();
       const i = GRAPHS.findIndex(g => g.id === state.graph) + (ev.key === "ArrowDown" ? 1 : -1);
-      state.graph = GRAPHS[(i + GRAPHS.length) % GRAPHS.length].id; renderAll();
+      openGraph(GRAPHS[(i + GRAPHS.length) % GRAPHS.length].id); renderAll();
     } else if (ev.key === "Escape") closeMenu();
   };
   document.addEventListener("click", ev => { if (!dd.contains(ev.target)) closeMenu(); });
@@ -775,23 +780,20 @@ function renderOptions() {
   md.hidden = !deathsFit(g);
   $("optMarks").hidden = mo.hidden && mi.hidden && md.hidden;
   md.classList.toggle("on", deathsOn(g)); md.setAttribute("aria-pressed", String(deathsOn(g)));
-  md.onclick = () => { state.deathPref = !deathsOn(g); renderAll(); };
+  md.onclick = () => { state.deathPref = !deathsOn(g); saveMarks(); renderAll(); };
   mo.classList.toggle("on", objOn(g)); mo.setAttribute("aria-pressed", String(objOn(g)));
   mi.classList.toggle("on", itemsOn(g)); mi.setAttribute("aria-pressed", String(itemsOn(g)));
-  mo.onclick = () => { state.objPref = !objOn(g); renderAll(); };
-  mi.onclick = () => { state.itemPref = !itemsOn(g); renderAll(); };
+  mo.onclick = () => { state.objPref = !objOn(g); saveMarks(); renderAll(); };
+  mi.onclick = () => { state.itemPref = !itemsOn(g); saveMarks(); renderAll(); };
   $("ddLabel").textContent = g.label;
 }
 
 // ---------- series ----------
-function seriesFor(g) {
-  if (g.kind === "lead") return [leadLine()];
-  const sel = g.kind === "breakdown" ? pickedList("breakdown") : state.players.filter(p => selNow().has(p.slot));
-  const mode = modeNow(g);
-  if (mode === "team" || mode === "lane") return groupLines(g, mode).filter(se => !state.hiddenGroups.has(se.label));
+// How a graph's points are built for one hero. Totals start at 0 at 0:00 and the Power graphs at each hero's spawn values.
+// Rates and percentages have no value until Valve's first snapshot (3:00), so their lines start at 0 and the first stretch
+// is dotted (pts.real = index of the first real point).
+function lineMaker(g, mode) {
   const perMin = mode === "permin";
-  // Totals start at 0 at 0:00 and the Power graphs at each hero's spawn values. Rates and percentages have no value until
-  // Valve's first snapshot (3:00), so their lines start at 0 and the first stretch is dotted (pts.real = index of the first real point).
   const lead = !g.start && (g.ratio || mode === "share" || perMin);
   const exact = g.events && mode === "value" && haveDeathDetails();
   const build = (p, get) => {
@@ -817,12 +819,50 @@ function seriesFor(g) {
       else if (t > 0) pts.push([t, v]);
     }
     if (lead && pts.length > 1) pts.real = 1;
+    if (ser.tl && pts.length && pts.every(([, v]) => v === pts[0][1])) pts.unused = true; // a source this hero never used
     return pts;
   };
+  return { build, line };
+}
+// One line type for one hero, kept until the match, the graph's line types or the view changes. The legend needs every
+// type's total for every hero it lists, so this keeps hover and toggling from rebuilding lines that did not change.
+function typeLine(g, p, i) {
+  const mode = modeNow(g), mi = state.match;
+  const key = `${g.id}|${g._key || ""}|${mode}|${p.slot}|${i}|${g.series[i].label}`;
+  const c = mi._lines || (mi._lines = new Map());
+  if (!c.has(key)) c.set(key, lineMaker(g, mode).line(p, g.series[i]));
+  return c.get(key);
+}
+const endOf = pts => (pts && pts.length ? pts[pts.length - 1][1] : 0);
+// Each line type keeps one color for as long as the graph's types stay the same.
+function typeColor(g, i) {
+  if (!g._cols || g._cols.of !== g.series) {
+    const cols = [], used = new Set();
+    g.series.forEach((s, j) => { if (TYPE_FIXED[s.label]) { cols[j] = TYPE_FIXED[s.label]; used.add(cols[j]); } });
+    const free = TYPE_PAL.filter(c => !used.has(c));
+    let k = 0;
+    g.series.forEach((s, j) => { if (!cols[j]) cols[j] = free[k++ % free.length]; });
+    g._cols = { of: g.series, cols };
+  }
+  return g._cols.cols[i];
+}
+// Player-Specific graphs get a layout made for how many heroes are picked: one chart for 1 or 2 (solid and dashed),
+// side-by-side panels for 3 or 4, and the overview (team totals and a ranked table) for 5 or more.
+function brkView(g) {
+  if (!g || g.kind !== "breakdown" || grouped(g)) return null;
+  const n = selFor("breakdown").size;
+  return n >= 5 ? "lobby" : n >= 3 ? "panels" : "overlay";
+}
+function seriesFor(g) {
+  if (g.kind === "lead") return [leadLine()];
+  const sel = g.kind === "breakdown" ? pickedList("breakdown") : state.players.filter(p => selNow().has(p.slot));
+  const mode = modeNow(g);
+  if (mode === "team" || mode === "lane") return groupLines(g, mode).filter(se => !state.hiddenGroups.has(se.label));
+  const { build } = lineMaker(g, mode);
   const diffOk = state.diff && sel.length === 2;
   if (g.kind === "general") {
     const get = mode === "share" ? shareGet(g) : g.get;
-    const lines = sel.map(p => ({ player: p, label: p.hero, color: colorOf(p), dash: "", pts: build(p, get) }));
+    const lines = sel.map(p => ({ player: p, label: p.hero, color: colorOf(p), dash: "", key: "s" + p.slot, pts: build(p, get) }));
     if (diffOk) return [diffLine(lines[0], lines[1], null)];
     // Share of the whole lobby at a time, for the hover readout, like the game's own graph tooltip.
     if (!g.ratio && !g.level && mode !== "share") {
@@ -832,19 +872,21 @@ function seriesFor(g) {
     }
     return lines;
   }
+  if (brkView(g) === "lobby") return []; // the overview draws its own table
   const cats = visibleCats(g);
   if (diffOk && cats.length === 1) {
-    const ser = g.series[cats[0]];
-    const [a, b] = sel.map(p => ({ player: p, label: p.hero, color: colorOf(p), pts: line(p, ser) }));
-    return [diffLine(a, b, ser.label)];
+    const i = cats[0];
+    const [a, b] = sel.map(p => ({ player: p, label: p.hero, color: typeColor(g, i), pts: typeLine(g, p, i) }));
+    return [diffLine(a, b, g.series[i].label)];
   }
-  const out = [];
-  for (const p of sel) for (const i of cats) {
-    const ser = g.series[i];
-    if (ser.tl && g.dyn && !ser.tl(p).some(([, v]) => v > 0)) continue; // a source this hero never used
-    // With more than two heroes the colors alone don't say whose line it is, so the end label names the hero too.
-    out.push({ player: p, label: p.hero, sub: ser.label, endLab: sel.length > 2 ? `${p.hero}: ${ser.label}` : null, color: colorOf(p), dash: DASHES[i % DASHES.length], pts: line(p, ser) });
-  }
+  const out = [], two = sel.length <= 2;
+  sel.forEach((p, hi) => {
+    for (const i of cats) {
+      const pts = typeLine(g, p, i);
+      if (pts.unused && g.dyn) continue;
+      out.push({ player: p, hi: two ? hi : 0, ti: i, key: "t" + i, label: p.hero, sub: g.series[i].label, color: typeColor(g, i), dash: two ? HERO_DASH[hi] : "", pts });
+    }
+  });
   return out;
 }
 // % of Team: a hero's value over the sum of their team's values at the same snapshot.
@@ -883,7 +925,7 @@ function groupLines(g, mode) {
       const vs = gr.ps.map(p => at(p, t)).filter(v => v != null);
       if (vs.length) pts.push([t, vs.reduce((a, v) => a + v, 0)]);
     }
-    return { group: gr, label: gr.label, color: gr.color, dash: gr.dash, endLab: gr.label, pts };
+    return { group: gr, label: gr.label, color: gr.color, dash: gr.dash, key: "g" + gr.label, pts };
   });
 }
 // Team Souls Lead: the viewer's team (left) minus the other team, at every stats snapshot.
@@ -931,6 +973,7 @@ function valueAt(pts, t) {
 function renderAll() {
   if (state.match) prepDynamicGraphs();
   if (!state.match) return;
+  const t0 = performance.now();
   document.querySelectorAll("#tabs .tab").forEach(b => b.classList.toggle("on", b.dataset.tab === state.tab));
   document.body.classList.toggle("tabMvp", state.tab === "mvp");
   document.body.classList.toggle("tabMu", state.tab === "matchups");
@@ -938,106 +981,212 @@ function renderAll() {
   const lb = avgBadge(state.players.map(p => p.badge));
   $("lobbyRank").innerHTML = lb ? `<span class="lbl">Lobby</span>${rankHtml(lb, "", true)}` : "";
   renderTop();
+  if (state.tab !== "graphs") { document.body.classList.remove("hasLegend", "lobbyView"); }
   if (state.tab === "mvp") { window.renderMvp(); return; }
   if (state.tab === "matchups") { window.renderMatchups(); return; }
   renderOptions();
   const g0 = graphNow();
-  if (g0.kind === "lanes") { $("tooltip").hidden = true; window.renderLanes(); return; }
+  if (g0.kind === "lanes") { $("tooltip").hidden = true; document.body.classList.remove("hasLegend", "lobbyView"); window.renderLanes(); return; }
   const series = seriesFor(g0);
   // % of Team reads as a percentage. Per Minute and % of Team are rates, so counts lose their whole-number readout there.
   const m0 = modeNow(g0);
   const g = m0 === "share" ? Object.assign({}, g0, { ratio: true, whole: false }) : m0 === "permin" ? Object.assign({}, g0, { whole: false }) : g0;
-  drawChart(series, g);
+  const lobby = brkView(g0) === "lobby";
+  document.body.classList.toggle("lobbyView", lobby);
+  renderLegend(g0, g);
+  if (lobby) { $("tooltip").hidden = true; renderOverview(g0, g); }
+  else drawChart(series, g);
   renderLines(series, g);
+  perfNote("render", performance.now() - t0);
 }
 
+// The chart area holds one plot, or one panel per hero when 3 or 4 heroes are picked on a Player-Specific graph.
+// Every plot shares the time axis and the value scale, so panels can be compared at a glance.
+function plotLayout(W, H, m, view, series) {
+  if (view !== "panels") {
+    return [{ l: m.l, r: W - m.r, t: m.t, b: H - m.b, labX: W - 4, timeY: H - 12, series }];
+  }
+  const heroes = pickedList("breakdown"), n = heroes.length, cols = n === 3 ? 3 : 2, rows = n === 3 ? 1 : 2;
+  const gx = 28, gy = 26, top = 6, bottom = 6, gut = 62, head = 50, foot = 30;
+  const cw = (W - m.l - gx * (cols - 1)) / cols, ch = (H - top - bottom - gy * (rows - 1)) / rows;
+  return heroes.map((p, k) => {
+    const cx = m.l + (k % cols) * (cw + gx), cy = top + Math.floor(k / cols) * (ch + gy);
+    return { p, cx, cy, cw, ch, l: cx, r: cx + cw - gut, t: cy + head, b: cy + ch - foot, labX: cx + cw - 4, timeY: cy + ch - 8,
+      series: series.filter(se => se.player === p) };
+  });
+}
 function drawChart(series, g) {
   const ctn = $("graphCtn"), svg = $("chart");
   const W = ctn.offsetWidth, H = ctn.offsetHeight;
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-  const endLabels = (g.kind === "breakdown" && series.some(se => se.sub && !se.diff)) || series.some(se => se.endLab);
-  const m = { l: 18, r: endLabels ? 250 : 96, t: 34, b: 40 };
+  const view = brkView(g);
+  const m = { l: 18, r: 96, t: 34, b: 40 };
+  const keyH = view === "overlay" && pickedList("breakdown").length ? 36 : 0; // the solid/dashed key sits above everything
+  m.t += keyH;
+  $("markers").style.top = keyH + "px";
   const buyers = itemBuyers(g), dots = deathsOn(g);
   if (buyers) m.b += buyers.length * 32 + 8; // item rows sit between the lines and the time axis
   if (dots) m.b += 2 * DEATH_ROW + 6; // death dots sit above those, still below the lines
   const dur = state.match.duration_s || Math.max(60, ...series.flatMap(s => s.pts.map(p => p[0])));
-  const t0 = 0;
   const vals = series.flatMap(s => s.pts.map(p => p[1]));
   let ymin = 0, ymax = 1;
   if (vals.length) { ymax = Math.max(...vals); ymin = Math.min(0, ...vals); }
   if (g.level && vals.length) ymin = Math.min(...vals);
   if (ymax === ymin) ymax = ymin + 1;
-  const ticks = niceTicks(ymin, ymax, 4, (series.length > 0 && series.every(se => se.pts.step)) || !!g.whole);
+  const ticks = niceTicks(ymin, ymax, view === "panels" && pickedList("breakdown").length > 3 ? 3 : 4, (series.length > 0 && series.every(se => se.pts.step)) || !!g.whole);
   ymin = Math.min(ymin, ticks[0]); ymax = Math.max(ymax, ticks[ticks.length - 1]);
-  const X = t => m.l + ((Math.max(t, t0) - t0) / (dur - t0)) * (W - m.l - m.r);
-  const Y = v => H - m.b - ((v - ymin) / (ymax - ymin)) * (H - m.t - m.b);
-  let s = "";
-  for (const v of series.length ? ticks : []) {
-    if (v === ymin && !g.level) continue;
-    s += `<line x1="${m.l}" x2="${W - m.r + 8}" y1="${Y(v)}" y2="${Y(v)}" stroke="#ffffff" stroke-opacity="0.045"/>`;
-    s += `<text class="ylab" x="${W - 4}" y="${Y(v) + 6}" text-anchor="end">${fmtNum(g.kind === "lead" ? Math.abs(v) : v, g)}</text>`;
-  }
-  const step = dur > 1500 ? 600 : 300;
-  s += `<text x="${X(t0)}" y="${H - 12}" text-anchor="start">${fmtTime(t0)}</text>`;
-  for (let t = step; t <= dur; t += step) {
-    if (t - t0 < step * 0.45) continue; // keep clear of the start label
-    s += `<text x="${X(t)}" y="${H - 12}" text-anchor="middle">${fmtTime(t)}</text>`;
-  }
-  s += `<line x1="${m.l}" x2="${W - m.r + 8}" y1="${Y(ymin === 0 || ymin < 0 ? 0 : ymin)}" y2="${Y(ymin === 0 || ymin < 0 ? 0 : ymin)}" stroke="#ffffff" stroke-opacity="${ymin < 0 ? 0.35 : 0.12}"/>`;
+  const plots = plotLayout(W, H, m, view, series);
   const evs = objOn(g) ? state.events : [];
-  for (const e of evs) s += `<line x1="${X(e.t)}" x2="${X(e.t)}" y1="${m.t - 4}" y2="${H - m.b}" stroke="${e.color}" stroke-opacity="0.38" stroke-dasharray="3 5" stroke-width="1.5"/>`;
-  const lead = series.find(se => se.lead);
-  if (lead && lead.pts.length > 1) {
-    const y0 = Y(0), xs = lead.pts.map(([t, v]) => `${X(t).toFixed(1)} ${Y(v).toFixed(1)}`).join(" L");
-    const area = `M${X(lead.pts[0][0]).toFixed(1)} ${y0} L${xs} L${X(lead.pts[lead.pts.length - 1][0]).toFixed(1)} ${y0}Z`;
-    const cL = TEAMS[state.leftTeam].c, cR = TEAMS[1 - state.leftTeam].c;
-    s += `<defs><clipPath id="clipUp"><rect x="0" y="0" width="${W}" height="${y0}"/></clipPath><clipPath id="clipDn"><rect x="0" y="${y0}" width="${W}" height="${H}"/></clipPath></defs>`;
-    s += `<path d="${area}" fill="${cL}" fill-opacity="0.28" clip-path="url(#clipUp)"/><path d="${area}" fill="${cR}" fill-opacity="0.28" clip-path="url(#clipDn)"/>`;
-    s += `<text x="${m.l + 10}" y="${m.t + 4}" fill="${TEAMS[state.leftTeam].c}" style="fill:${cL};font-weight:600">${TEAMS[state.leftTeam].color} ahead</text>`;
-    s += `<text x="${m.l + 10}" y="${H - m.b - 12}" style="fill:${cR};font-weight:600">${TEAMS[1 - state.leftTeam].color} ahead</text>`;
+  const outline = series.length <= 12;
+  let ls = ""; // a dark edge under each line helps a few lines; with many it only costs drawing time
+  const two = view === "overlay" && series.some(se => se.hi === 1);
+  let s = "";
+  for (const P of plots) {
+    P.X = t => P.l + (Math.max(t, 0) / dur) * (P.r - P.l);
+    P.Y = v => P.b - ((v - ymin) / (ymax - ymin)) * (P.b - P.t);
+    const { X, Y } = P;
+    for (const v of series.length ? ticks : []) {
+      if (v === ymin && !g.level) continue;
+      s += `<line x1="${P.l}" x2="${P.r + 8}" y1="${Y(v)}" y2="${Y(v)}" stroke="#ffffff" stroke-opacity="0.045"/>`;
+      s += `<text class="ylab" x="${P.labX}" y="${Y(v) + 6}" text-anchor="end">${fmtNum(g.kind === "lead" ? Math.abs(v) : v, g)}</text>`;
+    }
+    const step = dur > 1500 ? (view === "panels" ? 900 : 600) : 300;
+    s += `<text x="${X(0)}" y="${P.timeY}" text-anchor="start">${fmtTime(0)}</text>`;
+    for (let t = step; t <= dur; t += step) {
+      if (t < step * 0.45) continue;
+      s += `<text x="${X(t)}" y="${P.timeY}" text-anchor="middle">${fmtTime(t)}</text>`;
+    }
+    const y0 = Y(ymin === 0 || ymin < 0 ? 0 : ymin);
+    s += `<line x1="${P.l}" x2="${P.r + 8}" y1="${y0}" y2="${y0}" stroke="#ffffff" stroke-opacity="${ymin < 0 ? 0.35 : 0.12}"/>`;
+    for (const e of evs) s += `<line x1="${X(e.t)}" x2="${X(e.t)}" y1="${P.t - 4}" y2="${P.b}" stroke="${e.color}" stroke-opacity="0.38" stroke-dasharray="3 5" stroke-width="1.5"/>`;
+    const lead = P.series.find(se => se.lead);
+    if (lead && lead.pts.length > 1) {
+      const z = Y(0), xs = lead.pts.map(([t, v]) => `${X(t).toFixed(1)} ${Y(v).toFixed(1)}`).join(" L");
+      const area = `M${X(lead.pts[0][0]).toFixed(1)} ${z} L${xs} L${X(lead.pts[lead.pts.length - 1][0]).toFixed(1)} ${z}Z`;
+      const cL = TEAMS[state.leftTeam].c, cR = TEAMS[1 - state.leftTeam].c;
+      s += `<defs><clipPath id="clipUp"><rect x="0" y="0" width="${W}" height="${z}"/></clipPath><clipPath id="clipDn"><rect x="0" y="${z}" width="${W}" height="${H}"/></clipPath></defs>`;
+      s += `<path d="${area}" fill="${cL}" fill-opacity="0.28" clip-path="url(#clipUp)"/><path d="${area}" fill="${cR}" fill-opacity="0.28" clip-path="url(#clipDn)"/>`;
+      s += `<text x="${P.l + 10}" y="${P.t + 4}" style="fill:${cL};font-weight:600">${TEAMS[state.leftTeam].color} ahead</text>`;
+      s += `<text x="${P.l + 10}" y="${P.b - 12}" style="fill:${cR};font-weight:600">${TEAMS[1 - state.leftTeam].color} ahead</text>`;
+    }
+    const path = pts => pts.map(([t, v], i) => `${i ? "L" : "M"}${X(t).toFixed(1)} ${Y(v).toFixed(1)}`).join("");
+    for (const se of P.series) {
+      if (!se.pts.length) continue;
+      const k = se.pts.real || 0, d = path(se.pts.slice(k));
+      let s = `<g data-k="${esc(se.key || "")}">`;
+      // Before Valve's first snapshot a rate has no value: that stretch is a faint dotted line from 0.
+      if (k) s += `<path d="${path(se.pts.slice(0, k + 1))}" fill="none" stroke="${se.color}" stroke-opacity="0.45" stroke-width="2" stroke-linecap="round" stroke-dasharray="1 6"/>`;
+      if (outline) s += `<path d="${d}" fill="none" stroke="#000" stroke-opacity="0.3" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="${se.dash}"/>`;
+      s += `<path d="${d}" fill="none" stroke="${se.color}" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="${se.dash}"/>`;
+      // With two heroes on one chart, a line ends in a filled dot (solid hero) or a ring (dashed hero).
+      if (two) {
+        const [t, v] = se.pts[se.pts.length - 1];
+        s += se.hi === 1 ? `<circle cx="${X(t)}" cy="${Y(v)}" r="3.6" fill="#10130D" stroke="${se.color}" stroke-width="2"/>` : `<circle cx="${X(t)}" cy="${Y(v)}" r="4" fill="${se.color}"/>`;
+      }
+      ls += s + `</g>`;
+    }
   }
-  s += `<g class="lineSet">`;
-  const path = pts => pts.map(([t, v], i) => `${i ? "L" : "M"}${X(t).toFixed(1)} ${Y(v).toFixed(1)}`).join("");
-  for (const se of series) {
-    if (!se.pts.length) continue;
-    const k = se.pts.real || 0;
-    // Before Valve's first snapshot a rate has no value: that stretch is a faint dotted line from 0.
-    if (k) s += `<path d="${path(se.pts.slice(0, k + 1))}" fill="none" stroke="${se.color}" stroke-opacity="0.45" stroke-width="2" stroke-linecap="round" stroke-dasharray="1 6"/>`;
-    const d = path(se.pts.slice(k));
-    s += `<path d="${d}" fill="none" stroke="#000" stroke-opacity="0.3" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="${se.dash}"/>`;
-    s += `<path d="${d}" fill="none" stroke="${se.color}" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="${se.dash}"/>`;
-  }
-  s += `</g>`;
-  if (endLabels) {
-    // Name each line at its end so the dash styles don't need decoding. Labels are nudged apart when they collide.
-    const labs = series.filter(se => se.pts.length).map(se => {
-      const [t, v] = se.pts[se.pts.length - 1];
-      return { x: X(t) + 10, y: Y(v) + 5, se };
-    }).sort((a, b) => a.y - b.y);
-    // Keep them inside the chart: push down to clear each other, then pull back up from the bottom edge.
-    const lo = m.t + 6, hi = H - m.b - 4, gap = 17;
-    for (let i = 0; i < labs.length; i++) labs[i].y = Math.max(lo, i ? Math.max(labs[i].y, labs[i - 1].y + gap) : labs[i].y);
-    for (let i = labs.length - 1; i >= 0; i--) { const lim = i === labs.length - 1 ? hi : labs[i + 1].y - gap; if (labs[i].y > lim) labs[i].y = lim; }
-    for (const l of labs) s += `<text class="endLab" x="${l.x}" y="${l.y}" style="fill:${l.se.color}">${esc(l.se.endLab || l.se.sub)}</text>`;
-  }
-  s += `<line id="hoverLine" y1="${m.t}" y2="${H - m.b}" stroke="#FFEFD7" stroke-opacity="0" />`;
+  // The lines sit on their own layer above the axes. Focus fades that whole layer (no redraw) and copies the focused
+  // lines onto a small layer on top, so hovering stays cheap even with dozens of lines.
   svg.innerHTML = s;
-  drawMarkers(evs, X, W);
+  const lv = $("chartLines"), fv = $("chartFocus");
+  lv.setAttribute("viewBox", `0 0 ${W} ${H}`); fv.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  lv.innerHTML = ls; fv.innerHTML = "";
+  const P0 = plots[0];
+  drawMarkers(view === "panels" ? [] : evs, P0.X, W);
   const itemsH = buyers ? buyers.length * 32 : 0;
-  drawItems(buyers, X, H - 40 - itemsH, W - m.r);
-  drawDeaths(dots, X, H - 40 - itemsH - (buyers ? 4 : 0) - 2 * DEATH_ROW, W - m.r);
+  drawItems(buyers, P0.X, H - 40 - itemsH, W - m.r);
+  drawDeaths(dots, P0.X, H - 40 - itemsH - (buyers ? 4 : 0) - 2 * DEATH_ROW, W - m.r);
+  drawHeads(plots, view, series);
 
   const emp = $("empty");
+  const none = !selNow().size && g.kind !== "lead" && !grouped(g);
   emp.hidden = series.length > 0;
-  if (!series.length) emp.textContent = selNow().size ? "Every line type is hidden. Turn one back on below." : "Click a hero portrait to add them to the graph.";
+  if (!series.length) emp.textContent = none ? "Pick heroes at the top to add their lines."
+    : grouped(g) ? "Every line is hidden. Pick lines on the right."
+    : g.kind === "breakdown" ? "Pick lines on the right to start." : "Nothing to show for these heroes.";
+  emp.classList.toggle("hint", series.length === 0);
+  wireHover(plots, series, g, dur, W, H, buyers, evs);
+}
+// Hero names above each panel, or a small key in the corner saying which hero is solid and which is dashed.
+function drawHeads(plots, view, series) {
+  const box = $("plotHeads");
+  box.innerHTML = "";
+  if (view === "panels") {
+    for (const P of plots) {
+      const T = TEAMS[P.p.team];
+      box.insertAdjacentHTML("beforeend", `<div class="panelHead" style="left:${P.cx}px;top:${P.cy}px;width:${P.cw}px;--tc:${T.c}">` +
+        `${portraitImg(P.p)}<span class="hn">${esc(heroName(P.p))}</span><span class="tm">${esc(T.name)}</span></div>`);
+    }
+    return;
+  }
+  if (view !== "overlay") return;
+  const heroes = pickedList("breakdown");
+  if (!heroes.length) return;
+  box.insertAdjacentHTML("beforeend", `<div class="heroKey">` + heroes.map((p, hi) =>
+    `<span class="k">${portraitImg(p)}<svg viewBox="0 0 34 6"><line x1="0" x2="34" y1="3" y2="3" stroke="#FFEFD7" stroke-width="2.6" stroke-dasharray="${HERO_DASH[hi] || ""}"/></svg><span class="hn">${esc(heroName(p))}</span></span>`).join("") + `</div>`);
+}
 
-  const tip = $("tooltip"), line = svg.querySelector("#hoverLine");
+// ---------- hover ----------
+// The hover box, the crosshair and the focus only change when the second under the mouse (or what it points at) changes,
+// and at most once per screen refresh. The lines themselves are never redrawn on hover: the game's browser draws on the
+// CPU, and redrawing 80 lines on every mouse move is what made it lag there.
+function wireHover(plots, series, g, dur, W, H, buyers, evs) {
+  const ctn = $("graphCtn"), tip = $("tooltip"), xh = $("xhairs");
+  xh.innerHTML = plots.map(P => `<i class="xhair" style="left:${P.l}px;top:${P.t}px;height:${P.b - P.t}px"></i>`).join("");
+  const bars = [...xh.children];
   const times = [...new Set(series.flatMap(se => se.pts.map(p => p[0])))].sort((a, b) => a - b);
+  const end = times.length ? times[times.length - 1] : dur;
+  const first = series.length ? Math.min(...series.filter(se => se.pts.length).map(se => se.pts[se.pts.real || 0][0])) : 0;
+  let raf = 0, lastEv = null, lastKey = "", hoverFocus = null, tw = 0, th = 0;
   state.pinned = false;
   tip.classList.remove("pinned");
+  state.hoverFocus = null;
+  applyFocus();
+  const hideX = () => bars.forEach(b => b.classList.remove("on"));
+  const place = (px, py) => {
+    let left = px + 22; if (left + tw > W) left = px - tw - 22;
+    tip.style.transform = `translate(${Math.round(left)}px,${Math.round(Math.max(0, Math.min(py - 20, H - th)))}px)`;
+  };
+  const hover = ev => {
+    const h0 = performance.now();
+    const { x: px, y: py } = mouseIn(ctn, ev);
+    const P = plots.find(q => px >= q.l - 4 && px <= q.r + 10 && py >= q.t - 40 && py <= q.b + 60) || (plots.length === 1 ? plots[0] : null);
+    if (!P || px < P.l || px > P.r + 10) { tip.hidden = true; hideX(); setHoverFocus(null); lastKey = ""; return; }
+    const t = Math.round(Math.max(0, Math.min(end, ((px - P.l) / (P.r - P.l)) * dur)));
+    const near = evs.filter(e => Math.abs(e.t - t) <= dur * 0.012);
+    const dot = ev.target && ev.target.closest ? ev.target.closest(".deathDot") : null;
+    // The line nearest the mouse (within 12 pixels) is brought forward and the rest dim, on every graph.
+    let best = null, bd = 12;
+    if (!dot) for (const se of P.series) { const v = lerpAt(se.pts, t); if (v == null) continue; const d = Math.abs(P.Y(v) - py); if (d < bd) { bd = d; best = se.key; } }
+    setHoverFocus(best);
+    const tt = dot && dot.dlcDeath ? dot.dlcDeath.t : t;
+    plots.forEach((Q, k) => { bars[k].style.transform = `translateX(${(Q.X(tt) - Q.l).toFixed(1)}px)`; bars[k].classList.add("on"); });
+    const key = `${plots.indexOf(P)}|${t}|${dot ? dot.dlcDeath && dot.dlcDeath.t : ""}|${state.focus || state.hoverFocus || ""}`;
+    if (key !== lastKey) {
+      lastKey = key;
+      let html = "";
+      if (dot && dot.dlcDeath) html = deathTipHtml(dot.dlcDeath);
+      else if (times.length) {
+        html += `<div class="t">${fmtTime(t)}</div>`;
+        if (near.length) html += evHtml(near);
+        if (t < first) html += `<div class="noData">No data until ${fmtTime(first)}, Valve's first snapshot.</div>`;
+        // With panels, the box reads out the hovered hero only; the crosshair still marks the same second in every panel.
+        else html += readoutHtml((plots.length > 1 ? P.series : series).map(se => ({ se, v: lerpAt(se.pts, t) })).filter(r => r.v != null), g, t);
+        if (buyers) { const prev = times.filter(x => x < t).pop(); html += boughtHtml(buyers, prev ?? -1, t); }
+      } else if (near.length) html = evHtml(near);
+      if (!html) { tip.hidden = true; return; }
+      tip.innerHTML = html;
+      tip.classList.toggle("heroTip", html.includes('class="heroRows'));
+      tip.hidden = false;
+      tw = tip.offsetWidth; th = tip.offsetHeight;
+    }
+    if (!tip.hidden) place(px, py);
+    perfNote("hover", performance.now() - h0);
+  };
   ctn.onclick = ev => {
     if (tip.contains(ev.target)) return;
-    if (state.pinned) { state.pinned = false; tip.classList.remove("pinned"); ctn.onmousemove(ev); return; }
+    if (state.pinned) { state.pinned = false; tip.classList.remove("pinned"); lastKey = ""; hover(ev); return; }
     if (tip.hidden) return;
     state.pinned = true;
     tip.classList.add("pinned");
@@ -1045,44 +1194,52 @@ function drawChart(series, g) {
   };
   ctn.onmousemove = ev => {
     if (state.pinned) return;
-    const { x: px, y: py } = mouseIn(ctn, ev);
-    if (px < m.l || px > W - m.r + 10) { tip.hidden = true; line.setAttribute("stroke-opacity", 0); return; }
-    const end = times.length ? times[times.length - 1] : dur;
-    // The readout follows the mouse to the second, like the game's: values between Valve's snapshots are read off the drawn line.
-    const t = Math.round(Math.max(0, Math.min(end, ((px - m.l) / (W - m.l - m.r)) * dur)));
-    const near = evs.filter(e => Math.abs(e.t - t) <= dur * 0.012);
-    const dot = ev.target && ev.target.closest ? ev.target.closest(".deathDot") : null;
-    let html = "";
-    if (dot && dot.dlcDeath) {
-      line.setAttribute("x1", X(dot.dlcDeath.t)); line.setAttribute("x2", X(dot.dlcDeath.t)); line.setAttribute("stroke-opacity", 0.35);
-      html = deathTipHtml(dot.dlcDeath);
-    } else if (times.length) {
-      line.setAttribute("x1", X(t)); line.setAttribute("x2", X(t)); line.setAttribute("stroke-opacity", 0.35);
-      html += `<div class="t">${fmtTime(t)}</div>`;
-      if (near.length) html += evHtml(near);
-      const first = Math.min(...series.filter(se => se.pts.length).map(se => se.pts[se.pts.real || 0][0]));
-      if (t < first) html += `<div class="noData">No data until ${fmtTime(first)}, Valve's first snapshot.</div>`;
-      else html += readoutHtml(series.map(se => ({ se, v: lerpAt(se.pts, t) })).filter(r => r.v != null), g, t);
-      if (buyers) { const prev = times.filter(x => x < t).pop(); html += boughtHtml(buyers, prev ?? -1, t); }
-    } else if (near.length) html = evHtml(near);
-    if (!html) { tip.hidden = true; return; }
-    tip.innerHTML = html;
-    tip.classList.toggle("heroTip", html.includes('class="heroRows'));
-    tip.hidden = false;
-    const tw = tip.offsetWidth, th = tip.offsetHeight;
-    let left = px + 22; if (left + tw > W) left = px - tw - 22;
-    tip.style.left = left + "px";
-    tip.style.top = Math.max(0, Math.min(py - 20, H - th)) + "px";
+    lastEv = ev;
+    if (!raf) raf = requestAnimationFrame(() => { raf = 0; if (!state.pinned) hover(lastEv); });
   };
-  ctn.onmouseleave = () => { if (state.pinned) return; tip.hidden = true; line.setAttribute("stroke-opacity", 0); };
+  ctn.onmouseleave = () => { if (state.pinned) return; if (raf) { cancelAnimationFrame(raf); raf = 0; } tip.hidden = true; hideX(); setHoverFocus(null); lastKey = ""; };
+  state.plots = plots;
+}
+// Focus: the hovered legend row or the line nearest the mouse stays bright, everything else steps back,
+// and the focused lines get a tag at their end with the hero and the value.
+function setHoverFocus(k) {
+  if (state.hoverFocus === k) return;
+  state.hoverFocus = k;
+  applyFocus();
+}
+function setFocus(k) {
+  if (state.focus === k) return;
+  state.focus = k;
+  applyFocus();
+}
+function applyFocus() {
+  const k = state.focus || state.hoverFocus;
+  const lv = $("chartLines"), fv = $("chartFocus"), tags = $("focusTags");
+  const hits = k ? [...lv.children].filter(e => e.dataset.k === k) : [];
+  const hit = hits.length > 0;
+  lv.classList.toggle("dim", hit);
+  fv.innerHTML = hits.map(e => e.outerHTML).join("");
+  document.querySelectorAll("#lineLegend .lgRow").forEach(r => r.classList.toggle("f", !!k && r.dataset.k === k));
+  tags.innerHTML = "";
+  if (!hit || !state.plots) return;
+  const g = graphNow(), gm = modeNow(g) === "permin" ? Object.assign({}, g, { whole: false }) : g;
+  let html = "";
+  for (const P of state.plots) for (const se of P.series) {
+    if (se.key !== k || !se.pts.length || !se.player) continue;
+    const [t, v] = se.pts[se.pts.length - 1];
+    const up = se.hi !== 1;
+    html += `<div class="ftag${up ? " up" : ""}" style="left:${P.X(t)}px;top:${P.Y(v)}px;--c:${se.color}">${portraitImg(se.player)}<span class="v">${fmtNum(v, gm)}</span></div>`;
+  }
+  tags.innerHTML = html;
 }
 // Every line at the hovered time. Player comparison graphs group lines under each player; long lists use two columns.
 function readoutHtml(rows, g, t) {
+  const fk = state.focus || state.hoverFocus;
   if (g.kind === "breakdown" && rows.some(r => r.se.sub && !r.se.diff)) {
     const groups = [];
     for (const r of rows) {
       let gr = groups.find(x => x.p === r.se.player);
-      if (!gr) groups.push(gr = { p: r.se.player, color: r.se.color, rows: [] });
+      if (!gr) groups.push(gr = { p: r.se.player, hi: r.se.hi, rows: [] });
       gr.rows.push(r);
     }
     // Official-style hero row (team tint, line color stripe, portrait, name), then one thin row per line type.
@@ -1091,8 +1248,8 @@ function readoutHtml(rows, g, t) {
     groups.sort((a, b) => b.max - a.max);
     return `<div class="heroRows brk${groups.length > 4 ? " two" : ""}"${groups.length > 4 ? ` style="grid-template-rows:repeat(${Math.ceil(groups.length / 2)},auto)"` : ""}>` + groups.map(gr => {
       const T = TEAMS[gr.p.team];
-      return `<div class="grp"><div class="hr" style="--tc:${T.c};--pc:${gr.color}"><i class="sw"></i><span class="face">${cardImg(gr.p)}</span><span class="v hn">${esc(heroName(gr.p))}</span></div>` +
-        gr.rows.sort((a, b) => b.v - a.v).map(({ se, v }) => `<div class="sr"><svg viewBox="0 0 22 6"><line x1="0" x2="22" y1="3" y2="3" stroke="${se.color}" stroke-width="2.5" stroke-dasharray="${se.dash}"/></svg><span class="n">${esc(se.sub)}</span><span class="v">${fmtNum(v, g)}</span></div>`).join("") + `</div>`;
+      return `<div class="grp"><div class="hr" style="--tc:${T.c};--pc:#FFEFD7"><i class="sw${gr.hi === 1 ? " dash" : ""}"></i><span class="face">${cardImg(gr.p)}</span><span class="v hn">${esc(heroName(gr.p))}</span></div>` +
+        gr.rows.sort((a, b) => b.v - a.v).map(({ se, v }) => `<div class="sr${se.key && se.key === fk ? " f" : ""}"><svg viewBox="0 0 22 6"><line x1="0" x2="22" y1="3" y2="3" stroke="${se.color}" stroke-width="2.5" stroke-dasharray="${se.dash}"/></svg><span class="n">${esc(se.sub)}</span><span class="v">${fmtNum(v, g)}</span></div>`).join("") + `</div>`;
     }).join("") + `</div>`;
   }
   rows.sort((a, b) => b.v - a.v);
@@ -1105,7 +1262,8 @@ function readoutHtml(rows, g, t) {
 function heroRowsHtml(rows, g, t) {
   return `<div class="heroRows">` + rows.map(({ se, v }) => {
     const p = se.player, T = TEAMS[p.team], tot = se.total ? se.total(t) : 0;
-    return `<div class="hr" style="--tc:${T.c};--pc:${se.color}" title="${esc(heroName(p))}"><i class="sw"></i>` +
+    const fk = state.focus || state.hoverFocus;
+    return `<div class="hr${se.key && se.key === fk ? " f" : ""}" style="--tc:${T.c};--pc:${se.color}" title="${esc(heroName(p))}"><i class="sw"></i>` +
       `<span class="face">${cardImg(p)}</span>` +
       `<span class="v">${fmtNum(v, g)}</span>${tot ? `<span class="pc">${Math.round((100 * v) / tot)}%</span>` : ""}</div>`;
   }).join("") + `</div>`;
@@ -1169,14 +1327,13 @@ function drawMarkers(evs, X, W) {
 // players[].items holds every purchase with its time; item_id is a hash of the item's class name (gamedata.js ITEMS).
 // Any graph that draws heroes can show them, for 1 to 3 picked heroes, one row each, so the icons stay readable.
 // On by default where buys explain the line: the Power graphs and the damage graphs.
-const ITEMS_DEFAULT = ["player_damage", "damage_taken", "dmg_breakdown"];
-const itemsFit = g => g.kind !== "lead" && !grouped(g);
-const itemsOn = g => itemsFit(g) && (state.itemPref ?? (g.power || ITEMS_DEFAULT.includes(g.id)));
+const itemsFit = g => g.kind !== "lead" && !grouped(g) && !["panels", "lobby"].includes(brkView(g));
+const itemsOn = g => itemsFit(g) && !!state.itemPref;
 const ITEM_SLOTS = { w: { name: "Weapon", c: "#E89A3C" }, v: { name: "Vitality", c: "#7FC241" }, s: { name: "Spirit", c: "#B77CF0" } };
 // Kills and deaths as dots: one row per team (the team of the hero who died), a dot at the exact second. On by default on the
 // Kills and Deaths graphs. Once heroes are picked, the dots that involve them stay bright and the rest fade.
-const deathsFit = g => g.kind !== "lead" && g.kind !== "lanes" && state.match && deathEvents().length > 0;
-const deathsOn = g => deathsFit(g) && (state.deathPref ?? ["kills", "deaths"].includes(g.id));
+const deathsFit = g => g.kind !== "lead" && g.kind !== "lanes" && !["panels", "lobby"].includes(brkView(g)) && state.match && deathEvents().length > 0;
+const deathsOn = g => deathsFit(g) && !!state.deathPref;
 const DEATH_ROW = 30;
 function drawDeaths(on, X, top, right) {
   const box = $("deathRows");
@@ -1247,67 +1404,272 @@ function boughtHtml(buyers, t0, t1) {
     `<div class="row"><span class="sw" style="background:${colorOf(p)}"></span><i class="itemIcon sm" style="--sc:${ITEM_SLOTS[it.slot].c};background-image:url('assets/items/${it.icon}.webp')"></i><span class="n">${esc(it.name)}${buyers.length > 1 ? ` <small>${esc(p.hero)}</small>` : ""}</span><span class="v t">${fmtTime(it.t)}</span></div>`).join("") + `</div>`;
 }
 
-// One line chip: the toggle, and an "only" button that shows just this one (Ctrl+Click doesn't reach the game's browser).
-function lineChip(svg, label, off, tip, toggle, only) {
-  const c = el("span", "lineChip");
-  const b = el("button", "graphOptionButton" + (off ? " off" : ""));
-  b.innerHTML = `${svg}<span>${esc(label)}</span>`;
-  b.title = tip + " Ctrl+Click also shows only this one.";
-  b.onclick = ev => { if (ev.ctrlKey || ev.metaKey) only(); else toggle(); };
-  const o = el("button", "graphOptionButton only", "only");
-  o.title = "Show only this one";
-  o.onclick = only;
-  c.append(b, o);
-  return c;
-}
+// ---------- hints under the chart ----------
 function renderLines(series, g) {
   const row = $("lineRow"), box = $("lines");
   box.innerHTML = "";
   const d = series.find(se => se.diff);
-  $("lineHintStatic").hidden = g.kind !== "breakdown";
-  $("lineHintStatic").textContent = (grouped(g) ? "Click to hide a line. Press only to show just that one." : "Click to hide a line type. Press only to show just that one.") +
-    (itemsOn(g) && !itemBuyers(g) ? " Item buys show for 1 to 3 heroes." : "");
-  if (g.kind === "lead") {
-    row.hidden = false;
-    box.append(el("span", "lineHint", `Above the line: ${TEAMS[state.leftTeam].color} ahead. Below: ${TEAMS[1 - state.leftTeam].color} ahead. Hero picks don't change this graph.`));
-    document.body.classList.remove("noLines");
-    return;
-  }
-  if (grouped(g)) {
-    // One button per team or lane line, like the line types on the Player Comparison graphs.
-    row.hidden = false;
-    $("lineHintStatic").hidden = false;
-    const all = groupLines(g, modeNow(g)), h = state.hiddenGroups;
-    for (const se of all) {
-      const svg = `<svg viewBox="0 0 30 8"><line x1="0" x2="30" y1="4" y2="4" stroke="${se.color}" stroke-width="3" stroke-dasharray="${se.dash}"/></svg>`;
-      const tip = (se.group.sub ? se.group.ps.map(p => p.hero).join(" + ") + "\n" : "") + "Click to show or hide.";
-      box.append(lineChip(svg, se.label, h.has(se.label), tip,
-        () => { if (h.has(se.label)) h.delete(se.label); else h.add(se.label); renderAll(); },
-        () => { h.clear(); all.forEach(x => { if (x.label !== se.label) h.add(x.label); }); renderAll(); }));
-    }
-    if (all.some(se => h.has(se.label))) { const b = el("button", "graphOptionButton", "Show All"); b.onclick = () => { h.clear(); renderAll(); }; box.append(b); }
-    document.body.classList.remove("noLines");
-    return;
-  }
-  if (g.kind !== "breakdown") {
-    const itemHint = itemsOn(g) && !itemBuyers(g);
-    row.hidden = !d && !itemHint;
-    if (d) box.append(el("span", "lineHint", `Above the line: ${d.player.hero} ahead. Below: ${d.other.hero} ahead.`));
-    if (itemHint) box.append(el("span", "lineHint", "Pick 1 to 3 heroes to see when they bought each item."));
-    document.body.classList.toggle("noLines", row.hidden);
-    return;
-  }
-  row.hidden = false;
-  document.body.classList.remove("noLines");
-  g.series.forEach((ser, i) => {
-    const on = lineOn(g, i);
-    const svg = `<svg viewBox="0 0 30 8"><line x1="0" x2="30" y1="4" y2="4" stroke="#FFEFD7" stroke-width="2.5" stroke-dasharray="${DASHES[i % DASHES.length]}"/></svg>`;
-    box.append(lineChip(svg, ser.label, !on, "Click to show or hide.",
-      () => { setLine(g, i, !on); renderAll(); },
-      () => { g.series.forEach((_, j) => setLine(g, j, j === i)); renderAll(); }));
-  });
-  if (g.series.some((_, i) => !lineOn(g, i))) { const all = el("button", "graphOptionButton", "Show All"); all.onclick = () => { g.series.forEach((_, j) => setLine(g, j, true)); renderAll(); }; box.append(all); }
+  const hints = [];
+  if (g.kind === "lead") hints.push(`Above the line: ${TEAMS[state.leftTeam].color} ahead. Below: ${TEAMS[1 - state.leftTeam].color} ahead. Hero picks don't change this graph.`);
+  if (d) hints.push(`Above the line: ${d.player.hero} ahead. Below: ${d.other.hero} ahead.`);
+  if (itemsOn(g) && !itemBuyers(g) && brkView(g) !== "lobby") hints.push("Pick 1 to 3 heroes to see when they bought each item.");
+  for (const h of hints) box.append(el("span", "lineHint", h));
+  row.hidden = !hints.length;
+  document.body.classList.toggle("noLines", row.hidden);
 }
+
+// ---------- legend: the line picker ----------
+// On the Player-Specific graphs (and in the Teams and Lanes views) the panel on the right is both the legend and the
+// picker: every line type with each picked hero's total, grouped by where it came from and sorted by size.
+// Click a row to show or hide it, Only (on the hovered row) to show just that one. Hidden rows keep their numbers,
+// so you can see what is worth turning on.
+const MAP_SOURCES = ["Fountain", "Healing Troopers", "Health Orbs", "Survival Powerup", "Bushes"];
+const LEGEND_GROUPS = ["From the map", "From items", "Built in", "From abilities"];
+let itemNames = null;
+function legendGroup(g, label) {
+  if (!g.dyn || g.id === "perm_buffs") return "";
+  if (MAP_SOURCES.includes(label)) return "From the map";
+  if (label === "Base Regen") return "Built in";
+  if (!itemNames) itemNames = new Set(Object.values(window.ITEMS || {}).map(x => x[0]));
+  return itemNames.has(label) ? "From items" : "From abilities";
+}
+const FOLD_AT = 6, FOLD_SHOW = 4;
+// Short numbers for the legend columns: 4.7k, 12k, 830.
+function fmtShort(v, g) {
+  if (v == null || !Number.isFinite(v) || v === 0) return "–";
+  if (g && g.ratio) return v.toFixed(1) + "%";
+  const a = Math.abs(v);
+  if (a >= 100000) return Math.round(v / 1000) + "k";
+  if (a >= 1000) return (v / 1000).toFixed(1).replace(/\.0$/, "") + "k";
+  if (g && g.whole) return String(Math.round(v));
+  return a < 10 && v % 1 ? v.toFixed(1) : String(Math.round(v));
+}
+function renderLegend(g0, g) {
+  const box = $("lineLegend");
+  const view = brkView(g0), grp = grouped(g0);
+  const show = state.tab === "graphs" && (!!view || grp);
+  document.body.classList.toggle("hasLegend", show);
+  document.body.classList.toggle("wideLegend", show && view === "panels");
+  box.hidden = !show;
+  if (!show) { box.innerHTML = ""; return; }
+  const dur = state.match.duration_s || 0;
+  let h = `<div class="lgHead"><span class="cap">Lines</span><span class="at">Totals at ${fmtTime(dur)}</span></div>`;
+  let rows = [], cols = [], body = "";
+  const toggle = [], only = [];
+  if (grp) {
+    const all = groupLines(g0, modeNow(g0)), hid = state.hiddenGroups;
+    cols = [{ head: "" }];
+    body = `<div class="lgBody"><div class="lgGroup">` + all.map((se, j) => {
+      const on = !hid.has(se.label);
+      toggle[j] = () => { if (hid.has(se.label)) hid.delete(se.label); else hid.add(se.label); };
+      only[j] = () => { hid.clear(); all.forEach(x => { if (x.label !== se.label) hid.add(x.label); }); };
+      const tip = se.group.sub ? se.group.ps.map(p => p.hero).join(" + ") : "";
+      return lgRow(j, se.key, on, `<svg class="smp" viewBox="0 0 26 8"><line x1="0" x2="26" y1="4" y2="4" stroke="${se.color}" stroke-width="3" stroke-dasharray="${se.dash}"/></svg>`, se.label, [fmtShort(endOf(se.pts), g)], [], tip);
+    }).join("") + `</div></div>`;
+    h += body;
+    const anyOff = all.some(se => hid.has(se.label)), anyOn = all.some(se => !hid.has(se.label));
+    h += lgFoot(anyOff, anyOn);
+    box.innerHTML = h;
+    wireLegend(box, toggle, only, () => hid.clear(), () => all.forEach(x => hid.add(x.label)));
+    return;
+  }
+  const picked = pickedList("breakdown");
+  const lobby = view === "lobby";
+  const heroes = picked.length ? picked : state.players;
+  // Column heads: each picked hero (with their solid or dashed line when there are two), the lobby's best, or the lobby total.
+  if (lobby) cols = [{ head: `<span class="ch">Best</span>`, w: 96 }];
+  else if (!picked.length) cols = [{ head: `<span class="ch">Lobby</span>` }];
+  else cols = picked.map((p, hi) => ({ head: portraitImg(p) + (picked.length <= 2 ? `<svg viewBox="0 0 26 6"><line x1="0" x2="26" y1="3" y2="3" stroke="#FFEFD7" stroke-width="2.5" stroke-dasharray="${HERO_DASH[hi]}"/></svg>` : ""), w: picked.length > 2 ? 48 : 58 }));
+  rows = g0.series.map((ser, i) => {
+    const vals = heroes.map(p => endOf(typeLine(g0, p, i)));
+    const tot = vals.reduce((a, v) => a + (v || 0), 0);
+    let best = null;
+    if (lobby) heroes.forEach((p, k) => { if (!best || vals[k] > best.v) best = { p, v: vals[k] }; });
+    return { i, label: ser.label, on: lineOn(g0, i), group: legendGroup(g0, ser.label), vals: lobby || !picked.length ? [tot] : vals, tot, best };
+  }).filter(r => r.on || !g0.dyn || r.tot > 0);
+  const groups = [];
+  for (const r of rows) { let gr = groups.find(x => x.name === r.group); if (!gr) groups.push(gr = { name: r.group, rows: [] }); gr.rows.push(r); }
+  groups.sort((a, b) => LEGEND_GROUPS.indexOf(a.name) - LEGEND_GROUPS.indexOf(b.name));
+  if (picked.length) h += `<div class="lgCols">` + cols.map(c => `<span class="lc" style="width:${c.w || 58}px">${c.head}</span>`).join("") + `</div>`;
+  h += `<div class="lgBody">`;
+  for (const gr of groups) {
+    gr.rows.sort((a, b) => b.tot - a.tot);
+    const fk = g0.id + "|" + gr.name, open = !!state.folds[fk];
+    const fold = gr.rows.length > FOLD_AT && !open;
+    const shown = fold ? gr.rows.filter((r, k) => k < FOLD_SHOW || r.on) : gr.rows;
+    h += `<div class="lgGroup">` + (gr.name ? `<div class="lgName">${esc(gr.name)}</div>` : "");
+    for (const r of shown) {
+      toggle[r.i] = () => setLine(g0, r.i, !lineOn(g0, r.i));
+      only[r.i] = () => g0.series.forEach((_, j) => setLine(g0, j, j === r.i));
+      const c = typeColor(g0, r.i);
+      const sw = `<i class="sw" style="--c:${c}"></i>`;
+      const max = Math.max(...r.vals);
+      const cells = lobby && r.best ? [`${portraitImg(r.best.p)}<b>${fmtShort(r.best.v, g)}</b>`] : r.vals.map(v => fmtShort(v, g));
+      const lo = !lobby && r.vals.length > 1 ? r.vals.map(v => v < max) : [];
+      h += lgRow(r.i, "t" + r.i, r.on, sw, r.label, cells, lo, "", cols.map(c => c.w || 58));
+    }
+    if (gr.rows.length > FOLD_AT) h += `<button class="lgMore" data-fold="${esc(fk)}">${open ? "Show fewer" : `+ ${gr.rows.length - shown.length} more${gr.name === "From items" ? " items" : ""}`}</button>`;
+    h += `</div>`;
+  }
+  h += `</div>`;
+  const anyOff = rows.some(r => !r.on), anyOn = rows.some(r => r.on);
+  h += lgFoot(anyOff, anyOn);
+  box.innerHTML = h;
+  wireLegend(box, toggle, only, () => rows.forEach(r => setLine(g0, r.i, true)), () => g0.series.forEach((_, j) => setLine(g0, j, false)));
+}
+function lgRow(i, key, on, sw, label, cells, lo, tip, widths) {
+  return `<div class="lgRow${on ? " on" : ""}" tabindex="0" role="button" aria-pressed="${on}" data-i="${i}" data-k="${esc(key)}"${tip ? ` title="${esc(tip)}"` : ""}>${sw}<span class="nm">${esc(label)}</span>` +
+    `<button class="only" title="Show only this line">Only</button>` +
+    cells.map((c, k) => `<span class="v${lo[k] ? " lo" : ""}"${widths ? ` style="width:${widths[k]}px"` : ""}>${c}</span>`).join("") + `</div>`;
+}
+function lgFoot(anyOff, anyOn) {
+  return `<div class="lgFoot"><button class="graphOptionButton" data-act="all"${anyOff ? "" : " disabled"}>All</button><button class="graphOptionButton" data-act="clear"${anyOn ? "" : " disabled"}>Clear</button></div>`;
+}
+function wireLegend(box, toggle, only, all, clear) {
+  box.onclick = ev => {
+    const t = ev.target.closest("button, .lgRow");
+    if (!t) return;
+    if (t.dataset.fold) { state.folds[t.dataset.fold] = !state.folds[t.dataset.fold]; renderAll(); return; }
+    if (t.dataset.act === "all") { all(); renderAll(); return; }
+    if (t.dataset.act === "clear") { clear(); renderAll(); return; }
+    const r = t.closest(".lgRow");
+    if (!r) return;
+    const i = Number(r.dataset.i);
+    if (t.classList.contains("only")) only[i](); else toggle[i]();
+    renderAll();
+  };
+  box.onkeydown = ev => {
+    const r = ev.target.closest && ev.target.closest(".lgRow");
+    if (!r || ev.target !== r || (ev.key !== "Enter" && ev.key !== " ")) return;
+    ev.preventDefault();
+    toggle[Number(r.dataset.i)]();
+    renderAll();
+    const again = box.querySelector(`.lgRow[data-i="${r.dataset.i}"]`); if (again) again.focus();
+  };
+  box.onmouseover = ev => { const r = ev.target.closest(".lgRow"); setFocus(r ? r.dataset.k : null); };
+  box.onmouseleave = () => setFocus(null);
+}
+
+// ---------- overview: a whole team or the lobby on a Player-Specific graph ----------
+// Five or more heroes with several line types each would be dozens of lines, so instead: team totals over time,
+// then a ranked table (one row per hero, one column per line type you turned on, the lobby best in gold).
+// Pick heroes from the table into the compare tray to see them side by side.
+const OV_COLS = 6;
+function heroTotalPts(g, p, times) {
+  const lines = g.series.map((_, i) => typeLine(g, p, i));
+  return times.map(t => [t, lines.reduce((a, pts) => a + (lerpAt(pts, t) || 0), 0)]);
+}
+function renderOverview(g0, g) {
+  const box = $("overview");
+  const heroes = pickedList("breakdown"), dur = state.match.duration_s || 1;
+  const on = visibleCats(g0).filter(i => heroes.some(p => endOf(typeLine(g0, p, i)) > 0) || !g0.dyn);
+  const cols = on.slice(0, OV_COLS);
+  const total = p => g0.series.reduce((a, _, i) => a + endOf(typeLine(g0, p, i)), 0);
+  const rowsOf = p => ({ p, tot: total(p), vals: cols.map(i => endOf(typeLine(g0, p, i))) });
+  const all = heroes.map(rowsOf).sort((a, b) => b.tot - a.tot);
+  all.forEach((r, k) => { r.rank = k + 1; });
+  const colMax = cols.map((_, c) => Math.max(...all.map(r => r.vals[c]), 0));
+  const totMax = Math.max(...all.map(r => r.tot), 0);
+  const everyone = heroes.length === state.players.length;
+
+  // Team totals over time, sampled every 30 seconds.
+  const times = []; for (let t = 0; t < dur; t += 30) times.push(t); times.push(dur);
+  const teams = [state.leftTeam, 1 - state.leftTeam].map(tm => {
+    const ps = heroes.filter(p => p.team === tm);
+    const per = ps.map(p => heroTotalPts(g0, p, times));
+    return { tm, n: ps.length, pts: times.map((t, k) => [t, per.reduce((a, pts) => a + pts[k][1], 0)]) };
+  }).filter(x => x.n);
+  const W = box.offsetWidth || 1480, CH = 176, l = 14, r = W - 120, top = 40, bot = CH - 30;
+  const ymax = Math.max(1, ...teams.flatMap(x => x.pts.map(q => q[1])));
+  const X = t => l + (t / dur) * (r - l), Y = v => bot - (v / ymax) * (bot - top);
+  let svg = `<svg class="ovChart" viewBox="0 0 ${W} ${CH}" width="${W}" height="${CH}">`;
+  svg += `<line x1="${l}" x2="${r}" y1="${bot}" y2="${bot}" stroke="#fff" stroke-opacity=".12"/>`;
+  for (let t = 0; t <= dur; t += dur > 1500 ? 600 : 300) svg += `<text x="${X(t)}" y="${CH - 8}" text-anchor="${t ? "middle" : "start"}">${fmtTime(t)}</text>`;
+  const ends = teams.map(x => ({ x, y: Y(x.pts[x.pts.length - 1][1]) })).sort((a, b) => a.y - b.y);
+  if (ends.length === 2 && ends[1].y - ends[0].y < 20) { const mid = (ends[0].y + ends[1].y) / 2; ends[0].y = mid - 10; ends[1].y = mid + 10; }
+  for (const { x, y } of ends) {
+    const c = TEAMS[x.tm].c, d = x.pts.map(([t, v], k) => `${k ? "L" : "M"}${X(t).toFixed(1)} ${Y(v).toFixed(1)}`).join("");
+    svg += `<path d="${d}" fill="none" stroke="${c}" stroke-width="2.6" stroke-linejoin="round"/>`;
+    svg += `<text class="ovEnd" x="${r + 10}" y="${y + 6}" style="fill:${c}">${fmtShort(x.pts[x.pts.length - 1][1], g)}</text>`;
+  }
+  svg += `</svg>`;
+  let h = `<div class="ovTop"><div class="cap">${everyone ? "Team totals" : "Team totals, picked heroes"}<span class="sub">All line types added up</span></div>${svg}</div>`;
+
+  // The ranked table, grouped by team.
+  const colW = cols.length ? Math.min(150, Math.floor((W - 420) / cols.length)) : 0;
+  h += `<div class="ovTable"><div class="ovHead"><span class="rk">Rank</span><span class="hero">Hero</span><span class="tot">Total</span>` +
+    cols.map(i => `<span class="col" style="width:${colW}px"><i class="sw" style="--c:${typeColor(g0, i)}"></i>${esc(g0.series[i].label)}</span>`).join("") +
+    (cols.length ? "" : `<span class="none">Pick lines on the right to add a column for each.</span>`) + `</div>`;
+  for (const tm of [state.leftTeam, 1 - state.leftTeam]) {
+    const rs = all.filter(x => x.p.team === tm);
+    if (!rs.length) continue;
+    const T = TEAMS[tm];
+    h += `<div class="ovTeam" style="--tc:${T.c}"><span class="rk"></span><span class="hero">${esc(T.name)}</span><span class="tot">${fmtShort(rs.reduce((a, x) => a + x.tot, 0), g)}</span>` +
+      cols.map((_, c) => `<span class="col" style="width:${colW}px">${fmtShort(rs.reduce((a, x) => a + x.vals[c], 0), g)}</span>`).join("") + `</div>`;
+    for (const x of rs) {
+      const inTray = state.tray.includes(x.p.slot);
+      h += `<div class="ovRow${inTray ? " inTray" : ""}" tabindex="0" role="button" data-slot="${x.p.slot}"><span class="rk">${x.rank}</span><span class="hero">${portraitImg(x.p)}<span class="hn">${esc(heroName(x.p))}</span>` +
+        `<button class="cmp">${inTray ? "In compare" : "+ Compare"}</button></span>` +
+        `<span class="tot${x.tot === totMax ? " best" : ""}">${fmtShort(x.tot, g)}</span>` +
+        x.vals.map((v, c) => `<span class="col${v && v === colMax[c] ? " best" : ""}" style="width:${colW}px"><b>${v ? fmtShort(v, g) : "–"}</b><i class="bar" style="width:${colMax[c] ? Math.round((v / colMax[c]) * 100) : 0}%;--c:${typeColor(g0, cols[c])}"></i></span>`).join("") + `</div>`;
+    }
+  }
+  if (on.length > cols.length) h += `<div class="ovMore">${on.length - cols.length} more line ${on.length - cols.length === 1 ? "type is" : "types are"} on. The table shows the first ${OV_COLS}.</div>`;
+  h += `</div>`;
+
+  // The compare tray: up to four heroes, then Compare opens them side by side.
+  const tray = state.tray.map(s => state.players.find(p => p.slot === s)).filter(Boolean);
+  h += `<div class="ovTray"><span class="cap">Compare</span>` + (tray.length ? tray.map(p => `<span class="chip" data-slot="${p.slot}" style="--tc:${TEAMS[p.team].c}">${portraitImg(p)}<span>${esc(heroName(p))}</span><button class="x" title="Remove">×</button></span>`).join("") +
+    `<button class="graphOptionButton go"${tray.length ? "" : " disabled"}>${tray.length === 1 ? "Show this hero" : `Compare these ${tray.length}`}</button>`
+    : `<span class="hint">Click heroes in the table to compare up to 4 side by side.</span>`) + `</div>`;
+  box.innerHTML = h;
+  box.onkeydown = ev => { if ((ev.key === "Enter" || ev.key === " ") && ev.target.classList.contains("ovRow")) { ev.preventDefault(); ev.target.click(); } };
+  box.onclick = ev => {
+    const chipX = ev.target.closest(".chip .x");
+    if (chipX) { const s = Number(chipX.closest(".chip").dataset.slot); state.tray = state.tray.filter(x => x !== s); renderAll(); return; }
+    if (ev.target.closest(".go")) { setSel(new Set(state.tray)); state.tray = []; renderAll(); return; }
+    const row = ev.target.closest(".ovRow");
+    if (!row) return;
+    const s = Number(row.dataset.slot);
+    if (state.tray.includes(s)) state.tray = state.tray.filter(x => x !== s);
+    else if (state.tray.length < 4) state.tray.push(s);
+    renderAll();
+  };
+}
+
+// ---------- speed check ----------
+// Shift+P shows how long drawing and hover take, to check the in-game browser keeps up. It stays on until pressed again.
+const perf = { on: false, render: [], hover: [], frames: [], last: 0 };
+function perfNote(kind, ms) {
+  if (!perf.on) return;
+  const a = perf[kind]; a.push(ms); if (a.length > 240) a.shift();
+}
+function perfLoop(now) {
+  if (!perf.on) return;
+  if (perf.last) { perf.frames.push(now - perf.last); if (perf.frames.length > 240) perf.frames.shift(); }
+  perf.last = now;
+  requestAnimationFrame(perfLoop);
+}
+function perfShow() {
+  if (!perf.on) return;
+  const st = a => a.length ? { avg: a.reduce((x, y) => x + y, 0) / a.length, max: Math.max(...a) } : null;
+  const f = st(perf.frames), hv = st(perf.hover), rd = st(perf.render);
+  const slow = perf.frames.filter(x => x > 20).length;
+  $("perf").innerHTML = `<b>Speed check</b> (Shift+P to hide)<br>` +
+    (f ? `Screen: ${Math.round(1000 / f.avg)} fps, ${slow} of the last ${perf.frames.length} frames slow (over 20 ms)<br>` : "") +
+    (hv ? `Hover update: ${hv.avg.toFixed(1)} ms average, ${hv.max.toFixed(1)} ms worst<br>` : "Move the mouse over the graph.<br>") +
+    (rd ? `Graph draw: ${rd.avg.toFixed(0)} ms average, ${rd.max.toFixed(0)} ms worst` : "");
+}
+function perfToggle() {
+  perf.on = !perf.on;
+  try { localStorage.setItem("postmortem.perf", perf.on ? "1" : ""); } catch (e) { /* storage blocked */ }
+  $("perf").hidden = !perf.on;
+  perf.render = []; perf.hover = []; perf.frames = []; perf.last = 0;
+  if (perf.on) { requestAnimationFrame(perfLoop); renderAll(); }
+}
+setInterval(perfShow, 500);
+document.addEventListener("keydown", ev => { if (ev.shiftKey && (ev.key === "P" || ev.key === "p")) perfToggle(); });
+try { if (localStorage.getItem("postmortem.perf") === "1") setTimeout(perfToggle, 0); } catch (e) { /* storage blocked */ }
 
 // ---------- helpers ----------
 function niceTicks(lo, hi, n, whole) {
@@ -1343,6 +1705,7 @@ function setStatus(msg, err, retry) {
 
 // ---------- boot ----------
 if (!EMBED) document.body.classList.add("standalone");
+loadMarks();
 fit();
 window.addEventListener("resize", () => { fit(); renderAll(); });
 wireDropDown();
