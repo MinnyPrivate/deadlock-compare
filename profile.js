@@ -452,7 +452,8 @@ async function loadMates() {
   if (my !== loadSeq) return;
   P.mates = { party: Array.isArray(party) ? party : null, all: Array.isArray(all) ? all : null };
   await loadNames([...(P.mates.party || []), ...(P.mates.all || [])].filter(m => m.matches_played >= MATE_MIN).map(m => Number(m.mate_id)));
-  if (my === loadSeq) renderSide();
+  if (my !== loadSeq) return;
+  if (P.withId) { recomputeGames(); renderProfile(); loadMetaFor(matchList().slice(0, 20)); } else renderSide();
 }
 async function loadSeasons() {
   const my = loadSeq;
@@ -521,11 +522,11 @@ async function refreshProfile() {
     const before = new Set(p.allGames.map(m => m.match_id));
     const { all, allGames } = splitHistory(history);
     const fresh = allGames.filter(m => !before.has(m.match_id)), added = fresh.length;
-    const hidden = added - gamesForMode(fresh, p.mode).length;
+    const hidden = added - gamesForMode(fresh, p.mode).length; // (the played-with filter can hide more; the list below says so)
     // keep the list we already have if the answer comes back empty or shorter: never swap good data for a blank
     if (allGames.length >= p.allGames.length) {
       p.allGames = allGames; p.skipped = all.length - allGames.length;
-      p.games = gamesForMode(allGames, p.mode);
+      recomputeGames();
     }
     p.fetchedAt = Date.now();
     p.refreshMsg = added ? `${plural(added, "new game")} found${hidden ? `, ${hidden} hidden by the ${p.mode} filter` : ""}` : "No new games yet. A game can take a few minutes to show up.";
@@ -572,14 +573,18 @@ async function loadProfile(id, src, confirmedProfile = null, accountSaved = true
     if (my !== loadSeq) return;
     const { all, allGames } = splitHistory(history);
     const mode = savedMode(), games = gamesForMode(allGames, mode);
+    const withSaved = savedWith(id); // the played-with filter, kept for this profile
     const name = (profile && profile.personaname) || `Player ${id}`;
     document.title = `${name} · Postmortem`;
     if (profile) NAMES.set(id, { name, avatar: steamAvatar(profile) });
     recentAdd({ id, name, avatar: profile && steamAvatar(profile) });
     P = { id, profile, name, allGames, games, mode, accountSaved, skipped: all.length - allGames.length, range: "all", hero: null, shown: 20, mates: null, mateMode: "party", seasons: null,
-      fetchedAt: Date.now(), refreshing: false, refreshMsg: "", src: local ? src : null };
+      fetchedAt: Date.now(), refreshing: false, refreshMsg: "", src: local ? src : null,
+      withId: withSaved ? withSaved.id : null, withKind: withSaved ? withSaved.kind : "party" };
+    closeWith();
+    if (P.withId) { recomputeGames(); loadNames([P.withId]); }
     renderProfile();
-    loadMetaFor(games.slice(0, 20));
+    loadMetaFor(matchList().slice(0, 20));
     if (allGames.length) {
       loadMates();
       loadSeasons();
@@ -693,7 +698,7 @@ function renderProfile() {
   const all = P.games, prof = P.profile || {};
   // ?theme=<hero id> previews another hero's theme; picking your own theme needs Steam sign-in, so later.
   const pick = Number(new URLSearchParams(location.search).get("theme"));
-  applyTheme(pick && HERO_NAMES_OK(pick) ? pick : mostPlayed(all));
+  applyTheme(pick && HERO_NAMES_OK(pick) ? pick : mostPlayed(P.allGames)); // the player's overall main, so a filter never changes the colours
   const latestRanked = all.find(m => m.ranked_display_badge && Math.floor(m.ranked_display_badge / 10) > 0);
   const st = streaks(all), tags = profileTags(all), sAll = summarize(all);
   const rank = latestRanked
@@ -885,7 +890,7 @@ function matesHtml() {
   const best = list.slice(0, Math.min(3, half)), worst = list.slice(Math.max(half, list.length - 3)).reverse();
   const row = m => {
     const nm = NAMES.get(m.id) || {};
-    return `<a class="mate" href="?id=${m.id}" data-id="${m.id}" data-tip="${m.w} wins and ${m.n - m.w} losses together. Click to open their profile.">
+    return `<a class="mate" href="?id=${m.id}" data-with="${m.id}" data-kind="${P.mateMode === "party" ? "party" : "team"}" data-tip="${m.w} wins and ${m.n - m.w} losses together. Click to show only your games with them. Ctrl-click opens their profile.">
       ${nm.avatar ? `<img src="${esc(nm.avatar)}" alt="">` : `<span class="noAv"></span>`}
       <span class="mName">${esc(nm.name || "Player " + m.id)}</span>
       <span class="mN">${m.n}</span>
@@ -1122,7 +1127,8 @@ function playersCol(meta, team, m) {
   const ps = meta.players.filter(p => p.team === team).sort((a, b) => a.slot - b.slot);
   return `<span class="pCol t${team + 1}">${ps.map(p => {
     const nm = (NAMES.get(p.account_id) || {}).name || (p.account_id ? "Player " + p.account_id : "Bot");
-    const me = p.account_id === P.id;
+    const me = p.account_id === P.id, mate = !me && p.account_id && p.team === teamNum(m.player_team);
+    if (mate) return `<a class="pl" href="?id=${p.account_id}" data-with="${p.account_id}" data-match="${m.match_id}" data-tip="${esc(nm)} on ${esc(heroName(p.hero_id))}. Click to show only your games with them. Ctrl-click opens their profile."><img src="${heroImg(p.hero_id)}" alt=""><span class="pn">${esc(nm)}</span></a>`;
     return me ? `<span class="pl me" data-tip="${esc(nm)} on ${esc(heroName(p.hero_id))} (this profile)."><img src="${heroImg(p.hero_id)}" alt=""><span class="pn">${esc(nm)}</span></span>`
       : `<a class="pl" href="?id=${p.account_id}" data-id="${p.account_id}" data-tip="${esc(nm)} on ${esc(heroName(p.hero_id))}. Click to open their profile."><img src="${heroImg(p.hero_id)}" alt=""><span class="pn">${esc(nm)}</span></a>`;
   }).join("")}</span>`;
@@ -1147,11 +1153,126 @@ function matchRow(m) {
     ${teams}
   </div>`;
 }
+// ---------- "Played with": only the games with one teammate ----------
+// deadlock-api's mate-stats lists, for every teammate, the ids of the matches you shared. Called twice: same_party=true
+// ("queued together") and same_party=false (anyone on your team, queued with you or not). The filter keeps the games
+// whose ids are in that list. Saved per profile as pm_with.
+const WITH_MIN = 2; // fewest shared games for a teammate to be offered in the list
+const withKinds = [["party", "Queued together", "Games where you queued in the same party."], ["team", "Same team", "Games where you were on the same team, queued together or not."]];
+const withList = kind => (P && P.mates && P.mates[kind === "party" ? "party" : "all"]) || null;
+function withSet() {
+  if (!P || !P.withId) return null;
+  const list = withList(P.withKind);
+  if (!list) return null;
+  const m = list.find(x => Number(x.mate_id) === P.withId);
+  return new Set(m && Array.isArray(m.matches) ? m.matches.map(Number) : []);
+}
+function recomputeGames() {
+  let g = gamesForMode(P.allGames, P.mode);
+  if (P.withId) { const set = withSet(); g = set ? g.filter(m => set.has(Number(m.match_id))) : []; }
+  P.games = g;
+}
+const withLoading = () => !!(P && P.withId && !withList(P.withKind));
+const nameOf = id => (NAMES.get(id) || {}).name || `Player ${id}`;
+function savedWith(profileId) {
+  try { const v = JSON.parse(localStorage.getItem("pm_with") || "null"); if (v && v.p === profileId && Number.isInteger(v.id) && v.id > 0 && ["party", "team"].includes(v.kind)) return v; } catch (e) { /* none */ }
+  return null;
+}
+function setWith(id, kind) {
+  hideTip();
+  P.withId = id ? Number(id) : null;
+  if (kind) P.withKind = kind;
+  try { if (P.withId) localStorage.setItem("pm_with", JSON.stringify({ p: P.id, id: P.withId, kind: P.withKind })); else localStorage.removeItem("pm_with"); } catch (e) { /* this visit only */ }
+  if (P.withId) loadNames([P.withId]).then(() => { if (P && P.withId) renderMatches(); });
+  recomputeGames();
+  if (P.hero && !P.games.some(m => m.hero_id === P.hero)) P.hero = null;
+  if (P.range !== "all" && P.games.length <= Number(P.range)) P.range = "all";
+  P.shown = 20;
+  const y = window.scrollY;
+  renderProfile();
+  window.scrollTo(0, y);
+  loadMetaFor(matchList().slice(0, 20));
+}
+// Clicking a teammate's name in a match or in the Teammates card: "queued together" if you queued with them in
+// that game (or, from the card, whichever list is showing), otherwise "same team".
+function kindFor(id, matchId) {
+  const party = withList("party");
+  const m = party && party.find(x => Number(x.mate_id) === Number(id));
+  return m && Array.isArray(m.matches) && (matchId == null || m.matches.map(Number).includes(Number(matchId))) ? "party" : "team";
+}
+
+let wpEl = null;
+function closeWith() { if (wpEl) wpEl.hidden = true; const b = document.getElementById("withBtn"); if (b) b.setAttribute("aria-expanded", "false"); }
+function withRows(q) {
+  const list = (withList(P.withKind) || []).filter(m => m.matches_played >= WITH_MIN && Number(m.mate_id) !== P.id)
+    .sort((a, b) => b.matches_played - a.matches_played || b.wins - a.wins);
+  const needle = q.trim().toLowerCase();
+  const rows = needle ? list.filter(m => nameOf(Number(m.mate_id)).toLowerCase().includes(needle)) : list;
+  return { rows: rows.slice(0, needle ? 12 : 8), total: rows.length, any: list.length };
+}
+function withRowHtml(m) {
+  const id = Number(m.mate_id), nm = NAMES.get(id) || {};
+  return `<button type="button" class="wRow ${P.withId === id ? "sel" : ""}" data-pick="${id}">
+    ${nm.avatar ? `<img src="${esc(nm.avatar)}" alt="">` : `<span class="noAv"></span>`}
+    <span class="wName">${esc(nameOf(id))}</span>
+    <span class="wMeta">${plural(m.matches_played, "game")} · ${pct(m.wins, m.matches_played)}% won</span></button>`;
+}
+function paintWithList() {
+  if (!wpEl || wpEl.hidden) return;
+  const input = wpEl.querySelector("#withQ"), box = wpEl.querySelector("#withList");
+  const q = input ? input.value : "";
+  if (!withList(P.withKind)) { box.innerHTML = `<p class="muted pad">${P.mates ? "Couldn't load your teammates right now." : "Loading your teammates..."}</p>`; return; }
+  const { rows, total, any } = withRows(q);
+  box.innerHTML = !any ? `<p class="muted pad">Nobody with ${WITH_MIN} or more games together${P.withKind === "party" ? " in a party yet. Try Same team." : " yet."}</p>`
+    : !rows.length ? `<p class="muted pad">No teammate with that name among the people you've played with most.</p>`
+    : `${q.trim() ? "" : `<div class="wHead">Most games together</div>`}${rows.map(withRowHtml).join("")}${total > rows.length && q.trim() ? `<p class="muted pad">Showing ${rows.length} of ${total}. Type more of the name.</p>` : ""}`;
+}
+function openWith(btn) {
+  if (!wpEl) {
+    wpEl = document.createElement("div");
+    wpEl.className = "withPop"; wpEl.setAttribute("role", "dialog"); wpEl.setAttribute("aria-label", "Played with"); wpEl.hidden = true;
+    document.body.appendChild(wpEl);
+    document.addEventListener("pointerdown", e => { if (!wpEl.hidden && !wpEl.contains(e.target) && !e.target.closest("#withBtn")) closeWith(); });
+    document.addEventListener("keydown", e => { if (e.key === "Escape" && !wpEl.hidden) { closeWith(); const b = document.getElementById("withBtn"); if (b) b.focus(); } });
+    wpEl.addEventListener("click", e => {
+      const k = e.target.closest("[data-wkind]"), p = e.target.closest("[data-pick]");
+      if (k) { P.withKind = k.dataset.wkind; if (P.withId) { setWith(P.withId, P.withKind); } paintWithShell(); }
+      if (p) { setWith(Number(p.dataset.pick), P.withKind); closeWith(); const b = document.getElementById("withBtn"); if (b) b.focus(); }
+      if (e.target.closest("#withClear")) { setWith(null); closeWith(); }
+      const pr = e.target.closest("a[data-id]");
+      if (pr && !(e.ctrlKey || e.metaKey || e.shiftKey || e.button)) { e.preventDefault(); closeWith(); go({ id: pr.dataset.id }, true); window.scrollTo(0, 0); }
+    });
+    wpEl.addEventListener("input", e => { if (e.target.id === "withQ") paintWithList(); });
+  }
+  paintWithShell();
+  const r = btn.getBoundingClientRect(), w = Math.min(360, window.innerWidth - 16);
+  wpEl.style.width = w + "px";
+  wpEl.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.right - w)) + window.scrollX + "px";
+  wpEl.style.top = r.bottom + 6 + window.scrollY + "px";
+  wpEl.hidden = false;
+  btn.setAttribute("aria-expanded", "true");
+  paintWithList();
+  const input = wpEl.querySelector("#withQ"); if (input) input.focus();
+  // names for the people shown, then again for search: only the most frequent teammates, in one call
+  const ids = new Set();
+  for (const kind of ["party", "team"]) (withList(kind) || []).filter(m => m.matches_played >= WITH_MIN).sort((a, b) => b.matches_played - a.matches_played).slice(0, 150).forEach(m => ids.add(Number(m.mate_id)));
+  loadNames([...ids]).then(paintWithList);
+}
+function paintWithShell() {
+  const q = wpEl.querySelector("#withQ") ? wpEl.querySelector("#withQ").value : "";
+  wpEl.innerHTML = `
+    <div class="seg small wKind" role="group" aria-label="What counts as played with">${withKinds.map(([v, l, tip]) => `<button type="button" data-wkind="${v}" class="${P.withKind === v ? "on" : ""}" aria-pressed="${P.withKind === v}" data-tip="${tip}">${l}</button>`).join("")}</div>
+    <input id="withQ" type="search" placeholder="Find a teammate by name" aria-label="Find a teammate by name" autocomplete="off" spellcheck="false" value="${esc(q)}">
+    <div id="withList" class="wList"></div>
+    ${P.withId ? `<div class="wFoot"><a class="link" href="?id=${P.withId}" data-id="${P.withId}">Open ${esc(nameOf(P.withId))}'s profile</a><button type="button" class="link" id="withClear">Show everyone</button></div>` : ""}`;
+  paintWithList();
+}
+
 function setMode(mode) {
   if (P.mode === mode) return;
   hideTip();
   P.mode = mode;
-  P.games = gamesForMode(P.allGames, mode);
+  recomputeGames();
   if (P.hero && !P.games.some(m => m.hero_id === P.hero)) P.hero = null;
   if (P.range !== "all" && P.games.length <= Number(P.range)) P.range = "all";
   P.shown = 20;
@@ -1182,14 +1303,20 @@ function renderMatches() {
     if (i < P.shown) day.shown.push(m);
   }
   const noDetails = shown.filter(m => META.get(m.match_id) === null).length;
+  const wk = P.withKind === "party" ? "queued together" : "on your team";
   const empty = !P.allGames.length
     ? (P.skipped ? "This player only has Street Brawl, bot or private lobby games on record." : "deadlock-api has no stored games for this account yet.")
+    : withLoading() ? `Finding your games with ${esc(nameOf(P.withId))}...`
+    : P.withId && !withList(P.withKind) ? "Couldn't load your teammates, so the played-with filter can't run. Reload to try again."
+    : P.withId ? `No ${P.mode === "all" ? "" : P.mode + " "}games with ${esc(nameOf(P.withId))} ${wk}. ${P.withKind === "party" ? "Try Same team, or " : "Try "}${P.mode === "all" ? "" : "All modes, or "}clear the filter.`
     : "No games match this filter. Select All to see every match mode.";
   el.innerHTML = `
     <div class="cardHead"><h2>Matches</h2>
       ${P.hero ? `<button class="chip filter" id="clearHero" aria-label="Show all heroes again"><img src="${heroImg(P.hero)}" alt="">${esc(heroName(P.hero))} only<span class="x" aria-hidden="true">✕</span></button>` : ""}
+      ${P.withId ? `<span class="chip filter withChip"><button type="button" id="withBtn" class="withMain" aria-haspopup="dialog" aria-expanded="false" data-tip="Change who you played with, or switch between queued together and same team.">${(NAMES.get(P.withId) || {}).avatar ? `<img src="${esc(NAMES.get(P.withId).avatar)}" alt="">` : ""}With ${esc(nameOf(P.withId))}<small>${P.withKind === "party" ? "queued together" : "same team"}</small></button><button type="button" id="clearWith" class="x" aria-label="Show every game again">✕</button></span>` : ""}
       <span class="sub">${plural(list.length, "game")}</span>
-      <div class="seg modeSeg" role="group" aria-label="Match mode">${MODES.map(([value, label]) => `<button type="button" data-mode="${value}" class="${P.mode === value ? "on" : ""}" aria-pressed="${P.mode === value}" data-tip="${modeTip(value)}">${label}</button>`).join("")}</div></div>
+      <span class="hdTools">${P.withId ? "" : `<button type="button" id="withBtn" class="btn ghost small withOpen" aria-haspopup="dialog" aria-expanded="false" data-tip="Only games with one teammate, for example a friend you queue with.">Played with</button>`}
+      <div class="seg modeSeg" role="group" aria-label="Match mode">${MODES.map(([value, label]) => `<button type="button" data-mode="${value}" class="${P.mode === value ? "on" : ""}" aria-pressed="${P.mode === value}" data-tip="${modeTip(value)}">${label}</button>`).join("")}</div></span></div>
     <div class="matchBar"><span id="freshBox">${refreshHtml()}</span><span class="dot" aria-hidden="true"></span><button class="link" id="openUpload" type="button">Missing a game?</button></div>
     ${list.length ? "" : `<p class="muted pad">${empty}</p>`}
     ${[...days.values()].map(({ t, shown, wins, losses, points, hasPoints }) => {
@@ -1204,6 +1331,14 @@ function renderMatches() {
   const clr = document.getElementById("clearHero");
   if (clr) clr.addEventListener("click", () => { P.hero = null; P.shown = 20; renderSide(); renderMatches(); loadMetaFor(P.games.slice(0, 20)); });
   el.querySelectorAll("[data-mode]").forEach(b => b.addEventListener("click", () => setMode(b.dataset.mode)));
+  const wb = document.getElementById("withBtn");
+  if (wb) wb.addEventListener("click", () => { if (wpEl && !wpEl.hidden) closeWith(); else openWith(wb); });
+  const cw = document.getElementById("clearWith");
+  if (cw) cw.addEventListener("click", () => { closeWith(); setWith(null); });
+  el.querySelectorAll("a[data-with]").forEach(a => a.addEventListener("click", e => {
+    if (e.ctrlKey || e.metaKey || e.shiftKey || e.button) return; // ctrl-click and the like keep opening the profile
+    e.preventDefault(); setWith(Number(a.dataset.with), a.dataset.kind || kindFor(a.dataset.with, a.dataset.match));
+  }));
   wireRefresh();
   for (const id of ["openUpload", "openUpload2"]) { const b = document.getElementById(id); if (b) b.addEventListener("click", () => openUpload(b)); }
   const retry = document.getElementById("metaRetry");
@@ -1228,6 +1363,11 @@ function wireSide() {
   if (pa) pa.addEventListener("click", () => { P.patsAll = !P.patsAll; renderSide(); });
   const ma = document.getElementById("matesAll");
   if (ma) ma.addEventListener("click", () => { P.matesAll = !P.matesAll; renderSide(); });
+  side.querySelectorAll("a[data-with]").forEach(a => a.addEventListener("click", e => {
+    if (e.ctrlKey || e.metaKey || e.shiftKey || e.button) return;
+    e.preventDefault(); setWith(Number(a.dataset.with), a.dataset.kind);
+    const m = document.getElementById("matches"); if (m && window.innerWidth < 900) m.scrollIntoView({ block: "start" });
+  }));
   side.querySelectorAll("a[data-id]").forEach(a => a.addEventListener("click", e => { e.preventDefault(); go({ id: a.dataset.id }, true); window.scrollTo(0, 0); }));
   const ch = document.getElementById("rjChart");
   if (ch && P.rankData) {
