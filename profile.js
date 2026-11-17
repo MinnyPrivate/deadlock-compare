@@ -25,6 +25,8 @@ const heroImg = id => (HERO_ART[id] && HERO_ART[id].mini)
 // Match rows: the hero's gloat card on a win and its wounded ("critical") card on a loss, like the game's post-match screen.
 const moodCard = (id, win) => (HERO_ART[id] && HERO_ART[id][win ? "gloat" : "crit"]) || heroCard(id);
 const heroCard = id => (HERO_ART[id] && HERO_ART[id].card) || ((window.HERO_CARDS || []).includes(Number(id)) ? `assets/cards/${Number(id)}.webp` : `assets/heroes/${Number(id) || 0}.png`);
+// A match opens on index.html. from=profile and pid let that page show "Back to profile" for this player.
+const matchHref = id => `index.html?match=${id}&from=profile${P && P.id ? "&pid=" + P.id : ""}`;
 // Hero theme: the page takes the official character-select backdrop and one accent colour from a hero
 // (for now the player's most played one). The accent is decoration only: win/loss, team and gold colours never change.
 function applyTheme(heroId) {
@@ -842,7 +844,7 @@ function formHtml(all) {
     </div>
     <div class="wlLbl">The last ${a.n} games, oldest to newest. Green won, red lost. Click one to open it.</div>
     <div class="wl" aria-label="Last ${a.n} results, oldest first">
-      ${last.slice().reverse().map(m => `<a class="sq ${isWin(m) ? "w" : "l"}" href="index.html?match=${m.match_id}" data-tip="${isWin(m) ? "Win" : "Loss"} as ${esc(heroName(m.hero_id))}, ${m.player_kills}/${m.player_deaths}/${m.player_assists}, ${esc(ago(m.start_time))}. Click to open."><img src="${heroImg(m.hero_id)}" alt="${esc(heroName(m.hero_id))}" loading="lazy"></a>`).join("")}
+      ${last.slice().reverse().map(m => `<a class="sq ${isWin(m) ? "w" : "l"}" href="${matchHref(m.match_id)}" data-tip="${isWin(m) ? "Win" : "Loss"} as ${esc(heroName(m.hero_id))}, ${m.player_kills}/${m.player_deaths}/${m.player_assists}, ${esc(ago(m.start_time))}. Click to open."><img src="${heroImg(m.hero_id)}" alt="${esc(heroName(m.hero_id))}" loading="lazy"></a>`).join("")}
     </div>
   </section>`;
 }
@@ -1136,7 +1138,7 @@ function matchRow(m) {
   const art = moodCard(m.hero_id, win);
   const teams = meta && meta.players.length >= 2 ? `<span class="players">${playersCol(meta, 0, m)}${playersCol(meta, 1, m)}</span>` : `<span class="players"></span>`;
   return `<div class="match ${win ? "w" : "l"}">
-    <a class="mLink" href="index.html?match=${m.match_id}" aria-label="${win ? "Win" : "Loss"} as ${esc(heroName(m.hero_id))}, ${esc(ago(m.start_time))}. Open in Postmortem."></a>
+    <a class="mLink" href="${matchHref(m.match_id)}" aria-label="${win ? "Win" : "Loss"} as ${esc(heroName(m.hero_id))}, ${esc(ago(m.start_time))}. Open in Postmortem."></a>
     <span class="mArt"><img src="${art}" alt="" loading="lazy"></span>
     <span class="mRes"><b>${win ? "Victory" : "Defeat"}</b><span>${modeLabel}${m.ranked_delta != null ? ` <i class="${m.ranked_delta >= 0 ? "good" : "bad"}">${m.ranked_delta >= 0 ? "+" : ""}${m.ranked_delta}</i>` : ""}</span><span>${mmss(m.match_duration_s)} · ${esc(clock(m.start_time))}</span></span>
     <span class="mKda"><b>${m.player_kills} / ${m.player_deaths} / ${m.player_assists}</b><span>${fmt1((m.player_kills + m.player_assists) / Math.max(1, m.player_deaths))} KDA</span><span>${kSouls(m.net_worth)} souls</span></span>
