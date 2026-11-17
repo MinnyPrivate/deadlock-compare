@@ -140,9 +140,9 @@ function parseQuery(raw) {
 
 // ---------- network ----------
 class ApiError extends Error { constructor(status, msg) { super(msg); this.status = status; } }
-async function getJson(url) {
+async function getJson(url, opts) {
   let r;
-  try { r = await fetch(url); } catch (e) { throw new ApiError(0, "Couldn't reach deadlock-api. Check your connection and try again."); }
+  try { r = await fetch(url, opts); } catch (e) { throw new ApiError(0, "Couldn't reach deadlock-api. Check your connection and try again."); }
   if (r.status === 429) throw new ApiError(429, "deadlock-api says we're asking too fast. Wait a minute, then try again.");
   if (!r.ok) throw new ApiError(r.status, `deadlock-api answered with error ${r.status}.`);
   return r.json();
@@ -178,12 +178,15 @@ function route() {
   hideTip();
   const me = accountId(p.get("me"));
   if (me !== null) {
-    try { localStorage.setItem("pm_me", String(me)); } catch (e) { return renderSetup(); }
-    p.delete("me");
+    // ?me= wins over everything else and is remembered. When this browser can't store it, ?me= stays in the
+    // address so a reload still opens the right profile.
+    let saved = true;
+    try { localStorage.setItem("pm_me", String(me)); } catch (e) { saved = false; }
+    if (saved) p.delete("me");
     p.delete("id");
     p.delete("q");
     history.replaceState(null, "", u);
-    return loadProfile(me, p.get("src"));
+    return loadProfile(me, p.get("src"), null, saved);
   }
   if (p.get("id")) return loadProfile(Number(p.get("id")), p.get("src"));
   if (p.get("q")) return searchPlayers(p.get("q"));
@@ -218,6 +221,7 @@ function renderSetup(changing = false) {
         <button type="submit">Look up</button>
       </form>
       <p class="accountError" id="accountError" role="status"></p>
+      ${changing ? "" : `<p class="accountHint muted">Saved in this browser only. Your SteamID64 or account ID is easy to find at <a class="link" href="https://steamid.io" target="_blank" rel="noopener">steamid.io</a>. To look up someone else, use the search box above.</p>`}
       <div class="accountPreview" id="accountPreview" hidden>
         <img alt="" referrerpolicy="no-referrer"><div><strong></strong><span class="muted"></span></div>
         <button class="btn" type="button" id="confirmAccount">Confirm</button>
@@ -324,6 +328,10 @@ async function searchPlayers(q) {
 // Only normal Deadlock games count: Street Brawl, bot games and private lobbies are left out.
 const COUNTED_MODES = new Set([0, 1, 4, 8]); // invalid/old, unranked, ranked, new player placement
 const MODES = [["all", "All"], ["ranked", "Ranked"], ["unranked", "Unranked"]];
+const modeTip = v => {
+  const n = P ? gamesForMode(P.allGames, v).length : 0;
+  return v === "all" ? `Every game: ${n.toLocaleString()}.` : v === "ranked" ? `${plural(n, "ranked game")}, including placement games.` : `${plural(n, "unranked game")}.`;
+};
 function savedMode() {
   try {
     const mode = localStorage.getItem("pm_mode");
@@ -336,9 +344,12 @@ function matchMode(match) {
   if (match.match_mode === 8) return "placement";
   return "unranked";
 }
+// Placement (calibration) games are ranked games, so the Ranked chip includes them.
+const modeGroup = match => (match.match_mode === 4 || match.match_mode === 8 ? "ranked" : "unranked");
 function gamesForMode(games, mode) {
-  return mode === "all" ? games : games.filter(match => matchMode(match) === mode);
+  return mode === "all" ? games : games.filter(match => modeGroup(match) === mode);
 }
+function savedMe() { try { return accountId(localStorage.getItem("pm_me")); } catch (e) { return null; } }
 const isWin = m => (m.player_match_outcome === 1 ? true : m.player_match_outcome === 2 ? false : m.match_result === m.player_team);
 let P = null; // the loaded profile and the user's choices on it
 let FX = null; // local test file, when ?src= is used
@@ -451,6 +462,89 @@ async function loadSeasons() {
   } catch (e) { /* the season table just stays hidden */ }
 }
 
+// ---------- match history: how fresh it is, and the Refresh control ----------
+// Why a game can be missing or late: deadlock-api's match-history is its stored copy. A game lands there only after
+// deadlock-api has received that match's keys (from someone's uploader or the app). Its answers are also cached for 5 minutes
+// by its CDN and by the browser. So: the first load asks for a copy no older than a minute (the address changes
+// each minute, so the cache can't hand back something older), and Refresh asks for the newest copy, at most
+// once every 2 minutes. force_refetch is not used: it only reaches Steam for accounts that are friends with
+// one of deadlock-api's bots, and is limited to 1 call an hour per IP address.
+const REFRESH_COOLDOWN = 120000;
+async function fetchHistory(id, fresh) {
+  const stamp = fresh ? Date.now() : Math.floor(Date.now() / 60000);
+  return getJson(`${API}players/${id}/match-history?_r=${stamp}`, { cache: fresh ? "reload" : "no-cache" });
+}
+function splitHistory(history) {
+  const all = (Array.isArray(history) ? history : []).slice().sort((a, b) => b.start_time - a.start_time);
+  const allGames = all.filter(m => (m.game_mode == null || m.game_mode === 1) && COUNTED_MODES.has(m.match_mode ?? 0));
+  return { all, allGames };
+}
+function ageText(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 45) return "just now";
+  if (s < 3600) return plural(Math.max(1, Math.round(s / 60)), "min") + " ago";
+  return plural(Math.round(s / 3600), "hour") + " ago";
+}
+function refreshWaitMs() { return P ? Math.max(0, P.fetchedAt + REFRESH_COOLDOWN - Date.now()) : 0; }
+function refreshHtml() {
+  const wait = refreshWaitMs();
+  const tip = `data-tip="Asks deadlock-api for the newest list of games. A game can take a few minutes to show up after it ends."`;
+  return `<span class="fresh"><span id="updated" class="muted">${P.refreshMsg ? esc(P.refreshMsg) : "Updated " + ageText(Date.now() - P.fetchedAt)}</span>
+    <button class="btn ghost small ${wait ? "cool" : ""}" id="refreshBtn" type="button" ${P.refreshing ? "disabled" : ""} aria-disabled="${wait ? "true" : "false"}" ${tip}>${P.refreshing ? "Refreshing..." : "Refresh"}</button></span>`;
+}
+function paintFresh() { // keeps "Updated 3 min ago" and the button state current without redrawing the page
+  const el = document.getElementById("updated"), btn = document.getElementById("refreshBtn");
+  if (!P || !el || !btn) return;
+  if (!P.refreshMsg) el.textContent = "Updated " + ageText(Date.now() - P.fetchedAt);
+  btn.disabled = P.refreshing;
+  const cool = refreshWaitMs() > 0;
+  btn.classList.toggle("cool", cool); btn.setAttribute("aria-disabled", String(cool));
+}
+setInterval(paintFresh, 15000);
+async function refreshProfile() {
+  if (!P || P.refreshing) return;
+  const wait = refreshWaitMs();
+  if (wait > 0) { // just checked: say so instead of asking deadlock-api again
+    const p0 = P;
+    P.refreshMsg = `Checked a moment ago. Try again in ${Math.ceil(wait / 1000)} seconds.`;
+    paintFreshNow();
+    setTimeout(() => { if (P === p0 && p0.refreshMsg && !p0.refreshing) { p0.refreshMsg = ""; paintFresh(); } }, 4000);
+    return;
+  }
+  const p = P, my = loadSeq;
+  p.refreshing = true; p.refreshMsg = ""; paintFreshNow();
+  try {
+    const history = p.src ? FX.history : await fetchHistory(p.id, true);
+    if (my !== loadSeq || p !== P) return;
+    const before = new Set(p.allGames.map(m => m.match_id));
+    const { all, allGames } = splitHistory(history);
+    const fresh = allGames.filter(m => !before.has(m.match_id)), added = fresh.length;
+    const hidden = added - gamesForMode(fresh, p.mode).length;
+    // keep the list we already have if the answer comes back empty or shorter: never swap good data for a blank
+    if (allGames.length >= p.allGames.length) {
+      p.allGames = allGames; p.skipped = all.length - allGames.length;
+      p.games = gamesForMode(allGames, p.mode);
+    }
+    p.fetchedAt = Date.now();
+    p.refreshMsg = added ? `${plural(added, "new game")} found${hidden ? `, ${hidden} hidden by the ${p.mode} filter` : ""}` : "No new games yet. A game can take a few minutes to show up.";
+    const y = window.scrollY;
+    p.refreshing = false;
+    renderProfile();
+    window.scrollTo(0, y);
+    loadMetaFor(matchList().slice(0, 20));
+    setTimeout(() => { if (P === p && p.refreshMsg) { p.refreshMsg = ""; paintFresh(); } }, 8000);
+  } catch (e) {
+    if (p !== P) return;
+    p.refreshing = false;
+    p.fetchedAt = Date.now() - REFRESH_COOLDOWN + 30000; // allow another try in 30 seconds
+    p.refreshMsg = e.status === 429 ? "deadlock-api is busy. Try again in a minute." : "Couldn't reach deadlock-api. Try again in a minute.";
+    paintFreshNow();
+    setTimeout(() => { if (P === p && p.refreshMsg) { p.refreshMsg = ""; paintFresh(); } }, 8000);
+  }
+}
+function paintFreshNow() { const el = document.getElementById("freshBox"); if (el && P) { el.innerHTML = refreshHtml(); wireRefresh(); } }
+function wireRefresh() { const b = document.getElementById("refreshBtn"); if (b) b.addEventListener("click", refreshProfile); }
+
 async function loadProfile(id, src, confirmedProfile = null, accountSaved = true) {
   const my = ++loadSeq;
   if (!Number.isInteger(id) || id <= 0 || id > MAX_ACCOUNT_ID) return renderState("That ID doesn't look right", "Account IDs are numbers like 135548265. A Steam profile link works too.");
@@ -468,20 +562,20 @@ async function loadProfile(id, src, confirmedProfile = null, accountSaved = true
     } else {
       const [, h, prof] = await Promise.all([
         loadHeroArt().then(() => null),
-        getJson(`${API}players/${id}/match-history`).catch(e => { if (e.status === 404) return []; throw e; }),
+        fetchHistory(id).catch(e => { if (e.status === 404) return []; throw e; }),
         confirmedProfile || getSteamProfile(id).catch(() => null),
       ]);
       history = h; profile = prof;
     }
     if (my !== loadSeq) return;
-    const all = (Array.isArray(history) ? history : []).slice().sort((a, b) => b.start_time - a.start_time);
-    const allGames = all.filter(m => (m.game_mode == null || m.game_mode === 1) && COUNTED_MODES.has(m.match_mode ?? 0));
+    const { all, allGames } = splitHistory(history);
     const mode = savedMode(), games = gamesForMode(allGames, mode);
     const name = (profile && profile.personaname) || `Player ${id}`;
     document.title = `${name} · Postmortem`;
     if (profile) NAMES.set(id, { name, avatar: steamAvatar(profile) });
     recentAdd({ id, name, avatar: profile && steamAvatar(profile) });
-    P = { id, profile, name, allGames, games, mode, accountSaved, skipped: all.length - allGames.length, range: "all", hero: null, shown: 20, mates: null, mateMode: "party", seasons: null };
+    P = { id, profile, name, allGames, games, mode, accountSaved, skipped: all.length - allGames.length, range: "all", hero: null, shown: 20, mates: null, mateMode: "party", seasons: null,
+      fetchedAt: Date.now(), refreshing: false, refreshMsg: "", src: local ? src : null };
     renderProfile();
     loadMetaFor(games.slice(0, 20));
     if (allGames.length) {
@@ -623,38 +717,32 @@ function renderProfile() {
         <b>${st.cur}</b><span>${st.cur === 1 ? (st.curWin ? "win" : "loss") : (st.curWin ? "wins" : "losses")} in a row</span>
       </div>` : ""}
       <button class="btn ghost" id="copyLink" data-tip="Copy a link to this profile to send to friends.">Copy link</button>
-      <button class="link changeAccount" id="changeAccount" type="button">Change account</button>
+      ${P.id === savedMe()
+        ? `<button class="link changeAccount" id="changeAccount" type="button">Change account</button>`
+        : `<button class="btn ghost" id="saveMe" type="button" data-tip="Open this profile every time you visit Postmortem Profile.">Save as me</button>`}
     </div>
   </section>
-  ${P.accountSaved ? "" : `<p class="accountStorage muted">This browser can't remember your account. Set it up again next time.</p>`}
+  ${P.accountSaved ? "" : `<p class="accountStorage muted">This browser can't remember your account. ${location.search.includes("me=") ? "Bookmark this page to come back to it." : "Set it up again next time."}</p>`}
   <div class="layout">
     <aside class="side" id="side" aria-label="Stats"></aside>
     <div class="mainCol">
       ${all.length ? formHtml(all) : ""}
-      <div class="modeChips" role="group" aria-label="Match mode">${MODES.map(([value, label]) => `
-        <button class="chip" type="button" data-mode="${value}" aria-pressed="${P.mode === value}">${label}</button>`).join("")}
-      </div>
       <section class="card" id="matches"></section>
     </div>
   </div>
-  <p class="foot">Data: deadlock-api${P.skipped ? `. ${plural(P.skipped, "Street Brawl, bot or private lobby game")} left out` : ""}. A game you just finished can take a while to show up. Verdicts are graded against each hero's average from about 24,000 recent matches; tags on a match are Valve's own accolades at their top tier. Click a match to open it in Postmortem.</p>`;
+  <p class="foot">Data: deadlock-api${P.skipped ? `. ${plural(P.skipped, "Street Brawl, bot or private lobby game")} left out` : ""}. Stats count the ${plural(P.allGames.length, "game")} deadlock-api has for this player; a game it never received can't be counted, and a new one can take a few minutes to show up. Verdicts are graded against each hero's average from about 24,000 recent matches; tags on a match are Valve's own accolades at their top tier. Click a match to open it in Postmortem.</p>`;
   renderSide();
   renderMatches();
-  document.getElementById("changeAccount").addEventListener("click", () => renderSetup(true));
-  $main.querySelectorAll("[data-mode]").forEach(button => button.addEventListener("click", () => {
-    const mode = button.dataset.mode;
-    if (P.mode === mode) return;
-    hideTip();
-    P.mode = mode;
-    P.games = gamesForMode(P.allGames, mode);
-    if (P.hero && !P.games.some(m => m.hero_id === P.hero)) P.hero = null;
-    if (P.range !== "all" && P.games.length <= Number(P.range)) P.range = "all";
-    P.shown = 20;
-    try { localStorage.setItem("pm_mode", mode); } catch (e) { /* use the selection for this visit */ }
+  const change = document.getElementById("changeAccount");
+  if (change) change.addEventListener("click", () => renderSetup(true));
+  const saveMe = document.getElementById("saveMe");
+  if (saveMe) saveMe.addEventListener("click", () => {
+    let ok = true;
+    try { localStorage.setItem("pm_me", String(P.id)); } catch (e) { ok = false; }
+    P.accountSaved = ok;
     renderProfile();
-    $main.querySelector(`[data-mode="${mode}"]`).focus({ preventScroll: true });
-    loadMetaFor(matchList().slice(0, 20));
-  }));
+    if (ok) { const c = document.getElementById("changeAccount"); if (c) c.focus(); }
+  });
   const copy = document.getElementById("copyLink");
   copy.addEventListener("click", async () => {
     const url = `${location.origin}${location.pathname}?id=${P.id}`;
@@ -1057,6 +1145,20 @@ function matchRow(m) {
     ${teams}
   </div>`;
 }
+function setMode(mode) {
+  if (P.mode === mode) return;
+  hideTip();
+  P.mode = mode;
+  P.games = gamesForMode(P.allGames, mode);
+  if (P.hero && !P.games.some(m => m.hero_id === P.hero)) P.hero = null;
+  if (P.range !== "all" && P.games.length <= Number(P.range)) P.range = "all";
+  P.shown = 20;
+  try { localStorage.setItem("pm_mode", mode); } catch (e) { /* use the selection for this visit */ }
+  renderProfile();
+  const b = $main.querySelector(`[data-mode="${mode}"]`);
+  if (b) b.focus({ preventScroll: true });
+  loadMetaFor(matchList().slice(0, 20));
+}
 function matchList() {
   return P.hero ? P.games.filter(m => m.hero_id === P.hero) : P.games;
 }
@@ -1077,24 +1179,31 @@ function renderMatches() {
     if (m.ranked_delta != null) { day.points += m.ranked_delta; day.hasPoints = true; }
     if (i < P.shown) day.shown.push(m);
   }
+  const noDetails = shown.filter(m => META.get(m.match_id) === null).length;
   const empty = !P.allGames.length
     ? (P.skipped ? "This player only has Street Brawl, bot or private lobby games on record." : "deadlock-api has no stored games for this account yet.")
     : "No games match this filter. Select All to see every match mode.";
   el.innerHTML = `
     <div class="cardHead"><h2>Matches</h2>
       ${P.hero ? `<button class="chip filter" id="clearHero" aria-label="Show all heroes again"><img src="${heroImg(P.hero)}" alt="">${esc(heroName(P.hero))} only<span class="x" aria-hidden="true">✕</span></button>` : ""}
-      <span class="sub">${plural(list.length, "game")}</span></div>
+      <span class="sub">${plural(list.length, "game")}</span>
+      <div class="seg modeSeg" role="group" aria-label="Match mode">${MODES.map(([value, label]) => `<button type="button" data-mode="${value}" class="${P.mode === value ? "on" : ""}" aria-pressed="${P.mode === value}" data-tip="${modeTip(value)}">${label}</button>`).join("")}</div></div>
+    <div class="matchBar"><span id="freshBox">${refreshHtml()}</span><span class="dot" aria-hidden="true"></span><button class="link" id="openUpload" type="button">Missing a game?</button></div>
     ${list.length ? "" : `<p class="muted pad">${empty}</p>`}
     ${[...days.values()].map(({ t, shown, wins, losses, points, hasPoints }) => {
       return `<div class="day"><div class="dayHead"><span class="dl">${esc(dayLabel(t))}</span><span class="dwl"><b class="good">${wins}W</b> <b class="bad">${losses}L</b></span>${hasPoints ? `<span class="dpts ${points >= 0 ? "good" : "bad"}" data-tip="Rank progress from that day's ranked games.">${points >= 0 ? "+" : ""}${points} rank</span>` : ""}</div>
       ${shown.map(matchRow).join("")}</div>`;
     }).join("")}
     ${metaNote ? `<p class="metaNote">${esc(metaNote)} <button class="link" id="metaRetry">Try again</button></p>` : ""}
+    ${noDetails ? `<p class="metaNote">${plural(noDetails, "match", "matches")} above ${noDetails === 1 ? "is" : "are"} missing item and player details. Your stats still count ${noDetails === 1 ? "it" : "them"}. <button class="link" id="openUpload2" type="button">Add missing matches</button></p>` : ""}
     ${list.length > P.shown ? `<button class="more" id="moreMatches">Show ${Math.min(20, list.length - P.shown)} more</button>` : ""}`;
   const more = document.getElementById("moreMatches");
   if (more) more.addEventListener("click", () => { P.shown += 20; renderMatches(); loadMetaFor(list.slice(P.shown - 20, P.shown)); });
   const clr = document.getElementById("clearHero");
   if (clr) clr.addEventListener("click", () => { P.hero = null; P.shown = 20; renderSide(); renderMatches(); loadMetaFor(P.games.slice(0, 20)); });
+  el.querySelectorAll("[data-mode]").forEach(b => b.addEventListener("click", () => setMode(b.dataset.mode)));
+  wireRefresh();
+  for (const id of ["openUpload", "openUpload2"]) { const b = document.getElementById(id); if (b) b.addEventListener("click", () => openUpload(b)); }
   const retry = document.getElementById("metaRetry");
   if (retry) retry.addEventListener("click", () => { for (const m of shown) if (META.get(m.match_id) === null) META.delete(m.match_id); metaNote = ""; renderMatches(); loadMetaFor(shown); });
   el.querySelectorAll("a[data-id]").forEach(a => a.addEventListener("click", e => { e.preventDefault(); go({ id: a.dataset.id }, true); window.scrollTo(0, 0); }));
@@ -1134,6 +1243,138 @@ function wireSide() {
     ch.addEventListener("pointerdown", move);
     ch.addEventListener("pointerleave", () => { cur.hidden = true; hideTip(); });
   }
+}
+
+// ---------- "Add a missing match": upload match keys from Steam's cache ----------
+// deadlock-api only learns about a game when someone sends it that match's keys (a "salt" for the match info and one for
+// the replay). Deadlock leaves them in Steam's web cache as file names like
+//   http://replay410.valve.net/1422450/138427763_1163193658.meta.bz2   (and .dem.bz2 for the replay key)
+// This reads only those cache entries, takes out three numbers per match (the server number, the match id and the key),
+// shows how many it found, and sends them to deadlock-api's public POST /v1/matches/salts only after the player presses Send.
+// Nothing else from the files is kept or sent.
+const COMPANION_APP = ""; // the Postmortem app's page, once it exists; empty shows "Coming soon"
+const CACHE_ENTRY = /^[0-9a-f]{40}_[0-9a-f]{40}$/i; // how Steam names httpcache files; anything else is never opened
+const SALT_URL = /replay(\d{1,5})\.valve\.net\W{0,8}1422450\/(\d{1,12})_(\d{1,10})\.(meta|dem)\.bz2/gi;
+const U32 = 4294967295;
+function readSalts(text, into) { // text -> Map(match_id -> { match_id, cluster_id, metadata_salt, replay_salt })
+  for (const m of text.matchAll(SALT_URL)) {
+    const cluster = Number(m[1]), id = Number(m[2]), salt = Number(m[3]);
+    if (!(id > 0) || !(salt > 0) || salt > U32) continue;
+    const r = into.get(id) || { match_id: id, cluster_id: cluster, metadata_salt: null, replay_salt: null };
+    if (m[4].toLowerCase() === "meta") r.metadata_salt = salt; else r.replay_salt = salt;
+    into.set(id, r);
+  }
+  return into;
+}
+async function scanCache(files, onProgress) { // files: File objects; only Steam cache entries are opened, and only their first 16 KB
+  const found = new Map(), list = files.filter(f => CACHE_ENTRY.test(f.name) && f.size > 0);
+  for (let i = 0; i < list.length; i += 40) {
+    await Promise.all(list.slice(i, i + 40).map(async f => {
+      try { readSalts(new TextDecoder("latin1").decode(await f.slice(0, 16384).arrayBuffer()), found); } catch (e) { /* unreadable file: skip */ }
+    }));
+    if (onProgress) onProgress(Math.min(i + 40, list.length), list.length);
+  }
+  return { matches: [...found.values()].filter(r => r.metadata_salt || r.replay_salt), looked: list.length };
+}
+async function pickCacheFolder() { // -> File[] (null when cancelled). Chromium's folder picker where it has one, else a folder input.
+  if (window.showDirectoryPicker) {
+    const dir = await window.showDirectoryPicker({ id: "steam-httpcache", mode: "read" });
+    const out = [];
+    const walk = async (d, depth) => {
+      for await (const [name, h] of d.entries()) {
+        if (h.kind === "file") { if (CACHE_ENTRY.test(name)) out.push(await h.getFile()); }
+        else if (depth < 2) await walk(h, depth + 1);
+      }
+    };
+    await walk(dir, 0);
+    return out;
+  }
+  return new Promise(resolve => {
+    const inp = document.createElement("input");
+    inp.type = "file"; inp.multiple = true; inp.setAttribute("webkitdirectory", "");
+    inp.addEventListener("change", () => resolve(inp.files && inp.files.length ? [...inp.files] : null));
+    inp.addEventListener("cancel", () => resolve(null));
+    inp.click();
+  });
+}
+async function sendSalts(matches, onProgress) { // -> { sent, rejected, error }
+  let sent = 0, rejected = 0;
+  const post = batch => fetch(`${API}matches/salts`, { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify(batch.map(r => ({ match_id: r.match_id, cluster_id: r.cluster_id, metadata_salt: r.metadata_salt, replay_salt: r.replay_salt, username: "postmortem" }))) });
+  for (let i = 0; i < matches.length; i += 25) {
+    const batch = matches.slice(i, i + 25);
+    let r;
+    try { r = await post(batch); } catch (e) { return { sent, rejected, error: "Couldn't reach deadlock-api. Check your connection and try again." }; }
+    if (r.status === 429) return { sent, rejected, error: "deadlock-api says we're sending too fast. Wait a minute and try again." };
+    if (r.ok) sent += batch.length;
+    else if (r.status === 400 && batch.length > 1) { // one bad key can fail the whole batch, so find which ones it is
+      for (const one of batch) { try { const q = await post([one]); if (q.ok) sent++; else rejected++; } catch (e) { rejected++; } }
+    } else if (r.status === 400) rejected++;
+    else return { sent, rejected, error: `deadlock-api answered with error ${r.status}. Try again later.` };
+    if (onProgress) onProgress(Math.min(i + 25, matches.length), matches.length);
+  }
+  return { sent, rejected, error: "" };
+}
+
+let upDlg = null;
+function openUpload(opener) {
+  if (!upDlg) {
+    upDlg = document.createElement("dialog");
+    upDlg.className = "upDlg";
+    upDlg.setAttribute("aria-labelledby", "upTitle");
+    document.body.appendChild(upDlg);
+    upDlg.addEventListener("click", e => { if (e.target === upDlg) upDlg.close(); }); // a click on the dim area closes it
+  }
+  const dlg = upDlg;
+  const onWin = /Windows/i.test(navigator.userAgent), isMac = /Mac/i.test(navigator.userAgent);
+  const path = onWin ? "C:\\Program Files (x86)\\Steam\\appcache\\httpcache" : isMac ? "~/Library/Application Support/Steam/appcache/httpcache" : "~/.steam/steam/appcache/httpcache";
+  dlg.innerHTML = `
+    <div class="upHead"><h2 id="upTitle">Add a missing match</h2><button class="x" id="upClose" type="button" aria-label="Close">✕</button></div>
+    <p class="upLead">deadlock-api can only show a game after someone sends it that game's match keys. If a game of yours is missing, you can send the keys yourself.</p>
+    <div class="upOpt primary">
+      <div><h3>Postmortem app</h3><p>Sends every game by itself, right after it ends. Nothing to do by hand.</p></div>
+      ${COMPANION_APP ? `<a class="btn" href="${esc(COMPANION_APP)}" target="_blank" rel="noopener">Get the app</a>` : `<button class="btn" type="button" disabled>Coming soon</button>`}
+    </div>
+    <div class="upOpt">
+      <div><h3>Upload from Steam cache</h3>
+        <p>Choose Steam's <b>httpcache</b> folder. It is usually at <code>${esc(path)}</code>. This page only looks for match keys inside it and shows you what it found before sending anything.</p>
+      </div>
+      <button class="btn" id="upPick" type="button">Choose folder</button>
+    </div>
+    <div class="upStatus" id="upStatus" role="status" aria-live="polite"></div>
+    <div class="faq">
+      <details><summary>Why do games go missing?</summary><p>Valve only lets a stats site fetch a match when it knows that match's keys, and it limits how fast sites can ask. deadlock-api collects keys from players who share them, so a game nobody shared can stay missing, and a new one can take a few minutes.</p></details>
+      <details><summary>What gets sent?</summary><p>Three numbers per match: the server number, the match id and one or two keys, plus the label "postmortem". No names, accounts, file contents or file names. Nothing is sent until you press Send.</p></details>
+      <details><summary>Is it free? Will it slow my game?</summary><p>It is free. Reading the folder takes a few seconds on this page, and nothing runs while you play.</p></details>
+      <details><summary>My browser won't open that folder</summary><p>Some browsers refuse folders inside Program Files. Copy the <b>httpcache</b> folder to your Desktop, then choose the copy. After sending, wait a few minutes and press Refresh on your profile.</p></details>
+    </div>`;
+  const status = dlg.querySelector("#upStatus"), pick = dlg.querySelector("#upPick");
+  dlg.querySelector("#upClose").addEventListener("click", () => dlg.close());
+  const say = (html, cls) => { status.className = "upStatus" + (cls ? " " + cls : ""); status.innerHTML = html; };
+  pick.addEventListener("click", async () => {
+    pick.disabled = true; say("");
+    let files;
+    try { files = await pickCacheFolder(); } catch (e) {
+      pick.disabled = false;
+      return say(e && e.name === "AbortError" ? "" : "Your browser wouldn't open that folder. Copy the <b>httpcache</b> folder to your Desktop and choose the copy.", "err");
+    }
+    if (!files) { pick.disabled = false; return; }
+    say("Reading the folder...");
+    const { matches, looked } = await scanCache(files, (n, t) => say(`Reading the folder... ${n.toLocaleString()} of ${t.toLocaleString()} files`));
+    pick.disabled = false;
+    if (!looked) return say("That doesn't look like Steam's httpcache folder. It should hold folders named 00 to ff full of long file names.", "err");
+    if (!matches.length) return say(`Looked through ${plural(looked, "file")} and found no match keys. Check that this is the Steam folder on the computer that plays Deadlock.`, "err");
+    say(`Found <b>${plural(matches.length, "match", "matches")}</b> with keys. <button class="btn" id="upSend" type="button">Send ${matches.length.toLocaleString()}</button><span class="muted">Only match numbers and keys are sent.</span>`);
+    dlg.querySelector("#upSend").addEventListener("click", async e => {
+      e.currentTarget.disabled = true;
+      const r = await sendSalts(matches, (n, t) => say(`Sending... ${n} of ${t}`));
+      if (r.error) return say(`${r.sent ? `Sent ${plural(r.sent, "match", "matches")}. ` : ""}${esc(r.error)}`, "err");
+      say(`Sent ${plural(r.sent, "match", "matches")}${r.rejected ? `. deadlock-api turned down ${r.rejected}, which usually means its keys are too old` : ""}. They usually show up within a few minutes. Press Refresh on your profile after that.`, "ok");
+    });
+  });
+  if (typeof dlg.showModal === "function") dlg.showModal(); else dlg.setAttribute("open", "");
+  dlg.addEventListener("close", () => { if (opener && opener.isConnected) opener.focus(); }, { once: true });
+  hideTip();
 }
 
 // ---------- tooltips: hover or keyboard focus shows the rule; a tap on a touch screen toggles it ----------
