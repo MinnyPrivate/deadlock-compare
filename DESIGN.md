@@ -89,3 +89,20 @@ Not started and not urgent. When it comes: a separate stacked layout below about
 ## 7. For Codex and Claude threads
 
 Mention this file in any prompt that touches the site's look. If a task seems to need breaking a rule here, stop and ask instead of guessing.
+
+## 8. Patterns every screen follows
+
+These came out of the Graphs redesign (Zachary's answers, Nov 16 2026). Graphs is the pilot; every other tab gets checked against this list in the full design audit.
+
+1. **A layout for every group size.** Split only where it helps. A graph with one line per hero stays one chart even with all 12, kept readable by the sorted readout and hover-to-focus. A graph with many types per hero gets three views, each designed for its size: 1 or 2 heroes on one chart, 3 or 4 heroes in side-by-side panels, a team or the lobby in a summary overview (totals, rankings, who led each stat, pick heroes into a compare). Never stretch one layout until it breaks, and never treat the bigger views as a fallback.
+2. **One meaning per visual channel.** Each of color, line style, size and shape answers exactly one question on a given screen. If color means "line type" there, it cannot also mean "hero" there; say which is which on screen (a key), never leave it to memory.
+3. **The legend is the control.** Wherever there is a list of things you can turn on, the list also shows what each thing is worth. No separate legend and picker.
+4. **Calm at rest, rich on hover.** The resting screen shows the answer; how and when live one hover away. Never put detail on screen just because we have it.
+5. **Show the outcome, not just the event.** A marker says what happened (upgraded into what, killed whom, dead for how long), not only that something happened.
+6. **Size and shape carry importance.** Bigger and more distinct shapes for the things that matter more; small for the routine. Labels only on the few that need them.
+7. **Two levels of control, never more.** A plain switch on screen, finer choices behind a small arrow.
+8. **Nothing disappears silently.** Hidden things still show their totals or are counted ("+9 more"), so you always know what you are not seeing.
+9. **Group and sort with a reason.** Any list is grouped by something the player thinks in (map, items, abilities) and sorted by size. Never in the order the data arrived.
+10. **You build the view.** Nothing is drawn or switched on until you pick it. Only your own choices (which heroes, which marker settings) carry over to the next screen. Empty screens say in one line what to pick.
+
+Speed: the in-game browser draws on the CPU and shares it with the game. Keep hover work to what changed (no redrawing lines on mouse move), keep CSS filters and blurs off anything that redraws often, and check heavy screens with the Shift+P speed readout.
