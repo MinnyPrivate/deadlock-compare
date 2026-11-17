@@ -21,6 +21,8 @@ const heroName = id => (window.HERO_NAMES && HERO_NAMES[id]) || "Hero " + id;
 let HERO_ART = {};
 const heroImg = id => (HERO_ART[id] && HERO_ART[id].mini)
   || ((window.HERO_MM || []).includes(Number(id)) ? `assets/heroes_mm/${Number(id)}.png` : `assets/heroes/${Number(id) || 0}.png`);
+// Match rows: the hero's gloat card on a win and its wounded ("critical") card on a loss, like the game's post-match screen.
+const moodCard = (id, win) => (HERO_ART[id] && HERO_ART[id][win ? "gloat" : "crit"]) || heroCard(id);
 const heroCard = id => (HERO_ART[id] && HERO_ART[id].card) || ((window.HERO_CARDS || []).includes(Number(id)) ? `assets/cards/${Number(id)}.webp` : `assets/heroes/${Number(id) || 0}.png`);
 // Hero theme: the page takes the official character-select backdrop and one accent colour from a hero
 // (for now the player's most played one). The accent is decoration only: win/loss, team and gold colours never change.
@@ -36,7 +38,7 @@ function applyTheme(heroId) {
 }
 async function loadHeroArt() {
   try {
-    const c = JSON.parse(localStorage.getItem("pm_hero_art2") || "null");
+    const c = JSON.parse(localStorage.getItem("pm_hero_art3") || "null");
     if (c && c.t > Date.now() - 86400000 && c.art) { HERO_ART = c.art; return; }
   } catch (e) { /* no cache */ }
   try {
@@ -50,10 +52,11 @@ async function loadHeroArt() {
       const pick = (...k) => k.map(x => safeUrl(im[x])).find(Boolean) || "";
       const ui = h.colors && Array.isArray(h.colors.ui) && h.colors.ui.length === 3 ? h.colors.ui.map(Number) : null;
       art[h.id] = { mini: pick("minimap_image_webp", "minimap_image", "icon_image_small_webp", "icon_image_small"), card: pick("icon_hero_card_webp", "icon_hero_card"),
-        bg: pick("background_image_webp", "background_image"), ui: ui && ui.every(n => n >= 0 && n <= 255) ? `rgb(${ui.join(",")})` : "" };
+        bg: pick("background_image_webp", "background_image"),
+        gloat: pick("hero_card_gloat_webp", "hero_card_gloat"), crit: pick("hero_card_critical_webp", "hero_card_critical"), ui: ui && ui.every(n => n >= 0 && n <= 255) ? `rgb(${ui.join(",")})` : "" };
     }
     HERO_ART = art;
-    try { localStorage.setItem("pm_hero_art2", JSON.stringify({ t: Date.now(), art })); } catch (e) { /* storage blocked */ }
+    try { localStorage.setItem("pm_hero_art3", JSON.stringify({ t: Date.now(), art })); } catch (e) { /* storage blocked */ }
   } catch (e) { /* keep the local images */ }
 }
 const safeUrl = u => (typeof u === "string" && /^https:\/\//.test(u) ? u : "");
@@ -884,7 +887,7 @@ function matchRow(m) {
   const mode = m.match_mode === 4 ? "Ranked" : m.match_mode === 8 ? "Placement" : "Unranked";
   const mvp = me && me.mvp ? (me.mvp === 1 ? `<span class="chipMvp gold" data-tip="Valve's MVP for this match.">MVP</span>` : `<span class="chipMvp" data-tip="Valve's Key Player: ${me.mvp === 2 ? "2nd" : "3rd"} best in the lobby.">#${me.mvp}</span>`) : "";
   const acc = topAccolades(me);
-  const art = heroCard(m.hero_id);
+  const art = moodCard(m.hero_id, win);
   const teams = meta && meta.players.length >= 2 ? `<span class="players">${playersCol(meta, 0, m)}${playersCol(meta, 1, m)}</span>` : `<span class="players"></span>`;
   return `<div class="match ${win ? "w" : "l"}">
     <a class="mLink" href="index.html?match=${m.match_id}" aria-label="${win ? "Win" : "Loss"} as ${esc(heroName(m.hero_id))}, ${esc(ago(m.start_time))}. Open in Postmortem."></a>
