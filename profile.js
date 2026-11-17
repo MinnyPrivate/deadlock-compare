@@ -6,6 +6,7 @@
 
 const API = "https://api.deadlock-api.com/v1/";
 const STEAM64_BASE = 76561197960265728n;
+const MAX_ACCOUNT_ID = 4294967295;
 const $main = document.getElementById("main");
 const $tip = document.getElementById("tip");
 const $q = document.getElementById("q");
@@ -98,6 +99,32 @@ function rankHtml(badge, size) {
 const badgeStep = b => Math.floor(b / 10) * 6 + (Math.max(1, b % 10) - 1);
 
 // ---------- reading the player's input ----------
+function accountId(value) {
+  if (!value || /\D/.test(value)) return null;
+  const id = Number(value);
+  return id >= 1 && id <= MAX_ACCOUNT_ID ? id : null;
+}
+
+function setupAccountId(raw) {
+  let value = raw.trim();
+  if (!/^\d+$/.test(value)) {
+    let link;
+    try { link = new URL(/^https?:\/\//i.test(value) ? value : `https://${value}`); } catch (e) { /* invalid URL */ }
+    if (link && /^(www\.)?steamcommunity\.com$/.test(link.hostname) && !link.username && !link.password && !link.port) {
+      if (/^\/id\//i.test(link.pathname)) throw new Error("Steam vanity links aren't supported yet. Use a Steam profiles link or paste the number.");
+      const match = link.pathname.match(/^\/profiles\/(\d+)\/?$/i);
+      if (match) value = match[1];
+    }
+  }
+  const id = accountId(value);
+  if (id !== null) return id;
+  if (/^\d{17}$/.test(value)) {
+    const converted = accountId(String(BigInt(value) - STEAM64_BASE));
+    if (converted !== null) return converted;
+  }
+  throw new Error("Enter a valid account ID, SteamID64, or Steam profiles link.");
+}
+
 // Accepts a Steam profile link, a SteamID64, a SteamID3 ([U:1:123]), a plain account id, or a name.
 function parseQuery(raw) {
   const s = String(raw || "").trim();
@@ -121,6 +148,12 @@ async function getJson(url) {
   return r.json();
 }
 
+async function getSteamProfile(id) {
+  const list = await getJson(`${API}players/steam?account_ids=${id}`);
+  return Array.isArray(list) ? list.find(p => Number(p.account_id) === id) : null;
+}
+const steamAvatar = p => safeUrl(p.avatarfull) || safeUrl(p.avatarmedium) || safeUrl(p.avatar);
+
 // ---------- recent profiles (this browser only) ----------
 function recentGet() { try { return JSON.parse(localStorage.getItem("pm_recent_profiles") || "[]").slice(0, 6); } catch (e) { return []; } }
 function recentAdd(p) {
@@ -141,11 +174,23 @@ function go(params, push) {
   route();
 }
 function route() {
-  const p = new URLSearchParams(location.search);
+  const u = new URL(location.href), p = u.searchParams;
   hideTip();
+  const me = accountId(p.get("me"));
+  if (me !== null) {
+    try { localStorage.setItem("pm_me", String(me)); } catch (e) { return renderSetup(); }
+    p.delete("me");
+    p.delete("id");
+    p.delete("q");
+    history.replaceState(null, "", u);
+    return loadProfile(me, p.get("src"));
+  }
   if (p.get("id")) return loadProfile(Number(p.get("id")), p.get("src"));
   if (p.get("q")) return searchPlayers(p.get("q"));
-  renderHome();
+  let saved;
+  try { saved = accountId(localStorage.getItem("pm_me")); } catch (e) { return renderSetup(); }
+  if (saved !== null) return loadProfile(saved, p.get("src"));
+  renderSetup();
 }
 window.addEventListener("popstate", route);
 document.getElementById("search").addEventListener("submit", e => {
@@ -158,26 +203,89 @@ document.getElementById("search").addEventListener("submit", e => {
 document.getElementById("home").addEventListener("click", e => { e.preventDefault(); $q.value = ""; go({}, true); });
 
 // ---------- views: home, search, states ----------
-function renderHome() {
+function renderSetup(changing = false) {
+  ++loadSeq;
+  hideTip();
   applyTheme(0);
   document.title = "Profile · Postmortem";
-  const recent = recentGet();
+  const recent = changing ? [] : recentGet();
   $main.innerHTML = `
-    <section class="hero-empty">
-      <h1>Find a player</h1>
-      <p>Type a Steam name, or paste a Steam profile link or account ID in the box above.</p>
-      <form class="search big" id="bigSearch" role="search" autocomplete="off">
-        <input id="q2" type="search" placeholder="Name, Steam link or account ID" aria-label="Find a player" spellcheck="false">
-        <button type="submit">Find</button>
+    <section class="card accountSetup" aria-labelledby="accountTitle">
+      <h1 id="accountTitle">${changing ? "Change account" : "Set up your profile"}</h1>
+      <label for="accountInput">Enter your account ID, SteamID64, or Steam profiles link.</label>
+      <form class="search" id="accountForm" autocomplete="off">
+        <input id="accountInput" type="text" placeholder="Account ID or Steam profiles link" spellcheck="false" autocapitalize="none" maxlength="256" aria-describedby="accountError">
+        <button type="submit">Look up</button>
       </form>
-      ${recent.length ? `<div class="recent"><span class="lbl">Recently viewed</span>${recent.map(r => `
-        <a class="chip person" href="?id=${r.id}" data-id="${r.id}">${safeUrl(r.avatar) ? `<img src="${esc(safeUrl(r.avatar))}" alt="">` : ""}${esc(r.name)}</a>`).join("")}</div>` : ""}
-      <p class="fine">Built from public match data on deadlock-api. Only finished games, never live ones.</p>
-    </section>`;
-  const f = document.getElementById("bigSearch"), q2 = document.getElementById("q2");
-  f.addEventListener("submit", e => { e.preventDefault(); $q.value = q2.value; document.getElementById("search").requestSubmit(); });
+      <p class="accountError" id="accountError" role="status"></p>
+      <div class="accountPreview" id="accountPreview" hidden>
+        <img alt="" referrerpolicy="no-referrer"><div><strong></strong><span class="muted"></span></div>
+        <button class="btn" type="button" id="confirmAccount">Confirm</button>
+      </div>
+      ${changing ? `<button class="link" type="button" id="cancelAccount">Cancel</button>` : ""}
+    </section>
+    ${recent.length ? `
+    <div class="recent"><span class="lbl">Recently viewed</span>${recent.map(r => `
+      <a class="chip person" href="?id=${r.id}" data-id="${r.id}">${safeUrl(r.avatar) ? `<img src="${esc(safeUrl(r.avatar))}" alt="">` : ""}${esc(r.name)}</a>`).join("")}</div>` : ""}`;
+  const form = document.getElementById("accountForm"), input = document.getElementById("accountInput");
+  const error = document.getElementById("accountError"), preview = document.getElementById("accountPreview");
+  const confirm = document.getElementById("confirmAccount"), lookup = form.querySelector("button");
+  let profile = null, lookupSeq = 0;
+  function clearPreview() {
+    lookupSeq++;
+    profile = null;
+    preview.hidden = true;
+    error.textContent = "";
+    input.removeAttribute("aria-invalid");
+    lookup.disabled = false;
+    lookup.textContent = "Look up";
+  }
+  input.addEventListener("input", clearPreview);
+  form.addEventListener("submit", async e => {
+    e.preventDefault();
+    clearPreview();
+    let id;
+    try { id = setupAccountId(input.value); } catch (e) {
+      error.textContent = e.message;
+      input.setAttribute("aria-invalid", "true");
+      return;
+    }
+    const current = lookupSeq;
+    lookup.disabled = true;
+    lookup.textContent = "Looking up...";
+    try {
+      const found = await getSteamProfile(id);
+      if (!form.isConnected || current !== lookupSeq) return;
+      if (!found?.personaname || !steamAvatar(found)) {
+        error.textContent = "Couldn't find that Steam profile. Check the number and try again.";
+        return;
+      }
+      profile = found;
+      preview.querySelector("img").src = steamAvatar(found);
+      preview.querySelector("strong").textContent = found.personaname;
+      preview.querySelector("span").textContent = `Account ID ${id}`;
+      preview.hidden = false;
+      confirm.focus();
+    } catch (e) {
+      if (form.isConnected && current === lookupSeq) error.textContent = "Couldn't load the Steam profile. Try again in a moment.";
+    } finally {
+      if (current === lookupSeq) {
+        lookup.disabled = false;
+        lookup.textContent = "Look up";
+      }
+    }
+  });
+  confirm.addEventListener("click", () => {
+    if (!profile) return;
+    const id = Number(profile.account_id);
+    let saved = true;
+    try { localStorage.setItem("pm_me", String(id)); } catch (e) { saved = false; }
+    history.replaceState(null, "", location.pathname);
+    loadProfile(id, null, profile, saved);
+  });
+  if (changing) document.getElementById("cancelAccount").addEventListener("click", route);
   $main.querySelectorAll("a[data-id]").forEach(a => a.addEventListener("click", e => { e.preventDefault(); go({ id: a.dataset.id }, true); }));
-  q2.focus();
+  if (changing) input.focus();
 }
 function renderState(title, text, action) {
   applyTheme(0);
@@ -215,6 +323,22 @@ async function searchPlayers(q) {
 // ---------- the profile ----------
 // Only normal Deadlock games count: Street Brawl, bot games and private lobbies are left out.
 const COUNTED_MODES = new Set([0, 1, 4, 8]); // invalid/old, unranked, ranked, new player placement
+const MODES = [["all", "All"], ["ranked", "Ranked"], ["unranked", "Unranked"]];
+function savedMode() {
+  try {
+    const mode = localStorage.getItem("pm_mode");
+    if (MODES.some(([value]) => value === mode)) return mode;
+  } catch (e) { /* use the default */ }
+  return "all";
+}
+function matchMode(match) {
+  if (match.match_mode === 4) return "ranked";
+  if (match.match_mode === 8) return "placement";
+  return "unranked";
+}
+function gamesForMode(games, mode) {
+  return mode === "all" ? games : games.filter(match => matchMode(match) === mode);
+}
 const isWin = m => (m.player_match_outcome === 1 ? true : m.player_match_outcome === 2 ? false : m.match_result === m.player_team);
 let P = null; // the loaded profile and the user's choices on it
 let FX = null; // local test file, when ?src= is used
@@ -271,9 +395,14 @@ async function fetchMeta(ids) {
   return out;
 }
 let metaBusy = false;
+let pendingMeta = null;
 async function loadMetaFor(list) {
   const ids = list.map(m => m.match_id).filter(id => !META.has(id)).slice(0, 20);
-  if (!ids.length || metaBusy) return;
+  if (!ids.length) return;
+  if (metaBusy) {
+    pendingMeta = { list, seq: loadSeq };
+    return;
+  }
   metaBusy = true;
   const my = loadSeq;
   try {
@@ -288,6 +417,9 @@ async function loadMetaFor(list) {
     metaNote = e.status === 429 ? "deadlock-api is busy, so items and players are missing on some matches." : "";
   } finally {
     metaBusy = false;
+    const next = pendingMeta;
+    pendingMeta = null;
+    if (next && next.seq === loadSeq) loadMetaFor(next.list);
   }
   if (my === loadSeq && P) { renderMatches(); renderSide(); }
 }
@@ -319,9 +451,9 @@ async function loadSeasons() {
   } catch (e) { /* the season table just stays hidden */ }
 }
 
-async function loadProfile(id, src) {
+async function loadProfile(id, src, confirmedProfile = null, accountSaved = true) {
   const my = ++loadSeq;
-  if (!Number.isFinite(id) || id <= 0 || id > 4294967295) return renderState("That ID doesn't look right", "Account IDs are numbers like 135548265. A Steam profile link works too.");
+  if (!Number.isInteger(id) || id <= 0 || id > MAX_ACCOUNT_ID) return renderState("That ID doesn't look right", "Account IDs are numbers like 135548265. A Steam profile link works too.");
   $q.value = "";
   renderLoading("Loading match history...");
   const local = src && /^test\/[\w-]+\.json$/.test(src); // local test file: only files in this repo's test/ folder
@@ -329,37 +461,36 @@ async function loadProfile(id, src) {
   try {
     let profile = null, history;
     if (local) {
-      FX = await getJson(src);
+      const fixture = await getJson(src);
+      if (my !== loadSeq) return;
+      FX = fixture;
       profile = FX.profile; history = FX.history;
     } else {
       const [, h, prof] = await Promise.all([
         loadHeroArt().then(() => null),
         getJson(`${API}players/${id}/match-history`).catch(e => { if (e.status === 404) return []; throw e; }),
-        getJson(`${API}players/steam?account_ids=${id}`).then(r => (Array.isArray(r) ? r[0] : null)).catch(() => null),
+        confirmedProfile || getSteamProfile(id).catch(() => null),
       ]);
       history = h; profile = prof;
     }
     if (my !== loadSeq) return;
     const all = (Array.isArray(history) ? history : []).slice().sort((a, b) => b.start_time - a.start_time);
-    const games = all.filter(m => (m.game_mode == null || m.game_mode === 1) && COUNTED_MODES.has(m.match_mode ?? 0));
+    const allGames = all.filter(m => (m.game_mode == null || m.game_mode === 1) && COUNTED_MODES.has(m.match_mode ?? 0));
+    const mode = savedMode(), games = gamesForMode(allGames, mode);
     const name = (profile && profile.personaname) || `Player ${id}`;
     document.title = `${name} · Postmortem`;
-    if (!games.length) {
-      return renderState(`No games found for ${name}`, all.length
-        ? "This player only has Street Brawl, bot or private lobby games on record."
-        : "deadlock-api has no stored games for this account yet. Very new or private accounts can show nothing.",
-        { label: "Find someone else", run: () => { go({}, true); } });
-    }
-    if (profile) NAMES.set(id, { name, avatar: safeUrl(profile.avatarmedium) });
-    recentAdd({ id, name, avatar: profile && safeUrl(profile.avatarmedium) });
-    P = { id, profile, name, games, skipped: all.length - games.length, range: "all", hero: null, shown: 20, mates: null, mateMode: "party", seasons: null };
+    if (profile) NAMES.set(id, { name, avatar: steamAvatar(profile) });
+    recentAdd({ id, name, avatar: profile && steamAvatar(profile) });
+    P = { id, profile, name, allGames, games, mode, accountSaved, skipped: all.length - allGames.length, range: "all", hero: null, shown: 20, mates: null, mateMode: "party", seasons: null };
     renderProfile();
     loadMetaFor(games.slice(0, 20));
-    loadMates();
-    loadSeasons();
+    if (allGames.length) {
+      loadMates();
+      loadSeasons();
+    }
   } catch (e) {
     if (my !== loadSeq) return;
-    renderState("Couldn't load this profile", esc(e.message), { label: "Try again", run: () => loadProfile(id, src) });
+    renderState("Couldn't load this profile", esc(e.message), { label: "Try again", run: () => loadProfile(id, src, confirmedProfile, accountSaved) });
   }
 }
 
@@ -469,38 +600,61 @@ function renderProfile() {
   applyTheme(pick && HERO_NAMES_OK(pick) ? pick : mostPlayed(all));
   const latestRanked = all.find(m => m.ranked_display_badge && Math.floor(m.ranked_display_badge / 10) > 0);
   const st = streaks(all), tags = profileTags(all), sAll = summarize(all);
+  const rank = latestRanked
+    ? `<span data-tip="Badge after their latest ranked game (${esc(ago(latestRanked.start_time))}).">${rankHtml(latestRanked.ranked_display_badge, 34)}</span>`
+    : `<span class="muted">No ranked badge yet</span>`;
   $main.innerHTML = `
   <section class="card head">
     <div class="who">
-      ${safeUrl(prof.avatarfull || prof.avatarmedium) ? `<img class="avatar" src="${esc(safeUrl(prof.avatarfull || prof.avatarmedium))}" alt="">` : `<span class="avatar none"></span>`}
+      ${steamAvatar(prof) ? `<img class="avatar" src="${esc(steamAvatar(prof))}" alt="">` : `<span class="avatar none"></span>`}
       <div class="whoText">
         <h1>${esc(P.name)}</h1>
         <div class="line">
-          ${latestRanked ? `<span data-tip="Badge after their latest ranked game (${esc(ago(latestRanked.start_time))}).">${rankHtml(latestRanked.ranked_display_badge, 34)}</span>` : `<span class="muted">No ranked badge yet</span>`}
-          <span class="dot"></span><span>${plural(sAll.n, "game")}</span>
-          <span class="dot"></span><span>${pct(sAll.w, sAll.n)}% won</span>
-          <span class="dot"></span><span class="muted">Last played ${esc(ago(all[0].start_time))}</span>
+          ${P.mode !== "unranked" && all.length ? `${rank}<span class="dot"></span>` : ""}
+          <span>${plural(all.length, "game")}</span>
+          ${sAll ? `<span class="dot"></span><span>${pct(sAll.w, sAll.n)}% won</span>
+          <span class="dot"></span><span class="muted">Last played ${esc(ago(all[0].start_time))}</span>` : ""}
         </div>
         ${tags.length ? `<div class="tags">${tags.map(t => `<button class="tag ${t.c}" data-tip="${esc(t.rule)}">${esc(t.t)}</button>`).join("")}</div>` : ""}
       </div>
     </div>
     <div class="headSide">
-      <div class="streak ${st.curWin ? "good" : "bad"}" data-tip="Best win streak on record: ${st.best}.">
+      ${st.cur ? `<div class="streak ${st.curWin ? "good" : "bad"}" data-tip="Best win streak on record: ${st.best}.">
         <b>${st.cur}</b><span>${st.cur === 1 ? (st.curWin ? "win" : "loss") : (st.curWin ? "wins" : "losses")} in a row</span>
-      </div>
+      </div>` : ""}
       <button class="btn ghost" id="copyLink" data-tip="Copy a link to this profile to send to friends.">Copy link</button>
+      <button class="link changeAccount" id="changeAccount" type="button">Change account</button>
     </div>
   </section>
+  ${P.accountSaved ? "" : `<p class="accountStorage muted">This browser can't remember your account. Set it up again next time.</p>`}
   <div class="layout">
     <aside class="side" id="side" aria-label="Stats"></aside>
     <div class="mainCol">
-      ${formHtml(all)}
+      ${all.length ? formHtml(all) : ""}
+      <div class="modeChips" role="group" aria-label="Match mode">${MODES.map(([value, label]) => `
+        <button class="chip" type="button" data-mode="${value}" aria-pressed="${P.mode === value}">${label}</button>`).join("")}
+      </div>
       <section class="card" id="matches"></section>
     </div>
   </div>
   <p class="foot">Data: deadlock-api${P.skipped ? `. ${plural(P.skipped, "Street Brawl, bot or private lobby game")} left out` : ""}. A game you just finished can take a while to show up. Verdicts are graded against each hero's average from about 24,000 recent matches; tags on a match are Valve's own accolades at their top tier. Click a match to open it in Postmortem.</p>`;
   renderSide();
   renderMatches();
+  document.getElementById("changeAccount").addEventListener("click", () => renderSetup(true));
+  $main.querySelectorAll("[data-mode]").forEach(button => button.addEventListener("click", () => {
+    const mode = button.dataset.mode;
+    if (P.mode === mode) return;
+    hideTip();
+    P.mode = mode;
+    P.games = gamesForMode(P.allGames, mode);
+    if (P.hero && !P.games.some(m => m.hero_id === P.hero)) P.hero = null;
+    if (P.range !== "all" && P.games.length <= Number(P.range)) P.range = "all";
+    P.shown = 20;
+    try { localStorage.setItem("pm_mode", mode); } catch (e) { /* use the selection for this visit */ }
+    renderProfile();
+    $main.querySelector(`[data-mode="${mode}"]`).focus({ preventScroll: true });
+    loadMetaFor(matchList().slice(0, 20));
+  }));
   const copy = document.getElementById("copyLink");
   copy.addEventListener("click", async () => {
     const url = `${location.origin}${location.pathname}?id=${P.id}`;
@@ -513,15 +667,18 @@ function renderSide() {
   const el = document.getElementById("side");
   if (!el) return;
   const g = inRange();
+  el.hidden = !g.length;
+  P.rankData = null;
+  if (!g.length) return;
   el.innerHTML = `
     <div class="rangeRow">
       <span class="lbl">Counting</span>
       <div class="seg" role="group" aria-label="Which games the sidebar counts">${RANGES.map(([v, l]) => `<button data-range="${v}" class="${P.range === v ? "on" : ""}" aria-pressed="${P.range === v}" ${v !== "all" && P.games.length <= Number(v) ? "disabled" : ""}>${l}</button>`).join("")}</div>
     </div>
     ${mainHeroHtml(g)}
-    ${rankCardHtml(g)}
+    ${P.mode === "unranked" ? "" : rankCardHtml(g)}
     ${heroesHtml(g)}
-    ${matesHtml()}
+    ${P.mode === "all" ? matesHtml() : ""}
     ${patternsHtml(g)}`;
   wireSide();
 }
@@ -884,7 +1041,8 @@ function matchRow(m) {
   const win = isWin(m), v = verdict(m);
   const meta = META.get(m.match_id); // undefined: still loading, null: not available
   const me = meta ? meta.players.find(p => p.account_id === P.id) : null;
-  const mode = m.match_mode === 4 ? "Ranked" : m.match_mode === 8 ? "Placement" : "Unranked";
+  const mode = matchMode(m);
+  const modeLabel = mode[0].toUpperCase() + mode.slice(1);
   const mvp = me && me.mvp ? (me.mvp === 1 ? `<span class="chipMvp gold" data-tip="Valve's MVP for this match.">MVP</span>` : `<span class="chipMvp" data-tip="Valve's Key Player: ${me.mvp === 2 ? "2nd" : "3rd"} best in the lobby.">#${me.mvp}</span>`) : "";
   const acc = topAccolades(me);
   const art = moodCard(m.hero_id, win);
@@ -892,34 +1050,44 @@ function matchRow(m) {
   return `<div class="match ${win ? "w" : "l"}">
     <a class="mLink" href="index.html?match=${m.match_id}" aria-label="${win ? "Win" : "Loss"} as ${esc(heroName(m.hero_id))}, ${esc(ago(m.start_time))}. Open in Postmortem."></a>
     <span class="mArt"><img src="${art}" alt="" loading="lazy"></span>
-    <span class="mRes"><b>${win ? "Victory" : "Defeat"}</b><span>${mode}${m.ranked_delta != null ? ` <i class="${m.ranked_delta >= 0 ? "good" : "bad"}">${m.ranked_delta >= 0 ? "+" : ""}${m.ranked_delta}</i>` : ""}</span><span>${mmss(m.match_duration_s)} · ${esc(clock(m.start_time))}</span></span>
+    <span class="mRes"><b>${win ? "Victory" : "Defeat"}</b><span>${modeLabel}${m.ranked_delta != null ? ` <i class="${m.ranked_delta >= 0 ? "good" : "bad"}">${m.ranked_delta >= 0 ? "+" : ""}${m.ranked_delta}</i>` : ""}</span><span>${mmss(m.match_duration_s)} · ${esc(clock(m.start_time))}</span></span>
     <span class="mKda"><b>${m.player_kills} / ${m.player_deaths} / ${m.player_assists}</b><span>${fmt1((m.player_kills + m.player_assists) / Math.max(1, m.player_deaths))} KDA</span><span>${kSouls(m.net_worth)} souls</span></span>
     <span class="mBadges">${mvp}<span class="verdict ${v.c}" data-tip="${esc(v.rule)}" tabindex="0">${esc(v.w)}</span>${acc.slice(0, 1).map(a => `<span class="acc" data-tip="${esc(a.rule)}" tabindex="0">${esc(a.name)}</span>`).join("")}${acc.length > 1 ? `<span class="acc accMore" data-tip="Also: ${esc(acc.slice(1).map(a => a.name).join(", "))}" tabindex="0">+${acc.length - 1}</span>` : ""}</span>
     ${itemGrid(meta, me)}
     ${teams}
   </div>`;
 }
+function matchList() {
+  return P.hero ? P.games.filter(m => m.hero_id === P.hero) : P.games;
+}
 function renderMatches() {
   const el = document.getElementById("matches");
   if (!el) return;
-  const list = P.hero ? P.games.filter(m => m.hero_id === P.hero) : P.games;
+  const list = matchList();
   const shown = list.slice(0, P.shown);
-  const days = [];
-  for (const m of shown) {
+  const days = new Map();
+  for (const [i, m] of list.entries()) {
     const k = dayKey(m.start_time);
-    if (!days.length || days[days.length - 1].k !== k) days.push({ k, t: m.start_time, list: [] });
-    days[days.length - 1].list.push(m);
+    if (!days.has(k)) {
+      if (i >= P.shown) break;
+      days.set(k, { t: m.start_time, shown: [], wins: 0, losses: 0, points: 0, hasPoints: false });
+    }
+    const day = days.get(k);
+    if (isWin(m)) day.wins++; else day.losses++;
+    if (m.ranked_delta != null) { day.points += m.ranked_delta; day.hasPoints = true; }
+    if (i < P.shown) day.shown.push(m);
   }
+  const empty = !P.allGames.length
+    ? (P.skipped ? "This player only has Street Brawl, bot or private lobby games on record." : "deadlock-api has no stored games for this account yet.")
+    : "No games match this filter. Select All to see every match mode.";
   el.innerHTML = `
     <div class="cardHead"><h2>Matches</h2>
       ${P.hero ? `<button class="chip filter" id="clearHero" aria-label="Show all heroes again"><img src="${heroImg(P.hero)}" alt="">${esc(heroName(P.hero))} only<span class="x" aria-hidden="true">✕</span></button>` : ""}
       <span class="sub">${plural(list.length, "game")}</span></div>
-    ${days.map(day => {
-      const w = day.list.filter(isWin).length, l = day.list.length - w;
-      const pts = day.list.reduce((s, m) => s + (m.ranked_delta || 0), 0);
-      const hasPts = day.list.some(m => m.ranked_delta != null);
-      return `<div class="day"><div class="dayHead"><span class="dl">${esc(dayLabel(day.t))}</span><span class="dwl"><b class="good">${w}W</b> <b class="bad">${l}L</b></span>${hasPts ? `<span class="dpts ${pts >= 0 ? "good" : "bad"}" data-tip="Rank progress from that day's ranked games.">${pts >= 0 ? "+" : ""}${pts} rank</span>` : ""}</div>
-      ${day.list.map(matchRow).join("")}</div>`;
+    ${list.length ? "" : `<p class="muted pad">${empty}</p>`}
+    ${[...days.values()].map(({ t, shown, wins, losses, points, hasPoints }) => {
+      return `<div class="day"><div class="dayHead"><span class="dl">${esc(dayLabel(t))}</span><span class="dwl"><b class="good">${wins}W</b> <b class="bad">${losses}L</b></span>${hasPoints ? `<span class="dpts ${points >= 0 ? "good" : "bad"}" data-tip="Rank progress from that day's ranked games.">${points >= 0 ? "+" : ""}${points} rank</span>` : ""}</div>
+      ${shown.map(matchRow).join("")}</div>`;
     }).join("")}
     ${metaNote ? `<p class="metaNote">${esc(metaNote)} <button class="link" id="metaRetry">Try again</button></p>` : ""}
     ${list.length > P.shown ? `<button class="more" id="moreMatches">Show ${Math.min(20, list.length - P.shown)} more</button>` : ""}`;
@@ -938,7 +1106,7 @@ function wireSide() {
     const h = Number(b.dataset.hero);
     P.hero = P.hero === h ? null : h; P.shown = 20;
     renderSide(); renderMatches();
-    loadMetaFor((P.hero ? P.games.filter(m => m.hero_id === P.hero) : P.games).slice(0, 20));
+    loadMetaFor(matchList().slice(0, 20));
     if (P.hero && window.innerWidth < 900) document.getElementById("matches").scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
   }));
   const all = document.getElementById("heroesAll");

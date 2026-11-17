@@ -127,6 +127,30 @@ button:disabled { cursor: default; opacity: 0.4; }
 .more { display: block; width: 100%; margin-top: 10px; padding: 9px; font-size: 13px; font-weight: 600; letter-spacing: 0.4px; text-transform: uppercase; color: var(--dim); border-top: 1px solid var(--line); }
 .more:hover { color: var(--offWhite); background: rgba(255,239,215,0.05); }
 
+.accountSetup { width: min(100%, 520px); margin: 8vh auto 0; }
+.accountSetup h1 { margin: 0 0 8px; font-family: var(--oracle); font-size: 28px; line-height: 1.15; }
+.accountSetup label { color: var(--dim); }
+.accountSetup .search { margin: 14px 0 0; }
+.accountSetup .search input::placeholder { color: var(--dim); }
+.accountSetup .search input:focus-visible { outline: 2px solid var(--offWhite); outline-offset: 2px; }
+.accountSetup .search input[aria-invalid="true"] { border-color: var(--err); }
+.accountSetup .link { margin-top: 12px; }
+.accountError { margin: 8px 0 0; color: var(--err); }
+.accountError:empty { margin: 0; }
+.accountPreview { display: flex; align-items: center; gap: 12px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+.accountPreview img { width: 48px; height: 48px; border-radius: 3px; }
+.accountPreview div { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.accountPreview strong, .accountPreview span { display: block; }
+.accountPreview strong { font-family: var(--oracle); font-size: 18px; }
+.accountStorage { margin: 0; }
+.changeAccount { font-size: 13px; }
+.modeChips { display: flex; flex-wrap: wrap; gap: 8px; }
+.modeChips .chip { padding: 0 12px; color: var(--dim); }
+.modeChips .chip:hover, .modeChips .chip[aria-pressed="true"] { color: var(--offWhite); }
+.modeChips .chip[aria-pressed="true"] { background: rgba(255,239,215,0.20); border-color: rgba(255,239,215,0.56); }
+.modeChips .chip:focus-visible { border-radius: 16px; }
+.layout:has(> .side[hidden]) { grid-template-columns: 1fr; }
+
 /* search results */
 .resultList { display: flex; flex-direction: column; }
 .result { display: grid; grid-template-columns: 44px 1fr auto; grid-template-rows: auto auto; column-gap: 12px; align-items: center; padding: 8px 6px; border-top: 1px solid var(--line); }
