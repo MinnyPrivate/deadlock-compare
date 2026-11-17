@@ -847,9 +847,9 @@ function formHtml(all) {
         </div>
       </div>
     </div>
-    <div class="wlLbl">The last ${a.n} games, oldest to newest. Green won, red lost. Click one to open it.</div>
-    <div class="wl" aria-label="Last ${a.n} results, oldest first">
-      ${last.slice().reverse().map(m => `<a class="sq ${isWin(m) ? "w" : "l"}" href="${matchHref(m.match_id)}" data-tip="${isWin(m) ? "Win" : "Loss"} as ${esc(heroName(m.hero_id))}, ${m.player_kills}/${m.player_deaths}/${m.player_assists}, ${esc(ago(m.start_time))}. Click to open."><img src="${heroImg(m.hero_id)}" alt="${esc(heroName(m.hero_id))}" loading="lazy"></a>`).join("")}
+    <div class="wlLbl">The last ${a.n} games, newest to oldest. Green won, red lost. Click one to open it.</div>
+    <div class="wl" aria-label="Last ${a.n} results, newest first">
+      ${last.map(m => `<a class="sq ${isWin(m) ? "w" : "l"}" href="${matchHref(m.match_id)}" data-tip="${isWin(m) ? "Win" : "Loss"} as ${esc(heroName(m.hero_id))}, ${m.player_kills}/${m.player_deaths}/${m.player_assists}, ${esc(ago(m.start_time))}. Click to open."><img src="${heroImg(m.hero_id)}" alt="${esc(heroName(m.hero_id))}" loading="lazy"></a>`).join("")}
     </div>
   </section>`;
 }
