@@ -44,19 +44,27 @@ body {
 }
 a { color: inherit; text-decoration: none; }
 
-/* ---------- hero backdrop: the official character-select art behind the whole page ----------
-   Three layers, all fixed so the page never scrolls into flat colour:
-   1. a heavily blurred, mirrored copy of the art: a colour wash that fills the empty half of the art
-   2. the art itself, anchored right, dimmed
-   3. a vignette that keeps the centre column calm and the edges dark */
-.backdrop { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; opacity: 0; transition: opacity 0.4s ease; }
+/* ---------- hero backdrop ----------
+   Fixed behind the whole page, so it never scrolls into flat colour:
+   1. a colour wash: the hero's select art blurred until only its colours are left
+   2. ritual circles from the game's own sigil art, tinted with the hero accent, top right and bottom left
+   3. a vignette that keeps the centre calm, then film grain and slow floating dust (dust.js) on top */
+.backdrop { position: fixed; inset: 0; z-index: -2; pointer-events: none; overflow: hidden; opacity: 0; transition: opacity 0.4s ease; }
 .backdrop.on { opacity: 1; }
-.backdrop::before, .backdrop i, .backdrop::after { content: ""; position: absolute; inset: 0; }
-.backdrop::before { inset: -10%; background: var(--bd) center / cover no-repeat; filter: blur(60px) saturate(1.4); opacity: 0.5; transform: scaleX(-1); }
-.backdrop i { background: var(--bd) right top / cover no-repeat; opacity: 0.55; }
-.backdrop::after { background:
-  radial-gradient(ellipse 75% 85% at 50% 40%, rgba(10,10,9,0.1), rgba(10,10,9,0.45) 70%, rgba(10,10,9,0.75) 100%),
-  linear-gradient(180deg, rgba(10,10,9,0) 50%, rgba(10,10,9,0.5)); }
+.backdrop::before, .backdrop i, .backdrop b, .backdrop::after { content: ""; position: absolute; inset: 0; }
+.backdrop::before { inset: -15%; background: var(--bd) 70% 30% / cover no-repeat; filter: blur(110px) saturate(1.5) brightness(0.9); opacity: 0.55; }
+.backdrop i, .backdrop b { background: var(--accent); -webkit-mask: url("assets/ui/sigil_lines.webp") no-repeat; mask: url("assets/ui/sigil_lines.webp") no-repeat; }
+.backdrop i { -webkit-mask-position: calc(50% + 520px) -160px; mask-position: calc(50% + 520px) -160px; -webkit-mask-size: 1100px; mask-size: 1100px; opacity: 0.55; }
+.backdrop b { -webkit-mask-position: calc(50% - 760px) calc(100% + 260px); mask-position: calc(50% - 760px) calc(100% + 260px); -webkit-mask-size: 900px; mask-size: 900px; opacity: 0.4; }
+.backdrop::after { background: radial-gradient(ellipse 80% 90% at 50% 45%, rgba(10,10,9,0.15), rgba(10,10,9,0.65) 100%); }
+.grain { position: fixed; inset: 0; z-index: 60; pointer-events: none; opacity: 0.045;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 1 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
+.dust { position: fixed; inset: 0; z-index: -1; pointer-events: none; width: 100%; height: 100%; }
+@media (max-width: 640px) {
+  .backdrop::before { filter: blur(60px) saturate(1.5) brightness(0.9); }
+  .backdrop i { -webkit-mask-position: 40% -80px; mask-position: 40% -80px; -webkit-mask-size: 520px; mask-size: 520px; }
+  .backdrop b { display: none; }
+}
 body { position: relative; isolation: isolate; }
 button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
 button:disabled { cursor: default; opacity: 0.4; }
@@ -412,4 +420,3 @@ a.pl:hover { color: var(--offWhite); text-decoration: underline; }
 .wlLbl { margin-top: 14px; font-size: 12px; color: var(--dim); }
 .wl { margin-top: 6px; }
 @media (prefers-reduced-motion: reduce) { .backdrop { transition: none; } }
-@media (max-width: 640px) { .backdrop::before { filter: blur(40px) saturate(1.3); } }
