@@ -4,15 +4,16 @@ Overlay and isolate Deadlock post-match graphs. Built to load inside the game th
 
 Open `index.html?match=<match id>`.
 
-- Click heroes to show or hide them. Ctrl+Click shows only that hero. Player Comparison graphs start on None, so pick whose lines you want. Each line chip has an "only" button that shows just that line (Ctrl+Click does not reach the game's browser).
-- Player-specific graphs (Damage breakdown, Souls by source, Support value, Kills by type) overlay any number of players: color = player, line style = category.
+- You build the view: a match opens with no hero picked and every graph opens with no line types on. Click heroes to show or hide them (Ctrl+Click shows only that hero). Your hero picks and your Markers settings carry over to the next graph; line types do not.
+- Player-Specific graphs (Regen by Type, Damage Breakdown, Souls by Source and so on) have a legend on the right that is also the picker: every line type, grouped (From the map, From items, Built in, From abilities) and sorted by size, with each picked hero's total. Click a row to show or hide it; Only appears on the hovered row; All and Clear at the bottom. Hovering a row or a line brings it forward and dims the rest.
+- Layout by group size on those graphs: 1 or 2 heroes share one chart (color = line type, the first hero solid and the second dashed, with a key top-left); 3 or 4 heroes get one panel each on a shared scale with a synced crosshair; 5 or more get the overview (team totals over time, a ranked table with a column per line type you turned on and the lobby best in gold, and a compare tray that opens up to 4 heroes side by side). The General graphs (one line per hero) always stay one chart, with hover-to-focus.
 - With exactly 2 players on a general graph, "Difference" shows one minus the other.
 - View As on the General graphs: Value, Per Minute, % of Team (each hero's share of their team), Teams (six heroes added together) and Lanes (each lane pair added together).
-- Teams and Lanes lines can be hidden one by one (Ctrl+Click shows only one).
-- Kills and Deaths are whole numbers that step at the exact second (from `death_details`). The Deaths marker draws a skull for every kill, one row per team, with who killed whom on hover; it is on by default on those two graphs.
+- Teams and Lanes lines are listed in the legend and can be hidden one by one.
+- Kills and Deaths are whole numbers that step at the exact second (from `death_details`). The Deaths marker draws a skull for every kill, one row per team, with who killed whom on hover.
 - Souls Dropped on Death is a General graph (Valve's unsecured-souls-lost counter per hero, every 3 minutes), so it compares players like any other.
-- Markers: Objectives, Deaths and Items toggle on any hero graph. Item buys show under the lines for 1 to 3 heroes (on by default for the Power and damage graphs); hovering lists what was bought since the last point.
-- Player Comparison graphs can show one team or all twelve heroes at once.
+- Markers: Objectives, Deaths and Items toggle on any hero graph. They start off and remember your choice across graphs and matches. Item buys show under the lines for 1 to 3 heroes; hovering lists what was bought since the last point.
+- Shift+P shows a speed check (frame rate, hover and draw times), to confirm the in-game browser keeps up.
 - Hover readout like the game's: one row per hero, highest first, tinted by team, with the line color on the left and the hero's share of the lobby. It follows the mouse to the second; values between Valve's snapshots are read off the drawn line.
 - Time axis: totals start at 0:00, the Power graphs start at each hero's spawn values (level 1, base health from `heroes.vdata`), and rates and percentages start from 0 with a dotted line up to Valve's first snapshot (3:00), since there's no value before it.
 - Matchups tab: hero damage, hard crowd control and slows between every pair of opponents, from Valve's damage matrix, with a head-to-head for any pair. The side panel lists a hero's top damage sources and what hit them (enemy hero and ability or gun). Totals match the scoreboard's hero damage exactly. Crowd control values are milliseconds (whole 1/64 s ticks).
