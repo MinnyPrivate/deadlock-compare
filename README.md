@@ -30,6 +30,8 @@ Local test without the API: `python -m http.server`, then `index.html?match=1360
 
 `profile.html` is a separate page for one player, laid out like OP.GG: a sidebar (main hero, rank with seasons, heroes with games per hero, teammates, patterns) and the matches in the main column under a Recent form card.
 
+The page is themed after the player's most played hero: that hero's official character-select backdrop (`assets/backdrops/<hero id>.webp`, 38 heroes plus `generic.webp`; newer heroes fall back to deadlock-api's `background_image`) and one accent colour from `herothemes.js`. The accent is decoration only (card top lines, header line, selected buttons, rank line); win/loss, team and gold colours never change. `?theme=<hero id>` previews another hero's theme.
+
 - Recent form: the last 20 games against the player's usual (all their games), with the takeaway in one sentence.
 - Match rows: result, hero art, K/D/A, Valve's MVP or Key Player place, one blunt verdict graded against that hero's average (`heronorms.js`), Valve's top-tier accolades as tags, the final build in a 2 by 6 grid, and all 12 players (click a name to open their profile). Clicking the row opens the match on the Compare page.
 - Teammates: best and worst win rates with people you played 5 or more games with, either queued together or anyone on your team.

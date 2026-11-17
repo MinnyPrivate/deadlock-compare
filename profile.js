@@ -21,9 +21,21 @@ const heroName = id => (window.HERO_NAMES && HERO_NAMES[id]) || "Hero " + id;
 let HERO_ART = {};
 const heroImg = id => (HERO_ART[id] && HERO_ART[id].mini) || `assets/heroes/${Number(id) || 0}.png`;
 const heroCard = id => (HERO_ART[id] && HERO_ART[id].card) || ((window.HERO_CARDS || []).includes(Number(id)) ? `assets/cards/${Number(id)}.webp` : `assets/heroes/${Number(id) || 0}.png`);
+// Hero theme: the page takes the official character-select backdrop and one accent colour from a hero
+// (for now the player's most played one). The accent is decoration only: win/loss, team and gold colours never change.
+function applyTheme(heroId) {
+  const id = Number(heroId) || 0, root = document.documentElement, bd = document.getElementById("backdrop");
+  const local = (window.HERO_BACKDROPS || []).includes(id);
+  const art = HERO_ART[id] || {};
+  const bg = local ? `assets/backdrops/${id}.webp` : art.bg || "assets/backdrops/generic.webp";
+  const accent = (window.HERO_ACCENTS || {})[id] || art.ui || "";
+  if (accent) root.style.setProperty("--accent", accent); else root.style.removeProperty("--accent");
+  root.dataset.theme = id ? String(id) : "";
+  if (bd) { bd.style.backgroundImage = `url("${bg}")`; bd.classList.add("on"); }
+}
 async function loadHeroArt() {
   try {
-    const c = JSON.parse(localStorage.getItem("pm_hero_art") || "null");
+    const c = JSON.parse(localStorage.getItem("pm_hero_art2") || "null");
     if (c && c.t > Date.now() - 86400000 && c.art) { HERO_ART = c.art; return; }
   } catch (e) { /* no cache */ }
   try {
@@ -35,10 +47,12 @@ async function loadHeroArt() {
     for (const h of Array.isArray(list) ? list : []) {
       const im = h.images || {};
       const pick = (...k) => k.map(x => safeUrl(im[x])).find(Boolean) || "";
-      art[h.id] = { mini: pick("minimap_image_webp", "minimap_image", "icon_image_small_webp", "icon_image_small"), card: pick("icon_hero_card_webp", "icon_hero_card") };
+      const ui = h.colors && Array.isArray(h.colors.ui) && h.colors.ui.length === 3 ? h.colors.ui.map(Number) : null;
+      art[h.id] = { mini: pick("minimap_image_webp", "minimap_image", "icon_image_small_webp", "icon_image_small"), card: pick("icon_hero_card_webp", "icon_hero_card"),
+        bg: pick("background_image_webp", "background_image"), ui: ui && ui.every(n => n >= 0 && n <= 255) ? `rgb(${ui.join(",")})` : "" };
     }
     HERO_ART = art;
-    try { localStorage.setItem("pm_hero_art", JSON.stringify({ t: Date.now(), art })); } catch (e) { /* storage blocked */ }
+    try { localStorage.setItem("pm_hero_art2", JSON.stringify({ t: Date.now(), art })); } catch (e) { /* storage blocked */ }
   } catch (e) { /* keep the local images */ }
 }
 const safeUrl = u => (typeof u === "string" && /^https:\/\//.test(u) ? u : "");
@@ -141,6 +155,7 @@ document.getElementById("home").addEventListener("click", e => { e.preventDefaul
 
 // ---------- views: home, search, states ----------
 function renderHome() {
+  applyTheme(0);
   document.title = "Profile · Postmortem";
   const recent = recentGet();
   $main.innerHTML = `
@@ -161,6 +176,7 @@ function renderHome() {
   q2.focus();
 }
 function renderState(title, text, action) {
+  applyTheme(0);
   $main.innerHTML = `<section class="state"><h2>${esc(title)}</h2>${text ? `<p>${text}</p>` : ""}${action ? `<button class="btn" id="stateAct">${esc(action.label)}</button>` : ""}</section>`;
   if (action) document.getElementById("stateAct").addEventListener("click", action.run);
 }
@@ -436,8 +452,17 @@ function profileTags(games) {
 }
 
 // ---------- page layout: header, then a sidebar (left) and the matches (right) ----------
+const HERO_NAMES_OK = id => !!(window.HERO_NAMES || {})[id];
+function mostPlayed(g) {
+  const n = {};
+  for (const m of g) n[m.hero_id] = (n[m.hero_id] || 0) + 1;
+  return Number(Object.keys(n).sort((a, b) => n[b] - n[a])[0]) || 0;
+}
 function renderProfile() {
   const all = P.games, prof = P.profile || {};
+  // ?theme=<hero id> previews another hero's theme; picking your own theme needs Steam sign-in, so later.
+  const pick = Number(new URLSearchParams(location.search).get("theme"));
+  applyTheme(pick && HERO_NAMES_OK(pick) ? pick : mostPlayed(all));
   const latestRanked = all.find(m => m.ranked_display_badge && Math.floor(m.ranked_display_badge / 10) > 0);
   const st = streaks(all), tags = profileTags(all), sAll = summarize(all);
   $main.innerHTML = `
@@ -791,8 +816,10 @@ function rankCardHtml(g) {
       by.set(s, r);
     }
     const rows = [...by.values()].sort((a, b) => b.t - a.t);
-    if (rows.length) seasons = `<div class="seasons"><div class="sRow sHead"><span>Season</span><span>W-L</span><span>Peak</span><span>Latest</span></div>${rows.map(r => `
-      <div class="sRow"><span class="sName">${esc(r.name)}</span><span>${r.w}-${r.n - r.w}</span><span>${rankHtml(r.peak, 24)}</span><span>${rankHtml(r.end, 24)}</span></div>`).join("")}</div>`;
+    const short = n => { const d = String(n).match(/(\d+)\s*$/); return d ? "S" + d[1] : String(n); };
+    const badge = (b, what) => { const r = rankOf(b); return r ? `<span class="sBadge" data-tip="${what}: ${esc(r.name)}" tabindex="0">${rankHtml(b, 26)}</span>` : "<span></span>"; };
+    if (rows.length) seasons = `<div class="seasons"><div class="sRow sHead"><span>Season</span><span>W-L</span><span>Won</span><span>Peak</span><span>Last</span></div>${rows.map(r => `
+      <div class="sRow"><span class="sName" data-tip="${esc(r.name)}: ${plural(r.n, "ranked game")}" tabindex="0">${esc(short(r.name))}</span><span class="num">${r.w}-${r.n - r.w}</span><span class="num">${pct(r.w, r.n)}%</span>${badge(r.peak, "Peak")}${badge(r.end, "Last game")}</div>`).join("")}</div>`;
   }
   return `
   <section class="card rankJ">
@@ -829,12 +856,15 @@ function itemGrid(meta, me) {
   while (cells.length < 12) cells.push("<i></i>");
   return `<span class="items">${cells.join("")}</span>`;
 }
+// Valve's accolades come with 1 to 3 stars (accolade_threshold_achieved). A strong game can earn a dozen
+// 2-star ones, so a row only shows the 3-star ones.
+const ACC_TOP = 3;
 function topAccolades(me) {
   const A = window.ACCOLADES || {};
   const seen = new Set();
-  return (me ? me.acc : []).filter(a => A[a.id] && a.tier >= 2 && !seen.has(a.id) && seen.add(a.id)).sort((a, b) => b.tier - a.tier).map(a => {
+  return (me ? me.acc : []).filter(a => A[a.id] && a.tier >= ACC_TOP && !seen.has(a.id) && seen.add(a.id)).sort((a, b) => b.tier - a.tier).map(a => {
     const d = A[a.id], txt = (a.v === 1 ? d[1] : d[2]).replace("{v}", a.v.toLocaleString());
-    return { name: d[0], rule: `${d[0]}: ${txt}. Valve's top accolade tier, about 2 standard deviations above the average for this hero.` };
+    return { name: d[0], rule: `${d[0]}: ${txt}. Valve's top (3-star) accolade tier for this hero.` };
   });
 }
 function playersCol(meta, team, m) {
@@ -842,8 +872,8 @@ function playersCol(meta, team, m) {
   return `<span class="pCol t${team + 1}">${ps.map(p => {
     const nm = (NAMES.get(p.account_id) || {}).name || (p.account_id ? "Player " + p.account_id : "Bot");
     const me = p.account_id === P.id;
-    return me ? `<span class="pl me"><img src="${heroImg(p.hero_id)}" alt="">${esc(nm)}</span>`
-      : `<a class="pl" href="?id=${p.account_id}" data-id="${p.account_id}" data-tip="${esc(nm)} on ${esc(heroName(p.hero_id))}. Click to open their profile."><img src="${heroImg(p.hero_id)}" alt="">${esc(nm)}</a>`;
+    return me ? `<span class="pl me" data-tip="${esc(nm)} on ${esc(heroName(p.hero_id))} (this profile)."><img src="${heroImg(p.hero_id)}" alt=""><span class="pn">${esc(nm)}</span></span>`
+      : `<a class="pl" href="?id=${p.account_id}" data-id="${p.account_id}" data-tip="${esc(nm)} on ${esc(heroName(p.hero_id))}. Click to open their profile."><img src="${heroImg(p.hero_id)}" alt=""><span class="pn">${esc(nm)}</span></a>`;
   }).join("")}</span>`;
 }
 function matchRow(m) {
@@ -857,10 +887,10 @@ function matchRow(m) {
   const teams = meta && meta.players.length >= 2 ? `<span class="players">${playersCol(meta, 0, m)}${playersCol(meta, 1, m)}</span>` : `<span class="players"></span>`;
   return `<div class="match ${win ? "w" : "l"}">
     <a class="mLink" href="index.html?match=${m.match_id}" aria-label="${win ? "Win" : "Loss"} as ${esc(heroName(m.hero_id))}, ${esc(ago(m.start_time))}. Open in Postmortem."></a>
-    <img class="mArt" src="${art}" alt="" loading="lazy">
+    <span class="mArt"><img src="${art}" alt="" loading="lazy"></span>
     <span class="mRes"><b>${win ? "Victory" : "Defeat"}</b><span>${mode}${m.ranked_delta != null ? ` <i class="${m.ranked_delta >= 0 ? "good" : "bad"}">${m.ranked_delta >= 0 ? "+" : ""}${m.ranked_delta}</i>` : ""}</span><span>${mmss(m.match_duration_s)} · ${esc(clock(m.start_time))}</span></span>
     <span class="mKda"><b>${m.player_kills} / ${m.player_deaths} / ${m.player_assists}</b><span>${fmt1((m.player_kills + m.player_assists) / Math.max(1, m.player_deaths))} KDA</span><span>${kSouls(m.net_worth)} souls</span></span>
-    <span class="mBadges">${mvp}<span class="verdict ${v.c}" data-tip="${esc(v.rule)}" tabindex="0">${esc(v.w)}</span>${acc.slice(0, 2).map(a => `<span class="acc" data-tip="${esc(a.rule)}" tabindex="0">${esc(a.name)}</span>`).join("")}${acc.length > 2 ? `<span class="acc more" data-tip="${esc(acc.slice(2).map(a => a.name).join(", "))}" tabindex="0">+${acc.length - 2}</span>` : ""}</span>
+    <span class="mBadges">${mvp}<span class="verdict ${v.c}" data-tip="${esc(v.rule)}" tabindex="0">${esc(v.w)}</span>${acc.slice(0, 2).map(a => `<span class="acc" data-tip="${esc(a.rule)}" tabindex="0">${esc(a.name)}</span>`).join("")}${acc.length > 2 ? `<span class="acc accMore" data-tip="${esc(acc.slice(2).map(a => a.name).join(", "))}" tabindex="0">+${acc.length - 2}</span>` : ""}</span>
     ${itemGrid(meta, me)}
     ${teams}
   </div>`;
