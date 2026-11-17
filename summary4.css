@@ -1,0 +1,97 @@
+/* Summary round 4 mockup. Three layers, each on its own surface:
+   1. page = the selected hero's theme (colour wash + ritual circles + dust + grain, same as profile.css in PR 27)
+   2. panels = solid near-black, with a thin hero-accent line on top
+   3. graphs = the darkest, plainest surface, so lines stay readable
+   --accent is decoration only. Win/loss, team colours and gold (lobby best) never change. */
+:root { --accent: #FFEFD7; --accentSoft: color-mix(in srgb, var(--accent) 45%, transparent); --s4panel: rgba(13,14,11,0.93); --s4graph: #080907; --s4line: rgba(255,239,215,0.10); }
+
+body.sum4 { background: #0a0a09; }
+.backdrop { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; opacity: 0; transition: opacity 0.4s ease; }
+.backdrop.on { opacity: 1; }
+.backdrop::before, .backdrop i, .backdrop b, .backdrop::after { content: ""; position: absolute; inset: 0; }
+.backdrop::before { inset: -15%; background: var(--bd) 70% 30% / cover no-repeat; filter: blur(110px) saturate(1.5) brightness(0.9); opacity: 0.55; }
+.backdrop i, .backdrop b { background: var(--accent); -webkit-mask: url("assets/ui/sigil_lines.webp") no-repeat; mask: url("assets/ui/sigil_lines.webp") no-repeat; }
+.backdrop i { -webkit-mask-position: calc(50% + 620px) -200px; mask-position: calc(50% + 620px) -200px; -webkit-mask-size: 1100px; mask-size: 1100px; opacity: 0.5; }
+.backdrop b { -webkit-mask-position: calc(50% - 820px) calc(100% + 300px); mask-position: calc(50% - 820px) calc(100% + 300px); -webkit-mask-size: 900px; mask-size: 900px; opacity: 0.35; }
+.backdrop::after { background: radial-gradient(ellipse 80% 90% at 50% 45%, rgba(10,10,9,0.15), rgba(10,10,9,0.65) 100%); }
+.grain { position: fixed; inset: 0; z-index: 60; pointer-events: none; opacity: 0.045;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 1 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
+.dust { position: fixed; inset: 0; z-index: 1; pointer-events: none; width: 100%; height: 100%; }
+body.sum4 #stage { z-index: 2; }
+@media (prefers-reduced-motion: reduce) { .backdrop { transition: none; } }
+
+/* ---------- layout: round 1 layout A ---------- */
+.sum4grid { display: grid; height: 100%; grid-template-columns: 470px 1fr 440px; grid-template-rows: 64px 1fr; column-gap: 22px; row-gap: 10px; }
+.sum4grid .sumMatch { grid-column: 1 / 4; padding: 0 4px; border-bottom: 1px solid var(--accentSoft); }
+.s4panel { background: var(--s4panel); border: 1px solid var(--s4line); border-top: 2px solid var(--accentSoft); border-radius: 4px; }
+
+/* hero card: art at its real size (crisp), everything about you packed in */
+.s4card { display: flex; flex-direction: column; padding: 16px 20px 14px; min-height: 0; border-top: 3px solid var(--tc); }
+.s4head { display: flex; gap: 18px; }
+.s4art { position: relative; flex: none; width: 150px; height: 204px; overflow: hidden; border-radius: 3px; background: linear-gradient(#525252, #353535); box-shadow: 0 0 0 1px var(--accentSoft), inset 0 -4px 0 var(--tc); }
+.s4art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 0; }
+.s4art .s2artTag { position: absolute; left: 8px; top: 8px; }
+.s4who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.s4name { font-family: var(--oracle); font-weight: 700; font-size: 32px; line-height: 1.05; color: #fff; }
+.s4meta { font-size: 14px; opacity: 0.8; white-space: nowrap; }
+.s4rank { margin: 2px 0; }
+.s4place { display: flex; align-items: baseline; gap: 8px; margin-top: auto; }
+.s4place b { font-family: var(--block); font-size: 46px; line-height: 1; color: #fff; }
+.s4place span { font-size: 13px; letter-spacing: 0.5px; text-transform: uppercase; opacity: 0.75; }
+.s4place .badge { align-self: center; }
+.s4gap { font-size: 13px; opacity: 0.7; }
+.s4kda { display: flex; align-items: baseline; gap: 8px; margin: 14px 0 0; }
+.s4kda b { font-family: var(--oracle); font-weight: 700; font-size: 30px; color: #fff; }
+.s4kda b.d { color: #E8604C; }
+.s4kda i { font-style: normal; font-size: 22px; opacity: 0.35; }
+.s4kda span { margin-left: auto; font-size: 15px; opacity: 0.75; }
+.s4verdict { margin: 10px 0 10px; font-size: 18px; line-height: 1.35; color: #fff; font-weight: 600; }
+.s4card .s4build { margin: 14px 0 0; }
+.s4card .s4build .s2grid { gap: 5px; }
+.s4card .sumAcc { margin: 12px 0 0; }
+.s4actions { margin-top: auto; display: flex; padding-top: 12px; }
+
+/* middle: stat cards at round 1 size, then the graph on the darkest surface */
+.s4mid { display: flex; flex-direction: column; gap: 10px; min-height: 0; min-width: 0; }
+.s4mid > .accHead { margin-bottom: -4px; }
+.s4mid .statGrid { margin: 0; gap: 10px; }
+.s4stat { height: 138px; background: var(--s4panel); border: 1px solid var(--s4line); border-left: 3px solid var(--accentSoft); }
+.s4stat.best { border-left-color: #FFED79; }
+.s4stat .sd { font-size: 14px; font-weight: 600; }
+.s4stat .sd.pos { color: #58D86A; } .s4stat .sd.neg { color: #E8604C; } .s4stat .sd.even { opacity: 0.75; }
+.s4chart { flex: 1; min-height: 0; background: var(--s4graph); padding: 10px 8px 8px; }
+.s4chart .dHead { display: flex; align-items: center; gap: 14px; padding: 0 8px 2px; }
+.s4chart .dKey { gap: 10px; font-size: 12px; }
+.s4seg { display: inline-flex; border: 1px solid var(--s4line); border-radius: 3px; overflow: hidden; }
+.s4seg button { padding: 3px 10px; font-size: 13px; opacity: 0.65; }
+.s4seg button.on { opacity: 1; background: color-mix(in srgb, var(--accent) 20%, transparent); box-shadow: inset 0 -2px 0 var(--accent); }
+.s4chart.wait { border-style: dashed; }
+.s4chart .waitBig, .s4wait .waitTxt { display: block; padding: 90px 0; text-align: center; font-size: 17px; opacity: 0.5; }
+.s4chart .s2gameFoot { padding: 2px 10px 0; }
+
+/* side column: lane, who you fought, before/after 15:00 */
+.s4side { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+.s4side .s4panel { padding: 12px 16px 12px; }
+.s4wait { border-style: dashed; background: rgba(13,14,11,0.6); }
+.s4wait .waitTxt { padding: 30px 0; }
+.s4rivals .rvRow { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 8px 0 6px; }
+.rv { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border-radius: 3px; background: rgba(255,239,215,0.04); }
+.rvL { font-size: 11px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; opacity: 0.6; }
+.rvM { display: flex; align-items: center; gap: 12px; }
+.rvM .s2face { width: 50px; height: 66px; }
+.rvS { font-family: var(--block); font-size: 38px; line-height: 1; color: #fff; }
+.rvS i { font-style: normal; opacity: 0.4; margin: 0 2px; }
+.rvN { font-weight: 700; font-size: 15px; }
+.rvSub { font-size: 12.5px; opacity: 0.7; }
+.s4rivals .fRow { height: 30px; }
+.s4rank { display: flex; align-items: center; gap: 10px; }
+.s4place span { white-space: nowrap; }
+.s4card .s4build .s2grid { max-width: 372px; }
+.lgHead { margin: 10px 0 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; opacity: 0.6; }
+.lgGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.lgC { display: flex; flex-direction: column; padding: 6px 10px; border-radius: 3px; background: rgba(255,239,215,0.04); border-left: 2px solid rgba(255,239,215,0.12); }
+.lgC.pos { border-left-color: #58D86A; } .lgC.neg { border-left-color: #E8604C; }
+.lgL { font-size: 11.5px; opacity: 0.65; }
+.lgC b { font-family: var(--oracle); font-size: 20px; color: #fff; line-height: 1.15; }
+.lgC em { font-style: normal; font-size: 12px; opacity: 0.75; }
+.lgC.pos em { color: #58D86A; opacity: 1; } .lgC.neg em { color: #E8604C; opacity: 1; }
