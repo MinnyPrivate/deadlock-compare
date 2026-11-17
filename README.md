@@ -28,11 +28,16 @@ Local test without the API: `python -m http.server`, then `index.html?match=1360
 
 ## Profile (prototype)
 
-`profile.html` is a separate page for one player: form (last 20 games vs the 20 before), heroes with games per hero, patterns (after a win or loss, game in a session, time of day, game length, Hidden King vs Archmother), rank journey and the match list grouped by day. Each match gets one blunt word graded against that hero's average (`heronorms.js`), with its rule on hover. Clicking a match opens it on the Compare page.
+`profile.html` is a separate page for one player, laid out like OP.GG: a sidebar (main hero, rank with seasons, heroes with games per hero, teammates, patterns) and the matches in the main column under a Recent form card.
 
-Open `profile.html?id=<account id>`, or type a Steam name, Steam profile link, SteamID64 or account ID in the search box. Data: deadlock-api `/v1/players/{id}/match-history` (stored history), `/v1/players/steam` (name and avatar) and `/v1/players/steam-search` (name search). Street Brawl, bot and private lobby games are left out.
+- Recent form: the last 20 games against the player's usual (all their games), with the takeaway in one sentence.
+- Match rows: result, hero art, K/D/A, Valve's MVP or Key Player place, one blunt verdict graded against that hero's average (`heronorms.js`), Valve's top-tier accolades as tags, the final build in a 2 by 6 grid, and all 12 players (click a name to open their profile). Clicking the row opens the match on the Compare page.
+- Teammates: best and worst win rates with people you played 5 or more games with, either queued together or anyone on your team.
+- Patterns: each answers one question with its own picture (24-hour grid for time of day, columns for session and game length, a split bar for Hidden King vs Archmother), sorted so the most striking comes first.
 
-Local test without the API: `profile.html?id=12345678&src=test/profile_fixture.json` (synthetic history, not a real player).
+Data (deadlock-api): `/v1/players/{id}/match-history`, `/v1/players/steam` (names and avatars), `/v1/players/steam-search`, `/v1/matches/metadata` (one bulk call per 20 matches, 30 per minute per IP; falls back to `/v1/matches/{id}/metadata`), `/v1/players/{id}/mate-stats`, `/v1/assets/ranked-seasons` and `/v1/assets/heroes` (the game's hero icons and card art; the local images are the fallback). Street Brawl, bot and private lobby games are left out.
+
+Local test without the API: `profile.html?id=12345678&src=test/profile_fixture.json` (synthetic data, not a real player).
 
 ## Waiting screen
 
