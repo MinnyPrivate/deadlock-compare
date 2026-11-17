@@ -1729,6 +1729,19 @@ document.querySelectorAll("#tabs .tab").forEach(b => b.onclick = () => { state.t
 if (["mvp", "matchups"].includes(params.get("tab"))) state.tab = params.get("tab");
 buildDropDown();
 if (params.get("graph") && GRAPHS.some(g => g.id === params.get("graph"))) state.graph = params.get("graph");
+// Opened from a Profile page: a Back control returns to that profile. When the profile is the page just before this one,
+// it uses the browser's own back, so the profile comes back exactly as it was (scroll, filters).
+if (!EMBED && params.get("from") === "profile") {
+  const back = $("backLink"), pid = (params.get("pid") || "").replace(/\D/g, "");
+  back.href = pid ? "profile.html?id=" + pid : "profile.html";
+  back.hidden = false;
+  document.body.classList.add("hasBack");
+  back.addEventListener("click", ev => {
+    let prev = null;
+    try { prev = document.referrer ? new URL(document.referrer) : null; } catch (e) { /* no referrer */ }
+    if (prev && prev.origin === location.origin && /profile\.html$|\/$/.test(prev.pathname) && history.length > 1) { ev.preventDefault(); history.back(); }
+  });
+}
 $("matchForm").onsubmit = ev => {
   ev.preventDefault();
   const id = $("matchInput").value.trim();

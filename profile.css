@@ -55,9 +55,9 @@ a { color: inherit; text-decoration: none; }
 .backdrop::before { inset: -15%; background: var(--bd) 70% 30% / cover no-repeat; filter: blur(110px) saturate(1.5) brightness(0.9); opacity: 0.55; }
 .backdrop i, .backdrop b { inset: auto; background: var(--accent); -webkit-mask: url("assets/ui/sigil_lines.webp") center / 100% 100% no-repeat; mask: url("assets/ui/sigil_lines.webp") center / 100% 100% no-repeat; will-change: transform; }
 /* each ring is its own box so it can turn: transform and opacity only, so the browser does it on the graphics card and the page stays cheap in the game's panel.
-   One full turn takes 3.5 minutes (top right, clockwise) and 2.7 minutes (bottom left, counter-clockwise), with a very slow breathing glow. */
-.backdrop i { width: 1100px; height: 1100px; left: calc(50% - 30px); top: -160px; opacity: 0.55; animation: ringTurn 210s linear infinite, ringBreathA 11s ease-in-out infinite; }
-.backdrop b { width: 900px; height: 900px; left: calc(50% - 1210px); top: calc(100% - 640px); opacity: 0.4; animation: ringTurn 160s linear infinite reverse, ringBreathB 14s ease-in-out infinite; }
+   One full turn takes 7 minutes (top right, clockwise) and 5.5 minutes (bottom left, counter-clockwise), with a very slow breathing glow. */
+.backdrop i { width: 1100px; height: 1100px; left: calc(50% - 30px); top: -160px; opacity: 0.55; animation: ringTurn 420s linear infinite, ringBreathA 11s ease-in-out infinite; }
+.backdrop b { width: 900px; height: 900px; left: calc(50% - 1210px); top: calc(100% - 640px); opacity: 0.4; animation: ringTurn 330s linear infinite reverse, ringBreathB 14s ease-in-out infinite; }
 .backdrop i, .backdrop b { animation-play-state: paused; }
 .backdrop.on i, .backdrop.on b { animation-play-state: running; }
 @keyframes ringTurn { to { transform: rotate(360deg); } }
