@@ -44,16 +44,19 @@ body {
 }
 a { color: inherit; text-decoration: none; }
 
-/* ---------- hero backdrop: the official character-select art, dimmed, fading into the page ---------- */
-.backdrop {
-  position: absolute; top: 0; left: 0; right: 0; height: min(100vh, 1080px); z-index: -1; pointer-events: none;
-  background: center top / cover no-repeat; opacity: 0; transition: opacity 0.4s ease;
-  -webkit-mask-image: linear-gradient(to bottom, #000 35%, transparent 100%);
-  mask-image: linear-gradient(to bottom, #000 35%, transparent 100%);
-}
-.backdrop.on { opacity: 0.62; }
-.backdrop::after { content: ""; position: absolute; inset: 0;
-  background: linear-gradient(90deg, #0a0a09 0%, rgba(10,10,9,0.55) 40%, rgba(10,10,9,0) 70%); }
+/* ---------- hero backdrop: the official character-select art behind the whole page ----------
+   Three layers, all fixed so the page never scrolls into flat colour:
+   1. a heavily blurred, mirrored copy of the art: a colour wash that fills the empty half of the art
+   2. the art itself, anchored right, dimmed
+   3. a vignette that keeps the centre column calm and the edges dark */
+.backdrop { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; opacity: 0; transition: opacity 0.4s ease; }
+.backdrop.on { opacity: 1; }
+.backdrop::before, .backdrop i, .backdrop::after { content: ""; position: absolute; inset: 0; }
+.backdrop::before { inset: -10%; background: var(--bd) center / cover no-repeat; filter: blur(60px) saturate(1.4); opacity: 0.5; transform: scaleX(-1); }
+.backdrop i { background: var(--bd) right top / cover no-repeat; opacity: 0.55; }
+.backdrop::after { background:
+  radial-gradient(ellipse 75% 85% at 50% 40%, rgba(10,10,9,0.1), rgba(10,10,9,0.45) 70%, rgba(10,10,9,0.75) 100%),
+  linear-gradient(180deg, rgba(10,10,9,0) 50%, rgba(10,10,9,0.5)); }
 body { position: relative; isolation: isolate; }
 button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
 button:disabled { cursor: default; opacity: 0.4; }
@@ -68,7 +71,7 @@ button:disabled { cursor: default; opacity: 0.4; }
   position: sticky; top: 0; z-index: 10; background: rgba(8, 9, 7, 0.88);
   border-bottom: 1px solid var(--accentSoft); backdrop-filter: blur(6px);
 }
-.barIn { max-width: 1360px; margin: 0 auto; padding: 10px 16px; display: flex; align-items: center; gap: 16px; }
+.barIn { max-width: 1280px; margin: 0 auto; padding: 10px 16px; display: flex; align-items: center; gap: 16px; }
 .brand { font-family: var(--oracle); font-weight: 700; font-size: 20px; letter-spacing: 1px; text-transform: uppercase; white-space: nowrap; }
 .brand span { color: var(--dim); font-weight: 500; }
 .search { margin-left: auto; display: flex; flex: 0 1 380px; min-width: 0; }
@@ -87,7 +90,7 @@ button:disabled { cursor: default; opacity: 0.4; }
 .btn.ghost { background: none; }
 .btn.ghost:hover { background: rgba(255,239,215,0.1); }
 
-.main { max-width: 1360px; margin: 0 auto; padding: 20px 16px 48px; display: flex; flex-direction: column; gap: 16px; }
+.main { max-width: 1280px; margin: 0 auto; padding: 20px 16px 48px; display: flex; flex-direction: column; gap: 16px; }
 
 /* ---------- empty, loading and error states ---------- */
 .hero-empty { text-align: center; padding: 12vh 0 40px; }
@@ -193,8 +196,8 @@ img.hi { object-fit: contain; flex: none; }
 .fs { display: flex; flex-direction: column; padding: 6px 12px; border-left: 1px solid var(--line); cursor: help; }
 .fs .v { font-family: var(--oracle); font-weight: 600; font-size: 24px; line-height: 1.1; }
 .fs .l { font-size: 13px; color: var(--dim); }
-.tops { display: flex; gap: 8px; height: 29px; align-items: center; }
-.tops span { display: inline-flex; align-items: center; gap: 2px; font-family: var(--oracle); font-weight: 600; font-size: 16px; }
+.tops { display: flex; gap: 14px; height: 29px; align-items: center; }
+.tops span { display: inline-flex; align-items: center; gap: 5px; font-family: var(--oracle); font-weight: 600; font-size: 16px; }
 .tops img { width: 26px; height: 26px; object-fit: contain; }
 .delta { font-size: 13px; font-weight: 600; }
 .delta.good { color: var(--good); }
@@ -306,7 +309,7 @@ button.hRow.sel { background: rgba(255,239,215,0.12); box-shadow: inset 3px 0 0 
 .dpts { font-size: 13px; font-weight: 600; cursor: help; }
 .match {
   position: relative; display: grid; align-items: center; gap: 12px; margin-top: 4px; padding: 6px 10px 6px 0; border-radius: 3px; overflow: hidden;
-  grid-template-columns: 68px 92px 96px minmax(150px, 1fr) 141px 232px;
+  grid-template-columns: 68px 92px 96px minmax(150px, 1fr) 141px minmax(200px, 236px);
 }
 .match.w { background: linear-gradient(90deg, rgba(88,216,106,0.16), rgba(88,216,106,0.05) 50%, rgba(255,239,215,0.02)); box-shadow: inset 4px 0 0 var(--good); }
 .match.l { background: linear-gradient(90deg, rgba(232,96,76,0.16), rgba(232,96,76,0.05) 50%, rgba(255,239,215,0.02)); box-shadow: inset 4px 0 0 var(--bad); }
@@ -409,3 +412,4 @@ a.pl:hover { color: var(--offWhite); text-decoration: underline; }
 .wlLbl { margin-top: 14px; font-size: 12px; color: var(--dim); }
 .wl { margin-top: 6px; }
 @media (prefers-reduced-motion: reduce) { .backdrop { transition: none; } }
+@media (max-width: 640px) { .backdrop::before { filter: blur(40px) saturate(1.3); } }

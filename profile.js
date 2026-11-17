@@ -19,7 +19,8 @@ const heroName = id => (window.HERO_NAMES && HERO_NAMES[id]) || "Hero " + id;
 // Hero art. deadlock-api serves the game's own hero images (/v1/assets/heroes): small head icons for lists and
 // the full card art for big tiles, at their real size. The local files are the fallback when that call fails.
 let HERO_ART = {};
-const heroImg = id => (HERO_ART[id] && HERO_ART[id].mini) || `assets/heroes/${Number(id) || 0}.png`;
+const heroImg = id => (HERO_ART[id] && HERO_ART[id].mini)
+  || ((window.HERO_MM || []).includes(Number(id)) ? `assets/heroes_mm/${Number(id)}.png` : `assets/heroes/${Number(id) || 0}.png`);
 const heroCard = id => (HERO_ART[id] && HERO_ART[id].card) || ((window.HERO_CARDS || []).includes(Number(id)) ? `assets/cards/${Number(id)}.webp` : `assets/heroes/${Number(id) || 0}.png`);
 // Hero theme: the page takes the official character-select backdrop and one accent colour from a hero
 // (for now the player's most played one). The accent is decoration only: win/loss, team and gold colours never change.
@@ -31,7 +32,7 @@ function applyTheme(heroId) {
   const accent = (window.HERO_ACCENTS || {})[id] || art.ui || "";
   if (accent) root.style.setProperty("--accent", accent); else root.style.removeProperty("--accent");
   root.dataset.theme = id ? String(id) : "";
-  if (bd) { bd.style.backgroundImage = `url("${bg}")`; bd.classList.add("on"); }
+  if (bd) { bd.style.setProperty("--bd", `url("${bg}")`); bd.classList.add("on"); }
 }
 async function loadHeroArt() {
   try {
@@ -890,7 +891,7 @@ function matchRow(m) {
     <span class="mArt"><img src="${art}" alt="" loading="lazy"></span>
     <span class="mRes"><b>${win ? "Victory" : "Defeat"}</b><span>${mode}${m.ranked_delta != null ? ` <i class="${m.ranked_delta >= 0 ? "good" : "bad"}">${m.ranked_delta >= 0 ? "+" : ""}${m.ranked_delta}</i>` : ""}</span><span>${mmss(m.match_duration_s)} · ${esc(clock(m.start_time))}</span></span>
     <span class="mKda"><b>${m.player_kills} / ${m.player_deaths} / ${m.player_assists}</b><span>${fmt1((m.player_kills + m.player_assists) / Math.max(1, m.player_deaths))} KDA</span><span>${kSouls(m.net_worth)} souls</span></span>
-    <span class="mBadges">${mvp}<span class="verdict ${v.c}" data-tip="${esc(v.rule)}" tabindex="0">${esc(v.w)}</span>${acc.slice(0, 2).map(a => `<span class="acc" data-tip="${esc(a.rule)}" tabindex="0">${esc(a.name)}</span>`).join("")}${acc.length > 2 ? `<span class="acc accMore" data-tip="${esc(acc.slice(2).map(a => a.name).join(", "))}" tabindex="0">+${acc.length - 2}</span>` : ""}</span>
+    <span class="mBadges">${mvp}<span class="verdict ${v.c}" data-tip="${esc(v.rule)}" tabindex="0">${esc(v.w)}</span>${acc.slice(0, 1).map(a => `<span class="acc" data-tip="${esc(a.rule)}" tabindex="0">${esc(a.name)}</span>`).join("")}${acc.length > 1 ? `<span class="acc accMore" data-tip="Also: ${esc(acc.slice(1).map(a => a.name).join(", "))}" tabindex="0">+${acc.length - 1}</span>` : ""}</span>
     ${itemGrid(meta, me)}
     ${teams}
   </div>`;
