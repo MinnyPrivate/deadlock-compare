@@ -4,14 +4,16 @@ Overlay and isolate Deadlock post-match graphs. Built to load inside the game th
 
 Open `index.html?match=<match id>`.
 
-- Click heroes to show or hide them. Ctrl+Click shows only that hero. Player Comparison graphs start on None, so pick whose lines you want. Each line chip has an "only" button that shows just that line (Ctrl+Click does not reach the game's browser).
-- Player-specific graphs (Damage breakdown, Souls by source, Support value, Kills by type) overlay any number of players: color = player, line style = category.
+- You build the view: a match opens with no hero picked and every graph opens with no line types on. Click heroes to show or hide them (Ctrl+Click shows only that hero). Your hero picks and your Markers settings carry over to the next graph; line types do not.
+- Player-Specific graphs (Regen by Type, Damage Breakdown, Souls by Source and so on) have a legend on the right that is also the picker: every line type, grouped (From the map, From items, Built in, From abilities) and sorted by size, with each picked hero's total. Click a row to show or hide it; Only appears on the hovered row; All and Clear at the bottom. Hovering a row or a line brings it forward and dims the rest.
+- Layout by group size on those graphs: 1 or 2 heroes share one chart (color = line type, the first hero solid and the second dashed, with a key top-left); 3 or 4 heroes get one panel each on a shared scale with a synced crosshair; 5 or more get the overview (team totals over time, a ranked table with a column per line type you turned on and the lobby best in gold, and a compare tray that opens up to 4 heroes side by side). The General graphs (one line per hero) always stay one chart, with hover-to-focus.
 - With exactly 2 players on a general graph, "Difference" shows one minus the other.
 - View As on the General graphs: Value, Per Minute, % of Team (each hero's share of their team), Teams (six heroes added together) and Lanes (each lane pair added together).
-- Teams and Lanes lines can be hidden one by one (Ctrl+Click shows only one).
-- Kills and Deaths are whole numbers that step at the exact second (from `death_details`). The Deaths marker draws a skull for every kill, one row per team, with who killed whom on hover; it is on by default on those two graphs.
-- Markers: Objectives, Deaths and Items toggle on any hero graph. Item buys show under the lines for 1 to 3 heroes (on by default for the Power and damage graphs); hovering lists what was bought since the last point.
-- Player Comparison graphs can show one team or all twelve heroes at once.
+- Teams and Lanes lines are listed in the legend and can be hidden one by one.
+- Kills and Deaths are whole numbers that step at the exact second (from `death_details`). The Deaths marker draws a skull for every kill, one row per team, with who killed whom on hover.
+- Souls Dropped on Death is a General graph (Valve's unsecured-souls-lost counter per hero, every 3 minutes), so it compares players like any other.
+- Markers: Objectives, Deaths and Items toggle on any hero graph. They start off and remember your choice across graphs and matches. Item buys show under the lines for 1 to 3 heroes; hovering lists what was bought since the last point.
+- Shift+P shows a speed check (frame rate, hover and draw times), to confirm the in-game browser keeps up.
 - Hover readout like the game's: one row per hero, highest first, tinted by team, with the line color on the left and the hero's share of the lobby. It follows the mouse to the second; values between Valve's snapshots are read off the drawn line.
 - Time axis: totals start at 0:00, the Power graphs start at each hero's spawn values (level 1, base health from `heroes.vdata`), and rates and percentages start from 0 with a dotted line up to Valve's first snapshot (3:00), since there's no value before it.
 - Matchups tab: hero damage, hard crowd control and slows between every pair of opponents, from Valve's damage matrix, with a head-to-head for any pair. The side panel lists a hero's top damage sources and what hit them (enemy hero and ability or gun). Totals match the scoreboard's hero damage exactly. Crowd control values are milliseconds (whole 1/64 s ticks).
@@ -24,6 +26,21 @@ The page is laid out in Deadlock's 1080p units and scaled with CSS `zoom`, which
 Data: [deadlock-api](https://deadlock-api.com/) `/v1/matches/{id}/metadata`. Hero names come from the game's own files (`heroes.js`).
 
 Local test without the API: `python -m http.server`, then `index.html?match=136014932&src=test/match_136014932.json`. Add `tab=matchups` or `tab=mvp` to open another tab.
+
+## Profile (prototype)
+
+`profile.html` is a separate page for one player, laid out like OP.GG: a sidebar (main hero, rank with seasons, heroes with games per hero, teammates, patterns) and the matches in the main column under a Recent form card.
+
+The page is themed after the player's most played hero. Behind the panels: that hero's official character-select art (`assets/backdrops/<hero id>.webp`, 38 heroes plus `generic.webp`; newer heroes use deadlock-api's `background_image`) blurred into a colour wash, the game's own ritual sigil circles (`assets/ui/sigil_lines.webp`, traced from the Street Brawl and upgrade sigils) tinted with the hero accent, film grain, and slow floating dust (`dust.js`, still with reduce-motion, paused in background tabs). The accent colour comes from `herothemes.js` and is decoration only; win/loss, team and gold colours never change. `?theme=<hero id>` previews another hero's theme.
+
+- Recent form: the last 20 games against the player's usual (all their games), with the takeaway in one sentence.
+- Match rows: result, hero art, K/D/A, Valve's MVP or Key Player place, one blunt verdict graded against that hero's average (`heronorms.js`), Valve's top-tier accolades as tags, the final build in a 2 by 6 grid, and all 12 players (click a name to open their profile). Clicking the row opens the match on the Compare page.
+- Teammates: best and worst win rates with people you played 5 or more games with, either queued together or anyone on your team.
+- Patterns: each answers one question with its own picture (24-hour grid for time of day, columns for session and game length, a split bar for Hidden King vs Archmother), sorted so the most striking comes first.
+
+Data (deadlock-api): `/v1/players/{id}/match-history`, `/v1/players/steam` (names and avatars), `/v1/players/steam-search`, `/v1/matches/metadata` (one bulk call per 20 matches, 30 per minute per IP; falls back to `/v1/matches/{id}/metadata`), `/v1/players/{id}/mate-stats`, `/v1/assets/ranked-seasons` and `/v1/assets/heroes` (the game's hero icons and card art; the local images are the fallback). Street Brawl, bot and private lobby games are left out.
+
+Local test without the API: `profile.html?id=12345678&src=test/profile_fixture.json` (synthetic data, not a real player).
 
 ## Waiting screen
 
