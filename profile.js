@@ -331,9 +331,10 @@ const NORMAL_QUEUES = new Set([0, 1, 4, 8]); // invalid/old, unranked, ranked, n
 const MODES = [["all", "All"], ["ranked", "Ranked"], ["unranked", "Unranked"], ["street_brawl", "Street Brawl"]];
 const modeLabel = mode => mode === "placement" ? "Placement" : MODES.find(([value]) => value === mode)[1];
 const modeTip = mode => {
+  if (mode === "street_brawl" && P?.mode !== mode) return "Street Brawl matchmaking games.";
   const n = P ? gamesForMode(P.allGames, mode).length : 0;
   if (mode === "ranked") return `${plural(n, "ranked game")}, including placement games.`;
-  if (mode === "all") return `${plural(n, "game")} across standard and Street Brawl.`;
+  if (mode === "all") return `${plural(n, "standard game")} across Ranked and Unranked.`;
   return `${plural(n, mode === "street_brawl" ? "Street Brawl game" : "unranked game")}.`;
 };
 function savedMode() {
@@ -357,8 +358,11 @@ function isRanked(match) {
 }
 const showsRank = mode => mode === "all" || mode === "ranked";
 function gamesForMode(games, mode) {
-  if (mode === "all") return games;
-  return games.filter(mode === "ranked" ? isRanked : match => matchMode(match) === mode);
+  return games.filter(match => {
+    const kind = matchMode(match);
+    if (mode === "all") return kind !== null && kind !== "street_brawl";
+    return kind === mode || (mode === "ranked" && kind === "placement");
+  });
 }
 function savedMe() { try { return accountId(localStorage.getItem("pm_me")); } catch (e) { return null; } }
 const isWin = m => (m.player_match_outcome === 1 ? true : m.player_match_outcome === 2 ? false : m.match_result === m.player_team);
@@ -453,21 +457,6 @@ async function loadNames(ids) {
   for (const s of Array.isArray(list) ? list : []) NAMES.set(Number(s.account_id), { name: s.personaname || "", avatar: safeUrl(s.avatarmedium || s.avatar) });
   for (const id of need) if (!NAMES.has(id)) NAMES.set(id, { name: "", avatar: "" });
 }
-// The API groups teammates by game mode. Normal and Brawl cover disjoint match IDs.
-function mergeMates(normal, brawl) {
-  if (!normal || !brawl) return null;
-  const mates = new Map(normal.map(m => [Number(m.mate_id), m]));
-  for (const m of brawl) {
-    const id = Number(m.mate_id), previous = mates.get(id);
-    mates.set(id, previous ? {
-      mate_id: id,
-      matches_played: previous.matches_played + m.matches_played,
-      wins: previous.wins + m.wins,
-      matches: [...(previous.matches || []), ...(m.matches || [])],
-    } : m);
-  }
-  return [...mates.values()];
-}
 async function loadMates() {
   const p = P, request = ++p.matesRequest;
   const my = loadSeq;
@@ -483,8 +472,7 @@ async function loadMates() {
   };
   const [normal, brawl] = await Promise.all([read("normal", FX?.mates), read("street_brawl", FX?.brawlMates)]);
   if (my !== loadSeq || request !== p.matesRequest) return;
-  const all = { party: mergeMates(normal.party, brawl.party), all: mergeMates(normal.all, brawl.all) };
-  p.mates = { normal, street_brawl: brawl, all };
+  p.mates = { normal, street_brawl: brawl };
   const mates = Object.values(p.mates).flatMap(lists => [...(lists.party || []), ...(lists.all || [])]);
   await loadNames(mates.filter(m => m.matches_played >= MATE_MIN).map(m => Number(m.mate_id)));
   if (my !== loadSeq || request !== p.matesRequest) return;
@@ -557,22 +545,22 @@ async function refreshProfile() {
     if (my !== loadSeq || p !== P) return;
     const before = new Set(p.allGames.map(m => m.match_id));
     const { all, allGames } = splitHistory(history);
-    const fresh = allGames.filter(m => !before.has(m.match_id)), added = fresh.length;
-    const hidden = added - gamesForMode(fresh, p.mode).length; // (the played-with filter can hide more; the list below says so)
+    let added = 0;
     // keep the list we already have if the answer comes back empty or shorter: never swap good data for a blank
     if (allGames.length >= p.allGames.length) {
       p.allGames = allGames; p.skipped = all.length - allGames.length;
       recomputeGames();
+      added = gamesForMode(allGames, p.mode).filter(m => !before.has(m.match_id)).length;
     }
     p.fetchedAt = Date.now();
-    p.refreshMsg = added ? `${plural(added, "new game")} found${hidden ? `, ${hidden} hidden by the ${modeLabel(p.mode)} filter` : ""}` : "No new games yet. A game can take a few minutes to show up.";
+    p.refreshMsg = added ? `${plural(added, "new game")} found` : "No new games yet. A game can take a few minutes to show up.";
     const y = window.scrollY;
     p.refreshing = false;
     renderProfile();
     window.scrollTo(0, y);
     loadMetaFor(matchList().slice(0, 20));
     if (p.allGames.length) loadMates();
-    if (added && !before.size) loadSeasons();
+    if (p.allGames.length && !before.size) loadSeasons();
     setTimeout(() => { if (P === p && p.refreshMsg) { p.refreshMsg = ""; paintFresh(); } }, 8000);
   } catch (e) {
     if (p !== P) return;
@@ -733,9 +721,10 @@ function mostPlayed(g) {
 }
 function renderProfile() {
   const all = P.games, prof = P.profile || {};
+  const brawl = P.mode === "street_brawl";
   // ?theme=<hero id> previews another hero's theme; picking your own theme needs Steam sign-in, so later.
   const pick = Number(new URLSearchParams(location.search).get("theme"));
-  applyTheme(pick && HERO_NAMES_OK(pick) ? pick : mostPlayed(P.allGames)); // the player's overall main, so a filter never changes the colours
+  applyTheme(pick && HERO_NAMES_OK(pick) ? pick : mostPlayed(gamesForMode(P.allGames, "all")));
   const latestRanked = all.find(m => isRanked(m) && m.ranked_display_badge && Math.floor(m.ranked_display_badge / 10) > 0);
   const st = streaks(all), tags = profileTags(all), sAll = summarize(all);
   const rank = latestRanked
@@ -749,6 +738,7 @@ function renderProfile() {
         <h1>${esc(P.name)}</h1>
         <div class="line">
           ${showsRank(P.mode) && all.length ? `${rank}<span class="dot"></span>` : ""}
+          ${brawl ? `<span>Street Brawl</span><span class="dot"></span>` : ""}
           <span>${plural(all.length, "game")}</span>
           ${sAll ? `<span class="dot"></span><span>${pct(sAll.w, sAll.n)}% won</span>
           <span class="dot"></span><span class="muted">Last played ${esc(ago(all[0].start_time))}</span>` : ""}
@@ -768,13 +758,13 @@ function renderProfile() {
   </section>
   ${P.accountSaved ? "" : `<p class="accountStorage muted">This browser can't remember your account. ${location.search.includes("me=") ? "Bookmark this page to come back to it." : "Set it up again next time."}</p>`}
   <div class="layout">
-    <aside class="side" id="side" aria-label="Stats"></aside>
+    <aside class="side" id="side" aria-label="${brawl ? "Street Brawl stats" : "Standard stats"}"></aside>
     <div class="mainCol">
-      ${all.length ? formHtml(all) : ""}
+      ${all.length ? formHtml(all, brawl) : ""}
       <section class="card" id="matches"></section>
     </div>
   </div>
-  <p class="foot">Data: deadlock-api${P.skipped ? `. ${plural(P.skipped, "game")} outside standard or Street Brawl matchmaking` : ""}. Stats use available match history. New games can take a few minutes to appear. Standard match verdicts use each hero's averages from about 24,000 recent matches. Match accolade tags come from Valve.</p>`;
+  <p class="foot">Data: deadlock-api${P.skipped ? `. ${plural(P.skipped, "game")} outside supported matchmaking queues` : ""}. Stats use available match history. New games can take a few minutes to appear.${brawl ? "" : " Standard match verdicts use each hero's averages from about 24,000 recent matches."} Match accolade tags come from Valve.</p>`;
   renderSide();
   renderMatches();
   const change = document.getElementById("changeAccount");
@@ -802,15 +792,16 @@ function renderSide() {
   el.hidden = !g.length;
   P.rankData = null;
   if (!g.length) return;
+  const brawl = P.mode === "street_brawl";
   el.innerHTML = `
     <div class="rangeRow">
-      <span class="lbl">Counting</span>
+      <span class="lbl">${brawl ? "Street Brawl" : "Counting"}</span>
       <div class="seg" role="group" aria-label="Which games the sidebar counts">${RANGES.map(([v, l]) => `<button data-range="${v}" class="${P.range === v ? "on" : ""}" aria-pressed="${P.range === v}" ${v !== "all" && P.games.length <= Number(v) ? "disabled" : ""}>${l}</button>`).join("")}</div>
     </div>
     ${mainHeroHtml(g)}
     ${showsRank(P.mode) ? rankCardHtml(g) : ""}
     ${heroesHtml(g)}
-    ${P.mode === "all" ? matesHtml() : ""}
+    ${P.mode === "all" || brawl ? matesHtml() : ""}
     ${patternsHtml(g)}`;
   wireSide();
 }
@@ -846,7 +837,7 @@ function delta(now, before, better, fmt, unit) {
   return `<span class="delta ${good ? "good" : "bad"}">${d > 0 ? "+" : "-"}${shown}${unit || ""}</span>`;
 }
 // Recent form: the last 20 games against this player's usual (all their games), said in one sentence first.
-function formHtml(all) {
+function formHtml(all, brawl) {
   const last = all.slice(0, 20), a = summarize(last), u = summarize(all);
   const enough = all.length >= 40; // with fewer games, "usual" is mostly these same games
   const wrD = (a.wr - u.wr) * 100;
@@ -868,7 +859,7 @@ function formHtml(all) {
   const top3 = Object.entries(top).sort((x, y) => y[1] - x[1]).slice(0, 3);
   return `
   <section class="card form">
-    <div class="cardHead"><h2>Recent form</h2><span class="sub">Last ${a.n} games${enough ? `, compared with all ${all.length.toLocaleString()} of your games` : ""}</span></div>
+    <div class="cardHead"><h2>Recent form</h2><span class="sub">${brawl ? "Street Brawl · " : ""}Last ${a.n} games${enough ? `, compared with all ${all.length.toLocaleString()} games in this view` : ""}</span></div>
     <p class="take big2">${esc(head)}</p>
     <div class="formGrid">
       <div class="formMain" data-tip="Won ${a.w} of the last ${a.n}.">
@@ -919,7 +910,7 @@ function heroesHtml(g) {
 const MATE_MIN = 5;
 function matesHtml() {
   if (!P.mates) return `<section class="card mates"><div class="cardHead"><h2>Teammates</h2></div><p class="muted pad">Loading...</p></section>`;
-  const src = P.mates.all[P.mateMode];
+  const src = withList(P.mateMode);
   const list = (src || []).filter(m => m.matches_played >= MATE_MIN && Number(m.mate_id) !== P.id)
     .map(m => ({ id: Number(m.mate_id), n: m.matches_played, w: m.wins, wr: m.wins / m.matches_played }))
     .sort((a, b) => b.wr - a.wr || b.n - a.n);
@@ -1195,7 +1186,7 @@ const WITH_MIN = 2; // fewest shared games for a teammate to be offered in the l
 const withKinds = [["party", "Queued together", "Games where you queued in the same party."], ["team", "Same team", "Games where you were on the same team, queued together or not."]];
 function withList(kind) {
   if (!P?.mates) return null;
-  const mode = P.mode === "all" || P.mode === "street_brawl" ? P.mode : "normal";
+  const mode = P.mode === "street_brawl" ? "street_brawl" : "normal";
   return P.mates[mode][kind === "party" ? "party" : "all"];
 }
 function withSet() {
@@ -1343,13 +1334,13 @@ function renderMatches() {
   }
   const noDetails = shown.filter(m => META.get(m.match_id) === null).length;
   const wk = P.withKind === "party" ? "queued together" : "on your team";
-  const modeText = P.mode === "street_brawl" ? "Street Brawl" : P.mode;
+  const modeText = P.mode === "street_brawl" ? "Street Brawl" : P.mode === "all" ? "standard" : P.mode;
   const empty = !P.allGames.length
     ? (P.skipped ? "No standard or Street Brawl matchmaking games on record." : "deadlock-api has no stored games for this account yet.")
     : withLoading() ? `Finding your games with ${esc(nameOf(P.withId))}...`
     : P.withId && !withList(P.withKind) ? "Couldn't load your teammates, so the played-with filter can't run. Refresh to try again."
-    : P.withId ? `No ${P.mode === "all" ? "" : modeText + " "}games with ${esc(nameOf(P.withId))} ${wk}. ${P.withKind === "party" ? "Try Same team, or " : "Try "}${P.mode === "all" ? "" : "All modes, or "}clear the filter.`
-    : "No games match this filter. Select All to see every match mode.";
+    : P.withId ? `No ${modeText} games with ${esc(nameOf(P.withId))} ${wk}. ${P.withKind === "party" ? "Try Same team or clear the filter." : "Clear the filter to see all games in this view."}`
+    : `No ${modeText} games match this filter.`;
   el.innerHTML = `
     <div class="cardHead"><h2>Matches</h2>
       ${P.hero ? `<button class="chip filter" id="clearHero" aria-label="Show all heroes again"><img src="${heroImg(P.hero)}" alt="">${esc(heroName(P.hero))} only<span class="x" aria-hidden="true">✕</span></button>` : ""}
@@ -1398,7 +1389,7 @@ function wireSide() {
   const all = document.getElementById("heroesAll");
   if (all) all.addEventListener("click", () => { P.heroesAll = !P.heroesAll; renderSide(); });
   side.querySelectorAll("[data-range]").forEach(b => b.addEventListener("click", () => { if (P.range !== b.dataset.range) { P.range = b.dataset.range; renderSide(); } }));
-  side.querySelectorAll("[data-mates]").forEach(b => b.addEventListener("click", () => { P.mateMode = b.dataset.mates; P.matesAll = false; renderSide(); loadNames((P.mates?.all[P.mateMode] || []).filter(m => m.matches_played >= MATE_MIN).map(m => Number(m.mate_id))).then(renderSide); }));
+  side.querySelectorAll("[data-mates]").forEach(b => b.addEventListener("click", () => { P.mateMode = b.dataset.mates; P.matesAll = false; renderSide(); loadNames((withList(P.mateMode) || []).filter(m => m.matches_played >= MATE_MIN).map(m => Number(m.mate_id))).then(renderSide); }));
   const pa = document.getElementById("patsAll");
   if (pa) pa.addEventListener("click", () => { P.patsAll = !P.patsAll; renderSide(); });
   const ma = document.getElementById("matesAll");
