@@ -36,8 +36,9 @@ const MU_WINDOWS = {
 function muParse(mi) {
   if (mi._mu !== undefined) return mi._mu;
   const dm = mi.damage_matrix;
-  if (!dm || !Array.isArray(dm.damage_dealers) || !dm.source_details) return (mi._mu = null);
-  const times = dm.sample_time_s || [];
+  if (!dm?.damage_dealers?.length || !Array.isArray(dm.damage_dealers) || !dm.source_details ||
+      !Array.isArray(dm.sample_time_s) || !dm.sample_time_s.length) return (mi._mu = null);
+  const times = dm.sample_time_s;
   const types = dm.source_details.stat_type || [], names = dm.source_details.source_name || [];
   const team = {};
   for (const p of state.players) team[p.slot] = p.team;
@@ -147,6 +148,7 @@ window.renderMatchups = function renderMatchups() {
   if (!muSplitOk(mu)) state.muWin = "all";
   const L = state.leftTeam;
   const left = state.players.filter(p => p.team === L), right = state.players.filter(p => p.team !== L);
+  if (!left.length || !right.length) { view.innerHTML = `<div class="empty">Both teams need player data to show matchups.</div>`; return; }
   if (state.mvpPick == null || !state.players.some(p => p.slot === state.mvpPick)) { state.mvpPick = (state.me || left[0] || state.players[0]).slot; renderTop(); }
   const pair = state.muPair && state.muPair.every(s => state.players.some(p => p.slot === s)) ? state.muPair : null;
 
@@ -165,7 +167,7 @@ window.renderMatchups = function renderMatchups() {
   for (const a of left) for (const b of right) { const c = cell(a, b); maxPair = Math.max(maxPair, c.x + c.y); }
   const TL = TEAMS[L], TR = TEAMS[1 - L];
   const focus = state.mvpPick;
-  h += `<div class="muGrid" style="--tl:${TL.c};--tr:${TR.c}">`;
+  h += `<div class="muGrid" style="--tl:${TL.c};--tr:${TR.c};--mu-rows:${left.length};--mu-cols:${right.length}">`;
   h += `<div class="muCorner"><span style="color:${TL.c}">${TL.color}</span> rows<br><span style="color:${TR.c}">${TR.color}</span> columns</div>`;
   for (const b of right) h += `<button class="muHead col${b.slot === focus ? " on" : ""}" data-slot="${b.slot}">${portrait(b, "pt")}<span class="hn">${esc(heroName(b))}</span></button>`;
   for (const a of left) {
@@ -219,7 +221,10 @@ function muHeroPanel(mu, p) {
   if (state.muStat === "dmg") {
     const w = (mu.world[p.slot] || {}).all || {};
     const wv = muSum(MU_CATS.map(c => ({ v: w[c.id] ? muVal(mu, w[c.id]) : 0 })));
-    if (wv > 0) worldNote = `<div class="muNote">Also took ${muFmt(wv)} from non-heroes (troopers, haunts, guardians, walkers and the mid boss). Not counted above.</div>`;
+    if (wv > 0) {
+      const examples = isStreetBrawl() ? "" : " (troopers, haunts, guardians, walkers and the mid boss)";
+      worldNote = `<div class="muNote">Also took ${muFmt(wv)} from non-heroes${examples}.</div>`;
+    }
   }
   const sd = dealt.reduce((a, r) => a + muSum(r.parts), 0), st = took.reduce((a, r) => a + muSum(r.parts), 0);
   const scale = Math.max(1, ...dealt.concat(took).map(r => muSum(r.parts)));
@@ -235,7 +240,7 @@ function muHeroPanel(mu, p) {
     <div class="whyHead">
       ${portrait(p, "big")}
       <div class="whyName"><div class="hn">${esc(heroName(p))}</div>
-        <div class="meta"><span style="color:${T.c}">${T.color}</span> · ${p.lane && LANES_BY_COLOR[p.lane] ? LANES_BY_COLOR[p.lane] + " lane" : "No lane"} · ${MU_WINDOWS[state.muWin].name}</div></div>
+        <div class="meta"><span style="color:${T.c}">${T.color}</span>${laneDetail(p)} · ${MU_WINDOWS[state.muWin].name}</div></div>
     </div>
     ${muLegend()}
     <div class="muCols">${list(dealt, verb[0], sd)}${list(took, verb[1], st, worldNote)}</div>`;

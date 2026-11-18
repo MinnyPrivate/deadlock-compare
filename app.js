@@ -34,7 +34,7 @@ const GRAPHS = [
   { group: "General", id: "souls_lead", label: "Team Souls Lead", kind: "lead", extra: true, sub: "Which team was ahead on souls, and by how much" },
   { group: "General", id: "assists", label: "Assists", kind: "general", extra: true, whole: true, get: s => s.assists },
   { group: "General", id: "boss_damage", label: "Objective Damage", kind: "general", extra: true, obj: true, get: s => s.boss_damage,
-    sub: "Guardians, Walkers, Shrines, Patron and Mid Boss" },
+    sub: "Damage dealt to objectives" },
   { group: "General", id: "last_hits", label: "Trooper and Haunt Kills", kind: "general", extra: true, whole: true, get: s => (s.creep_kills || 0) + (s.neutral_kills || 0), sub: "Not the scoreboard's Last Hits, which counts more" },
   { group: "General", id: "souls_dropped", label: "Souls Dropped on Death", kind: "general", extra: true, get: s => s.gold_death_loss, sub: "Unsecured souls carried when they died. Valve's counter, updated every 3 minutes" },
   { group: "General", id: "denies", label: "Denies", kind: "general", extra: true, whole: true, get: s => s.denies },
@@ -282,6 +282,8 @@ const state = {
 };
 const $ = id => document.getElementById(id);
 const graphNow = () => GRAPHS.find(g => g.id === state.graph);
+const isStreetBrawl = () => Number(state.match?.game_mode) === 4;
+const availableGraphs = () => isStreetBrawl() ? GRAPHS.filter(g => g.kind !== "lanes") : GRAPHS;
 // You build the view: nothing is drawn until you pick it. No hero is picked when a match opens; once you pick heroes,
 // they stay picked on every graph until you change them. (kind is kept for the callers; every graph shares one pick.)
 const selFor = kind => state.sel || new Set();
@@ -543,10 +545,15 @@ function applyViewer() {
 
 function setup(mi) {
   state.match = mi;
+  const brawl = isStreetBrawl();
+  closeMenu();
+  if (brawl && graphNow().kind === "lanes") openGraph("souls");
+  if (brawl && state.mode === "lane") state.mode = "value";
   document.body.classList.remove("noMatch");
-  const ordered = [...mi.players].sort((a, b) => a.team - b.team || (a.assigned_lane || 0) - (b.assigned_lane || 0) || a.player_slot - b.player_slot);
+  const lane = p => brawl ? 0 : p.assigned_lane || 0;
+  const ordered = [...mi.players].sort((a, b) => a.team - b.team || lane(a) - lane(b) || a.player_slot - b.player_slot);
   state.players = ordered.map((p, i) => ({
-    slot: Number(p.player_slot) || 0, team: Number(p.team) === 1 ? 1 : 0, lane: p.assigned_lane || 0, heroId: Number(p.hero_id) || 0,
+    slot: Number(p.player_slot) || 0, team: Number(p.team) === 1 ? 1 : 0, lane: lane(p), heroId: Number(p.hero_id) || 0,
     hero: (window.HERO_NAMES || {})[p.hero_id] || "Hero " + (Number(p.hero_id) || 0),
     img: `assets/heroes/${Number(p.hero_id) || 0}.png`, // masked card art for the round chips
     card: (window.HERO_CARDS || []).includes(Number(p.hero_id)) ? `assets/cards/${Number(p.hero_id)}.webp` : null, // the game's rectangular card art
@@ -554,7 +561,7 @@ function setup(mi) {
     color: PLAYER_COLORS[i % PLAYER_COLORS.length],
     stats: scoreboardKda(p),
     souls: p.net_worth || 0, mvp: p.mvp_rank || 0,
-    badge: Number(p.player_rank_data && p.player_rank_data.initial_display_rank) || 0,
+    badge: brawl ? 0 : Number(p.player_rank_data?.initial_display_rank) || 0,
     raw: p,
   }));
   applyViewer();
@@ -564,9 +571,13 @@ function setup(mi) {
   state.showGraph = !!sel.length;
   state.hiddenGroups.clear();
   state.laneOf = null;
+  state.laneHover = null;
+  state.mvpPick = null;
+  state.muPair = null;
   state.lineOv = {}; state.tray = []; state.focus = null; // a new match opens with nothing drawn
   prepDynamicGraphs(true);
-  state.events = buildEvents(mi);
+  // Brawl objective entries reuse standard map IDs, including inactive buildings.
+  state.events = brawl ? [] : buildEvents(mi);
   $("matchInput").value = mi.match_id || "";
   $("clock").textContent = fmtTime(mi.duration_s || 0);
   setStatus("");
@@ -689,7 +700,8 @@ function renderTop() {
     const total = ps.reduce((a, p) => a + p.souls, 0);
     sc.style.setProperty("--tc", T.c);
     sc.innerHTML = `<span>${fmtSouls(total)}</span><span class="icon" style="background-image:url(${T.icon})"></span>`;
-    const tb = (team === 0 ? state.match.average_badge_team0 : state.match.average_badge_team1) || avgBadge(ps.map(p => p.badge));
+    const tb = isStreetBrawl() ? 0
+      : (team === 0 ? state.match.average_badge_team0 : state.match.average_badge_team1) || avgBadge(ps.map(p => p.badge));
     const ta = $("avg" + side);
     ta.innerHTML = tb ? `<span class="lbl">Avg</span>${rankHtml(tb, "", true)}` : "";
     sc.title = `${T.name}\nClick to show only this team. Click again to show everyone.`;
@@ -705,7 +717,7 @@ function buildDropDown() {
   const menu = $("ddMenu");
   menu.innerHTML = "";
   let group = null, extra = false;
-  for (const g of GRAPHS) {
+  for (const g of availableGraphs()) {
     if (g.group !== group) { group = g.group; extra = false; menu.append(el("div", "cat", group)); }
     if (g.extra && !extra) { extra = true; menu.append(el("div", "extraSep", "Added by Postmortem")); }
     const b = el("button", "item" + (g.id === state.graph ? " on" : ""), g.label);
@@ -731,8 +743,9 @@ function wireDropDown() {
   dd.onkeydown = ev => {
     if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
       ev.preventDefault();
-      const i = GRAPHS.findIndex(g => g.id === state.graph) + (ev.key === "ArrowDown" ? 1 : -1);
-      openGraph(GRAPHS[(i + GRAPHS.length) % GRAPHS.length].id); renderAll();
+      const graphs = availableGraphs();
+      const i = graphs.findIndex(g => g.id === state.graph) + (ev.key === "ArrowDown" ? 1 : -1);
+      openGraph(graphs[(i + graphs.length) % graphs.length].id); renderAll();
     } else if (ev.key === "Escape") closeMenu();
   };
   document.addEventListener("click", ev => { if (!dd.contains(ev.target)) closeMenu(); });
@@ -746,7 +759,7 @@ function seg(id, value, fn) {
 // Quick picks: you plus your lane opponents, everyone, or nobody.
 function lanePick() {
   const me = state.me;
-  if (!me) return null;
+  if (!me || isStreetBrawl()) return null;
   const foes = state.players.filter(p => p.team !== me.team && p.lane && p.lane === me.lane);
   return [me.slot, ...foes.map(p => p.slot)];
 }
@@ -767,16 +780,18 @@ function renderPicks() {
     b.onclick = () => { setSel(new Set(arr)); renderAll(); };
   };
   btn("pickLane", "Me + Lane", lane, "You and the enemies in your lane");
-  btn("pickAll", "All", all, g.kind === "breakdown" ? "All twelve heroes. That's a lot of lines: hide line types below to thin it out." : "Every player");
+  btn("pickAll", "All", all, `All ${all.length} players`);
   // Teams in the same order as the portraits: yours (or Hidden King) first.
   const L = state.leftTeam, team = t => state.players.filter(p => p.team === t).map(p => p.slot);
-  btn("pickTeamL", TEAMS[L].name, team(L), `All six heroes on ${TEAMS[L].name}${state.me ? " (your team)" : ""}`);
-  btn("pickTeamR", TEAMS[1 - L].name, team(1 - L), `All six heroes on ${TEAMS[1 - L].name}`);
+  const left = team(L), right = team(1 - L);
+  btn("pickTeamL", TEAMS[L].name, left, `All ${left.length} players on ${TEAMS[L].name}${state.me ? " (your team)" : ""}`);
+  btn("pickTeamR", TEAMS[1 - L].name, right, `All ${right.length} players on ${TEAMS[1 - L].name}`);
   btn("pickNone", "None", [], "Nobody, then click portraits to add them");
 }
 function renderOptions() {
   const g = graphNow(), sel = selNow();
   const lanes = g.kind === "lanes";
+  const brawl = isStreetBrawl();
   document.body.classList.toggle("laneMode", lanes);
   $("optLane").hidden = $("optLaneTime").hidden = !lanes;
   if (lanes) {
@@ -792,6 +807,7 @@ function renderOptions() {
   const okFor = v => v === "value" || (modeOk && (v === "permin" || g.kind === "general"));
   seg("optMode", modeNow(g), v => { state.mode = v; state.showGraph = true; renderAll(); });
   $("optMode").querySelectorAll("button").forEach(b => {
+    b.hidden = brawl && b.dataset.v === "lane";
     b.disabled = !okFor(b.dataset.v);
     if (b.disabled) b.title = g.kind === "breakdown" ? "Only for the General graphs" : "Not for this graph";
   });
@@ -800,6 +816,7 @@ function renderOptions() {
   $("optDiff").hidden = !canDiff;
   seg("optDiff", state.diff ? "on" : "off", v => { state.diff = v === "on"; renderAll(); });
   $("optMarks").hidden = false;
+  $("markObj").closest(".markControl").hidden = brawl;
   GraphMarkers.renderOptions();
   $("ddLabel").textContent = g.label;
 }

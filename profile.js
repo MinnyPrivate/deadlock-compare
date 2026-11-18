@@ -327,12 +327,14 @@ async function searchPlayers(q) {
 }
 
 // ---------- the profile ----------
-// Only normal Deadlock games count: Street Brawl, bot games and private lobbies are left out.
-const COUNTED_MODES = new Set([0, 1, 4, 8]); // invalid/old, unranked, ranked, new player placement
-const MODES = [["all", "All"], ["ranked", "Ranked"], ["unranked", "Unranked"]];
-const modeTip = v => {
-  const n = P ? gamesForMode(P.allGames, v).length : 0;
-  return v === "all" ? `Every game: ${n.toLocaleString()}.` : v === "ranked" ? `${plural(n, "ranked game")}, including placement games.` : `${plural(n, "unranked game")}.`;
+const NORMAL_QUEUES = new Set([0, 1, 4, 8]); // invalid/old, unranked, ranked, new player placement
+const MODES = [["all", "All"], ["ranked", "Ranked"], ["unranked", "Unranked"], ["street_brawl", "Street Brawl"]];
+const modeLabel = mode => mode === "placement" ? "Placement" : MODES.find(([value]) => value === mode)[1];
+const modeTip = mode => {
+  const n = P ? gamesForMode(P.allGames, mode).length : 0;
+  if (mode === "ranked") return `${plural(n, "ranked game")}, including placement games.`;
+  if (mode === "all") return `${plural(n, "game")} across standard and Street Brawl.`;
+  return `${plural(n, mode === "street_brawl" ? "Street Brawl game" : "unranked game")}.`;
 };
 function savedMode() {
   try {
@@ -342,14 +344,21 @@ function savedMode() {
   return "all";
 }
 function matchMode(match) {
+  if (match.game_mode === 4) return match.match_mode === 1 ? "street_brawl" : null;
+  if ((match.game_mode != null && match.game_mode !== 1) || !NORMAL_QUEUES.has(match.match_mode ?? 0)) return null;
   if (match.match_mode === 4) return "ranked";
   if (match.match_mode === 8) return "placement";
   return "unranked";
 }
 // Placement (calibration) games are ranked games, so the Ranked chip includes them.
-const modeGroup = match => (match.match_mode === 4 || match.match_mode === 8 ? "ranked" : "unranked");
+function isRanked(match) {
+  const mode = matchMode(match);
+  return mode === "ranked" || mode === "placement";
+}
+const showsRank = mode => mode === "all" || mode === "ranked";
 function gamesForMode(games, mode) {
-  return mode === "all" ? games : games.filter(match => modeGroup(match) === mode);
+  if (mode === "all") return games;
+  return games.filter(mode === "ranked" ? isRanked : match => matchMode(match) === mode);
 }
 function savedMe() { try { return accountId(localStorage.getItem("pm_me")); } catch (e) { return null; } }
 const isWin = m => (m.player_match_outcome === 1 ? true : m.player_match_outcome === 2 ? false : m.match_result === m.player_team);
@@ -444,16 +453,43 @@ async function loadNames(ids) {
   for (const s of Array.isArray(list) ? list : []) NAMES.set(Number(s.account_id), { name: s.personaname || "", avatar: safeUrl(s.avatarmedium || s.avatar) });
   for (const id of need) if (!NAMES.has(id)) NAMES.set(id, { name: "", avatar: "" });
 }
+// The API groups teammates by game mode. Normal and Brawl cover disjoint match IDs.
+function mergeMates(normal, brawl) {
+  if (!normal || !brawl) return null;
+  const mates = new Map(normal.map(m => [Number(m.mate_id), m]));
+  for (const m of brawl) {
+    const id = Number(m.mate_id), previous = mates.get(id);
+    mates.set(id, previous ? {
+      mate_id: id,
+      matches_played: previous.matches_played + m.matches_played,
+      wins: previous.wins + m.wins,
+      matches: [...(previous.matches || []), ...(m.matches || [])],
+    } : m);
+  }
+  return [...mates.values()];
+}
 async function loadMates() {
+  const p = P, request = ++p.matesRequest;
   const my = loadSeq;
-  const get = party => (FX ? Promise.resolve((FX.mates || {})[party ? "party" : "all"] || [])
-    : getJson(`${API}players/${P.id}/mate-stats?same_party=${party}`));
-  const [party, all] = await Promise.all([get(true).catch(() => null), get(false).catch(() => null)]);
-  if (my !== loadSeq) return;
-  P.mates = { party: Array.isArray(party) ? party : null, all: Array.isArray(all) ? all : null };
-  await loadNames([...(P.mates.party || []), ...(P.mates.all || [])].filter(m => m.matches_played >= MATE_MIN).map(m => Number(m.mate_id)));
-  if (my !== loadSeq) return;
+  const read = async (mode, fixture) => {
+    const hasGames = p.allGames.some(m => (matchMode(m) === "street_brawl") === (mode === "street_brawl"));
+    if (!hasGames) return { party: [], all: [] };
+    const get = async (party, kind) => {
+      const rows = FX ? fixture?.[kind] || [] : await getJson(`${API}players/${p.id}/mate-stats?game_mode=${mode}&same_party=${party}`);
+      return Array.isArray(rows) ? rows : null;
+    };
+    const [party, all] = await Promise.all([get(true, "party").catch(() => null), get(false, "all").catch(() => null)]);
+    return { party, all };
+  };
+  const [normal, brawl] = await Promise.all([read("normal", FX?.mates), read("street_brawl", FX?.brawlMates)]);
+  if (my !== loadSeq || request !== p.matesRequest) return;
+  const all = { party: mergeMates(normal.party, brawl.party), all: mergeMates(normal.all, brawl.all) };
+  p.mates = { normal, street_brawl: brawl, all };
+  const mates = Object.values(p.mates).flatMap(lists => [...(lists.party || []), ...(lists.all || [])]);
+  await loadNames(mates.filter(m => m.matches_played >= MATE_MIN).map(m => Number(m.mate_id)));
+  if (my !== loadSeq || request !== p.matesRequest) return;
   if (P.withId) { recomputeGames(); renderProfile(); loadMetaFor(matchList().slice(0, 20)); } else renderSide();
+  paintWithList();
 }
 async function loadSeasons() {
   const my = loadSeq;
@@ -479,7 +515,7 @@ async function fetchHistory(id, fresh) {
 }
 function splitHistory(history) {
   const all = (Array.isArray(history) ? history : []).slice().sort((a, b) => b.start_time - a.start_time);
-  const allGames = all.filter(m => (m.game_mode == null || m.game_mode === 1) && COUNTED_MODES.has(m.match_mode ?? 0));
+  const allGames = all.filter(m => matchMode(m) !== null);
   return { all, allGames };
 }
 function ageText(ms) {
@@ -529,12 +565,14 @@ async function refreshProfile() {
       recomputeGames();
     }
     p.fetchedAt = Date.now();
-    p.refreshMsg = added ? `${plural(added, "new game")} found${hidden ? `, ${hidden} hidden by the ${p.mode} filter` : ""}` : "No new games yet. A game can take a few minutes to show up.";
+    p.refreshMsg = added ? `${plural(added, "new game")} found${hidden ? `, ${hidden} hidden by the ${modeLabel(p.mode)} filter` : ""}` : "No new games yet. A game can take a few minutes to show up.";
     const y = window.scrollY;
     p.refreshing = false;
     renderProfile();
     window.scrollTo(0, y);
     loadMetaFor(matchList().slice(0, 20));
+    if (p.allGames.length) loadMates();
+    if (added && !before.size) loadSeasons();
     setTimeout(() => { if (P === p && p.refreshMsg) { p.refreshMsg = ""; paintFresh(); } }, 8000);
   } catch (e) {
     if (p !== P) return;
@@ -578,17 +616,15 @@ async function loadProfile(id, src, confirmedProfile = null, accountSaved = true
     document.title = `${name} · Postmortem`;
     if (profile) NAMES.set(id, { name, avatar: steamAvatar(profile) });
     recentAdd({ id, name, avatar: profile && steamAvatar(profile) });
-    P = { id, profile, name, allGames, games, mode, accountSaved, skipped: all.length - allGames.length, range: "all", hero: null, shown: 20, mates: null, mateMode: "party", seasons: null,
+    P = { id, profile, name, allGames, games, mode, accountSaved, skipped: all.length - allGames.length, range: "all", hero: null, shown: 20, mates: null, matesRequest: 0, mateMode: "party", seasons: null,
       fetchedAt: Date.now(), refreshing: false, refreshMsg: "", src: local ? src : null,
       withId: withSaved ? withSaved.id : null, withKind: withSaved ? withSaved.kind : "party" };
     closeWith();
     if (P.withId) { recomputeGames(); loadNames([P.withId]); }
     renderProfile();
     loadMetaFor(matchList().slice(0, 20));
-    if (allGames.length) {
-      loadMates();
-      loadSeasons();
-    }
+    loadMates();
+    if (allGames.length) loadSeasons();
   } catch (e) {
     if (my !== loadSeq) return;
     renderState("Couldn't load this profile", esc(e.message), { label: "Try again", run: () => loadProfile(id, src, confirmedProfile, accountSaved) });
@@ -652,7 +688,8 @@ function withSessions(list) { // newest first in, oldest first out
 
 function profileTags(games) {
   const tags = [];
-  const last50 = games.slice(0, 50), last20 = games.slice(0, 20);
+  const last50 = games.slice(0, 50);
+  const lastStandard = games.filter(m => matchMode(m) !== "street_brawl").slice(0, 20);
   const s = streaks(games);
   if (s.cur >= 3 && s.curWin) tags.push({ t: "On a heater", c: "good", rule: `Won the last ${s.cur} games in a row.` });
   if (s.cur >= 3 && !s.curWin) tags.push({ t: "Cold streak", c: "bad", rule: `Lost the last ${s.cur} games in a row. It happens.` });
@@ -673,12 +710,12 @@ function profileTags(games) {
     if (wr >= 0.58) tags.push({ t: "Bounces back", c: "good", rule: `Won ${pct(wr * afterL.length, afterL.length)}% of games played right after a loss (${afterL.length} games).` });
     if (wr <= 0.4) tags.push({ t: "Losses come in pairs", c: "bad", rule: `Won only ${pct(wr * afterL.length, afterL.length)}% of games played right after a loss (${afterL.length} games). Maybe take a break after one.` });
   }
-  if (last20.length >= 10) {
+  if (lastStandard.length >= 10) {
     let z = 0;
-    for (const m of last20) { const a = heroAvg(m.hero_id); z += (m.player_deaths - a.d) / a.sdD; }
-    z /= last20.length;
-    if (z <= -0.4) tags.push({ t: "Hard to kill", c: "good", rule: `Died less than the average player on the same heroes over the last ${last20.length} games.` });
-    if (z >= 0.4) tags.push({ t: "Respawn regular", c: "bad", rule: `Died more than the average player on the same heroes over the last ${last20.length} games.` });
+    for (const m of lastStandard) { const a = heroAvg(m.hero_id); z += (m.player_deaths - a.d) / a.sdD; }
+    z /= lastStandard.length;
+    if (z <= -0.4) tags.push({ t: "Hard to kill", c: "good", rule: `Died less than the average player on the same heroes over the last ${lastStandard.length} standard games.` });
+    if (z >= 0.4) tags.push({ t: "Respawn regular", c: "bad", rule: `Died more than the average player on the same heroes over the last ${lastStandard.length} standard games.` });
   }
   const late = last50.filter(m => new Date(m.start_time * 1000).getHours() < 5).length;
   if (last50.length >= 15 && late / last50.length >= 0.35) tags.push({ t: "Night owl", c: "neutral", rule: `${pct(late, last50.length)}% of the last ${last50.length} games started between midnight and 5 AM (your time).` });
@@ -699,7 +736,7 @@ function renderProfile() {
   // ?theme=<hero id> previews another hero's theme; picking your own theme needs Steam sign-in, so later.
   const pick = Number(new URLSearchParams(location.search).get("theme"));
   applyTheme(pick && HERO_NAMES_OK(pick) ? pick : mostPlayed(P.allGames)); // the player's overall main, so a filter never changes the colours
-  const latestRanked = all.find(m => m.ranked_display_badge && Math.floor(m.ranked_display_badge / 10) > 0);
+  const latestRanked = all.find(m => isRanked(m) && m.ranked_display_badge && Math.floor(m.ranked_display_badge / 10) > 0);
   const st = streaks(all), tags = profileTags(all), sAll = summarize(all);
   const rank = latestRanked
     ? `<span data-tip="Badge after their latest ranked game (${esc(ago(latestRanked.start_time))}).">${rankHtml(latestRanked.ranked_display_badge, 34)}</span>`
@@ -711,7 +748,7 @@ function renderProfile() {
       <div class="whoText">
         <h1>${esc(P.name)}</h1>
         <div class="line">
-          ${P.mode !== "unranked" && all.length ? `${rank}<span class="dot"></span>` : ""}
+          ${showsRank(P.mode) && all.length ? `${rank}<span class="dot"></span>` : ""}
           <span>${plural(all.length, "game")}</span>
           ${sAll ? `<span class="dot"></span><span>${pct(sAll.w, sAll.n)}% won</span>
           <span class="dot"></span><span class="muted">Last played ${esc(ago(all[0].start_time))}</span>` : ""}
@@ -737,7 +774,7 @@ function renderProfile() {
       <section class="card" id="matches"></section>
     </div>
   </div>
-  <p class="foot">Data: deadlock-api${P.skipped ? `. ${plural(P.skipped, "Street Brawl, bot or private lobby game")} left out` : ""}. Stats count the ${plural(P.allGames.length, "game")} deadlock-api has for this player; a game it never received can't be counted, and a new one can take a few minutes to show up. Verdicts are graded against each hero's average from about 24,000 recent matches; tags on a match are Valve's own accolades at their top tier. Click a match to open it in Postmortem.</p>`;
+  <p class="foot">Data: deadlock-api${P.skipped ? `. ${plural(P.skipped, "game")} outside standard or Street Brawl matchmaking` : ""}. Stats use available match history. New games can take a few minutes to appear. Standard match verdicts use each hero's averages from about 24,000 recent matches. Match accolade tags come from Valve.</p>`;
   renderSide();
   renderMatches();
   const change = document.getElementById("changeAccount");
@@ -771,7 +808,7 @@ function renderSide() {
       <div class="seg" role="group" aria-label="Which games the sidebar counts">${RANGES.map(([v, l]) => `<button data-range="${v}" class="${P.range === v ? "on" : ""}" aria-pressed="${P.range === v}" ${v !== "all" && P.games.length <= Number(v) ? "disabled" : ""}>${l}</button>`).join("")}</div>
     </div>
     ${mainHeroHtml(g)}
-    ${P.mode === "unranked" ? "" : rankCardHtml(g)}
+    ${showsRank(P.mode) ? rankCardHtml(g) : ""}
     ${heroesHtml(g)}
     ${P.mode === "all" ? matesHtml() : ""}
     ${patternsHtml(g)}`;
@@ -882,7 +919,7 @@ function heroesHtml(g) {
 const MATE_MIN = 5;
 function matesHtml() {
   if (!P.mates) return `<section class="card mates"><div class="cardHead"><h2>Teammates</h2></div><p class="muted pad">Loading...</p></section>`;
-  const src = P.mates[P.mateMode];
+  const src = P.mates.all[P.mateMode];
   const list = (src || []).filter(m => m.matches_played >= MATE_MIN && Number(m.mate_id) !== P.id)
     .map(m => ({ id: Number(m.mate_id), n: m.matches_played, w: m.wins, wr: m.wins / m.matches_played }))
     .sort((a, b) => b.wr - a.wr || b.n - a.n);
@@ -1045,7 +1082,7 @@ function seasonOf(t) {
   return null;
 }
 function rankCardHtml(g) {
-  const ranked = g.filter(m => m.ranked_display_badge && Math.floor(m.ranked_display_badge / 10) > 0).slice().reverse();
+  const ranked = g.filter(m => isRanked(m) && m.ranked_display_badge && Math.floor(m.ranked_display_badge / 10) > 0).reverse();
   if (ranked.length < 2) return "";
   const steps = ranked.map(m => badgeStep(m.ranked_display_badge));
   const lo = Math.min(...steps) - 1, hi = Math.max(...steps) + 1;
@@ -1134,11 +1171,10 @@ function playersCol(meta, team, m) {
   }).join("")}</span>`;
 }
 function matchRow(m) {
-  const win = isWin(m), v = verdict(m);
+  const win = isWin(m), mode = matchMode(m);
+  const v = mode === "street_brawl" ? null : verdict(m);
   const meta = META.get(m.match_id); // undefined: still loading, null: not available
   const me = meta ? meta.players.find(p => p.account_id === P.id) : null;
-  const mode = matchMode(m);
-  const modeLabel = mode[0].toUpperCase() + mode.slice(1);
   const mvp = me && me.mvp ? (me.mvp === 1 ? `<span class="chipMvp gold" data-tip="Valve's MVP for this match.">MVP</span>` : `<span class="chipMvp" data-tip="Valve's Key Player: ${me.mvp === 2 ? "2nd" : "3rd"} best in the lobby.">#${me.mvp}</span>`) : "";
   const acc = topAccolades(me);
   const art = moodCard(m.hero_id, win);
@@ -1146,20 +1182,22 @@ function matchRow(m) {
   return `<div class="match ${win ? "w" : "l"}">
     <a class="mLink" href="${matchHref(m.match_id)}" aria-label="${win ? "Win" : "Loss"} as ${esc(heroName(m.hero_id))}, ${esc(ago(m.start_time))}. Open in Postmortem."></a>
     <span class="mArt"><img src="${art}" alt="" loading="lazy"></span>
-    <span class="mRes"><b>${win ? "Victory" : "Defeat"}</b><span>${modeLabel}${m.ranked_delta != null ? ` <i class="${m.ranked_delta >= 0 ? "good" : "bad"}">${m.ranked_delta >= 0 ? "+" : ""}${m.ranked_delta}</i>` : ""}</span><span>${mmss(m.match_duration_s)} · ${esc(clock(m.start_time))}</span></span>
+    <span class="mRes"><b>${win ? "Victory" : "Defeat"}</b><span>${modeLabel(mode)}${isRanked(m) && m.ranked_delta != null ? ` <i class="${m.ranked_delta >= 0 ? "good" : "bad"}">${m.ranked_delta >= 0 ? "+" : ""}${m.ranked_delta}</i>` : ""}</span><span>${mmss(m.match_duration_s)} · ${esc(clock(m.start_time))}</span></span>
     <span class="mKda"><b>${m.player_kills} / ${m.player_deaths} / ${m.player_assists}</b><span>${fmt1((m.player_kills + m.player_assists) / Math.max(1, m.player_deaths))} KDA</span><span>${kSouls(m.net_worth)} souls</span></span>
-    <span class="mBadges">${mvp}<span class="verdict ${v.c}" data-tip="${esc(v.rule)}" tabindex="0">${esc(v.w)}</span>${acc.slice(0, 1).map(a => `<span class="acc" data-tip="${esc(a.rule)}" tabindex="0">${esc(a.name)}</span>`).join("")}${acc.length > 1 ? `<span class="acc accMore" data-tip="Also: ${esc(acc.slice(1).map(a => a.name).join(", "))}" tabindex="0">+${acc.length - 1}</span>` : ""}</span>
+    <span class="mBadges">${mvp}${v ? `<span class="verdict ${v.c}" data-tip="${esc(v.rule)}" tabindex="0">${esc(v.w)}</span>` : ""}${acc.slice(0, 1).map(a => `<span class="acc" data-tip="${esc(a.rule)}" tabindex="0">${esc(a.name)}</span>`).join("")}${acc.length > 1 ? `<span class="acc accMore" data-tip="Also: ${esc(acc.slice(1).map(a => a.name).join(", "))}" tabindex="0">+${acc.length - 1}</span>` : ""}</span>
     ${itemGrid(meta, me)}
     ${teams}
   </div>`;
 }
 // ---------- "Played with": only the games with one teammate ----------
-// deadlock-api's mate-stats lists, for every teammate, the ids of the matches you shared. Called twice: same_party=true
-// ("queued together") and same_party=false (anyone on your team, queued with you or not). The filter keeps the games
-// whose ids are in that list. Saved per profile as pm_with.
+// Played with intersects the selected game mode with the match IDs from mate-stats.
 const WITH_MIN = 2; // fewest shared games for a teammate to be offered in the list
 const withKinds = [["party", "Queued together", "Games where you queued in the same party."], ["team", "Same team", "Games where you were on the same team, queued together or not."]];
-const withList = kind => (P && P.mates && P.mates[kind === "party" ? "party" : "all"]) || null;
+function withList(kind) {
+  if (!P?.mates) return null;
+  const mode = P.mode === "all" || P.mode === "street_brawl" ? P.mode : "normal";
+  return P.mates[mode][kind === "party" ? "party" : "all"];
+}
 function withSet() {
   if (!P || !P.withId) return null;
   const list = withList(P.withKind);
@@ -1172,7 +1210,7 @@ function recomputeGames() {
   if (P.withId) { const set = withSet(); g = set ? g.filter(m => set.has(Number(m.match_id))) : []; }
   P.games = g;
 }
-const withLoading = () => !!(P && P.withId && !withList(P.withKind));
+const withLoading = () => !!(P.withId && !P.mates);
 const nameOf = id => (NAMES.get(id) || {}).name || `Player ${id}`;
 function savedWith(profileId) {
   try { const v = JSON.parse(localStorage.getItem("pm_with") || "null"); if (v && v.p === profileId && Number.isInteger(v.id) && v.id > 0 && ["party", "team"].includes(v.kind)) return v; } catch (e) { /* none */ }
@@ -1271,6 +1309,7 @@ function paintWithShell() {
 function setMode(mode) {
   if (P.mode === mode) return;
   hideTip();
+  closeWith();
   P.mode = mode;
   recomputeGames();
   if (P.hero && !P.games.some(m => m.hero_id === P.hero)) P.hero = null;
@@ -1299,16 +1338,17 @@ function renderMatches() {
     }
     const day = days.get(k);
     if (isWin(m)) day.wins++; else day.losses++;
-    if (m.ranked_delta != null) { day.points += m.ranked_delta; day.hasPoints = true; }
+    if (isRanked(m) && m.ranked_delta != null) { day.points += m.ranked_delta; day.hasPoints = true; }
     if (i < P.shown) day.shown.push(m);
   }
   const noDetails = shown.filter(m => META.get(m.match_id) === null).length;
   const wk = P.withKind === "party" ? "queued together" : "on your team";
+  const modeText = P.mode === "street_brawl" ? "Street Brawl" : P.mode;
   const empty = !P.allGames.length
-    ? (P.skipped ? "This player only has Street Brawl, bot or private lobby games on record." : "deadlock-api has no stored games for this account yet.")
+    ? (P.skipped ? "No standard or Street Brawl matchmaking games on record." : "deadlock-api has no stored games for this account yet.")
     : withLoading() ? `Finding your games with ${esc(nameOf(P.withId))}...`
-    : P.withId && !withList(P.withKind) ? "Couldn't load your teammates, so the played-with filter can't run. Reload to try again."
-    : P.withId ? `No ${P.mode === "all" ? "" : P.mode + " "}games with ${esc(nameOf(P.withId))} ${wk}. ${P.withKind === "party" ? "Try Same team, or " : "Try "}${P.mode === "all" ? "" : "All modes, or "}clear the filter.`
+    : P.withId && !withList(P.withKind) ? "Couldn't load your teammates, so the played-with filter can't run. Refresh to try again."
+    : P.withId ? `No ${P.mode === "all" ? "" : modeText + " "}games with ${esc(nameOf(P.withId))} ${wk}. ${P.withKind === "party" ? "Try Same team, or " : "Try "}${P.mode === "all" ? "" : "All modes, or "}clear the filter.`
     : "No games match this filter. Select All to see every match mode.";
   el.innerHTML = `
     <div class="cardHead"><h2>Matches</h2>
@@ -1358,7 +1398,7 @@ function wireSide() {
   const all = document.getElementById("heroesAll");
   if (all) all.addEventListener("click", () => { P.heroesAll = !P.heroesAll; renderSide(); });
   side.querySelectorAll("[data-range]").forEach(b => b.addEventListener("click", () => { if (P.range !== b.dataset.range) { P.range = b.dataset.range; renderSide(); } }));
-  side.querySelectorAll("[data-mates]").forEach(b => b.addEventListener("click", () => { P.mateMode = b.dataset.mates; P.matesAll = false; renderSide(); loadNames(((P.mates || {})[P.mateMode] || []).filter(m => m.matches_played >= MATE_MIN).map(m => Number(m.mate_id))).then(renderSide); }));
+  side.querySelectorAll("[data-mates]").forEach(b => b.addEventListener("click", () => { P.mateMode = b.dataset.mates; P.matesAll = false; renderSide(); loadNames((P.mates?.all[P.mateMode] || []).filter(m => m.matches_played >= MATE_MIN).map(m => Number(m.mate_id))).then(renderSide); }));
   const pa = document.getElementById("patsAll");
   if (pa) pa.addEventListener("click", () => { P.patsAll = !P.patsAll; renderSide(); });
   const ma = document.getElementById("matesAll");
