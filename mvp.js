@@ -1,5 +1,5 @@
 "use strict";
-// MVP tab: our own lobby-relative scores (Impact and Raw), a 1-12 list and a "why" panel.
+// MVP tab: rank the match roster and show the stats behind each place.
 // Every stat is scaled against the best value in this lobby (best = 1.0), so scores only compare players in the same match.
 // Deaths count the other way: fewest deaths = 1.0, most deaths = 0.
 
@@ -50,7 +50,7 @@ const MVP_MERGED = [
 const SURV_IDS = new Set(["deaths", "taken", "mitig"]);
 const MVP_MODES = {
   valve: { name: "Valve", sub: "Valve's six stats, each compared with the average for that hero" },
-  impact: { name: "Impact", sub: "15 stats, weighted toward what wins fights and games" },
+  impact: { name: "Impact", sub: "Weighted toward what wins fights and games" },
   raw: { name: "Raw", sub: "The scoreboard: every stat counts the same" },
 };
 
@@ -129,7 +129,9 @@ function catBar(r, scale) {
 
 window.renderMvp = function renderMvp() {
   const view = $("mvpView");
-  const mode = state.mvpMode;
+  const brawl = isStreetBrawl();
+  const mode = brawl && state.mvpMode === "valve" ? "raw" : state.mvpMode;
+  const modes = Object.keys(MVP_MODES).filter(m => !brawl || m !== "valve");
   const valve = mode === "valve";
   const rows = valve ? valveRows() : mvpScores(mode);
   if (!rows.length) { view.innerHTML = `<div class="empty">No players in this match.</div>`; return; }
@@ -139,7 +141,7 @@ window.renderMvp = function renderMvp() {
 
   // ---- header: score mode + legend ----
   let h = `<div class="mvpHead">
-    <div class="graphOption"><span class="optionLabel">Score:</span>${Object.keys(MVP_MODES).map(m =>
+    <div class="graphOption"><span class="optionLabel">Score:</span>${modes.map(m =>
       `<button class="graphOptionButton${m === mode ? " on" : ""}" data-mode="${m}">${MVP_MODES[m].name}</button>`).join("")}</div>
     ${valve ? "" : `<span class="expTag" title="Our own formula, not Valve's. Valve's MVP and Key Player picks are shown as tags.">Experimental</span>`}<span class="mvpSub">${esc(MVP_MODES[mode].sub)}.${valve ? "" : " Scored against the best player in this match on each stat."}${valve && valveStale() ? ` <span class="staleNote">Hero averages may be out of date. Scores can be off until the table is refreshed.</span>` : ""}</span>
     ${valve ? "" : `<div class="legend">${Object.values(MVP_CATS).map(c => `<span><b style="background:${c.c}"></b>${c.name}</span>`).join("")}</div>`}
@@ -153,7 +155,7 @@ window.renderMvp = function renderMvp() {
     h += `<button class="mvpRow${p.slot === state.mvpPick ? " on" : ""}" data-slot="${p.slot}" style="--tc:${T.c}">
       <span class="place">${r.place}</span>
       ${cardFace(p, "row")}
-      <span class="who"><span class="hn">${esc(heroName(p))}${p.left ? ` <span class="leftTag" title="Left the match at ${fmtTime(p.left)}">LEFT</span>` : ""}</span>${rankHtml(p.badge) || `<span class="rank none">Unranked</span>`}</span>
+      <span class="who"><span class="hn">${esc(heroName(p))}${p.left ? ` <span class="leftTag" title="Left the match at ${fmtTime(p.left)}">LEFT</span>` : ""}</span>${brawl ? "" : rankHtml(p.badge) || `<span class="rank none">Unranked</span>`}</span>
       ${valve ? divBar(r.score, top, "") : catBar(r, top)}
       <span class="score ${valve ? dvClass(r.score, 1) : ""}"${valve ? ` title="${dvWord(r.score)} for the hero"` : ""}>${valve ? dv(r.score, 1) : Math.round(r.score)}</span>
       <span class="valve">${v ? `<span class="badge${p.mvp > 1 ? " key" : ""}" title="Valve's pick">${p.mvp === 1 ? "MVP" : "KEY"}</span>` : ""}</span>
@@ -171,6 +173,11 @@ window.renderMvp = function renderMvp() {
 };
 
 const LANES_BY_COLOR = { 1: "Yellow", 3: "Green", 4: "Blue", 6: "Green" };
+function laneDetail(p) {
+  if (isStreetBrawl()) return "";
+  const lane = LANES_BY_COLOR[p.lane];
+  return lane ? ` · ${lane} lane` : " · No lane";
+}
 function maxOf(parts) { return Math.max(...parts.map(x => x.maxPts), 1); }
 function listJoin(a) { return a.length < 2 ? a.join("") : a.slice(0, -1).join(", ") + " and " + a[a.length - 1]; }
 function sayOf(x) { return x.def.say || x.def.label.toLowerCase(); }
@@ -230,8 +237,8 @@ function whyScaled(rows, pick, mode) {
       ${cardFace(p, "lg")}
       <div class="whyName">
         <div class="hn">${esc(heroName(p))}</div>
-        <div class="meta"><span style="color:${T.c}">${T.color}</span> · ${won ? "Won" : "Lost"} · ${p.lane && LANES_BY_COLOR[p.lane] ? LANES_BY_COLOR[p.lane] + " lane" : "No lane"}${p.left ? ` · <span class="leftTag">Left at ${fmtTime(p.left)}</span>` : ""}</div>
-        ${rankHtml(p.badge) || `<span class="rank none">Unranked</span>`}
+        <div class="meta"><span style="color:${T.c}">${T.color}</span> · ${won ? "Won" : "Lost"}${laneDetail(p)}${p.left ? ` · <span class="leftTag">Left at ${fmtTime(p.left)}</span>` : ""}</div>
+        ${isStreetBrawl() ? "" : rankHtml(p.badge) || `<span class="rank none">Unranked</span>`}
       </div>
       <div class="whyScore"><b>${Math.round(pick.score)}</b><span>${ordinal(pick.place)} of ${rows.length}</span></div>
     </div>
@@ -339,7 +346,7 @@ function whyValve(rows, pick) {
       ${cardFace(p, "lg")}
       <div class="whyName">
         <div class="hn">${esc(heroName(p))}</div>
-        <div class="meta"><span style="color:${T.c}">${T.color}</span> · ${won ? "Won" : "Lost"} · ${p.lane && LANES_BY_COLOR[p.lane] ? LANES_BY_COLOR[p.lane] + " lane" : "No lane"}${p.left ? ` · <span class="leftTag">Left at ${fmtTime(p.left)}</span>` : ""}</div>
+        <div class="meta"><span style="color:${T.c}">${T.color}</span> · ${won ? "Won" : "Lost"}${laneDetail(p)}${p.left ? ` · <span class="leftTag">Left at ${fmtTime(p.left)}</span>` : ""}</div>
         ${rankHtml(p.badge) || `<span class="rank none">Unranked</span>`}
       </div>
       <div class="whyScore"><b>${signed(pick.score, 2)}</b><span>${ordinal(pick.place)} of ${rows.length}</span></div>
@@ -365,6 +372,7 @@ function whyValve(rows, pick) {
 
 // ---- "When they contributed": Early and Late grades (before and after 15:00) ----
 function whenHtml(p) {
+  if (isStreetBrawl()) return "";
   const c = valveCache(), ph = c.phase, me = ph.find(r => r.slot === p.slot);
   if (!me || me.early_valve == null) return "";
   const tip = "Each half is compared with what this hero normally does in that stretch of a match this long. Zero is an average game for the hero.";

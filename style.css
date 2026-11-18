@@ -483,7 +483,13 @@ body.tabPick .player.pick .heroImg::before { background: var(--tc); filter: brig
 /* ---------- Matchups tab ---------- */
 .muView { grid-template-columns: 1010px 1fr; }
 .muView .mvpHead .graphOption + .graphOption .optionLabel { margin-left: 26px; }
-.muGrid { display: grid; grid-template-columns: 196px repeat(6, 1fr); grid-template-rows: 92px repeat(6, 1fr); gap: 4px; min-height: 0; }
+.muGrid {
+  display: grid;
+  grid-template-columns: 196px repeat(var(--mu-cols), minmax(0, 1fr));
+  grid-template-rows: 92px repeat(var(--mu-rows), minmax(0, 1fr));
+  gap: 4px;
+  min-height: 0;
+}
 .muCorner { align-self: end; padding: 0 0 10px 4px; font-size: 13px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; line-height: 1.5; opacity: 0.7; }
 .muHead { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 3px; text-align: left; background: rgba(255,239,215,0.03); min-width: 0; }
 .muHead:hover { background: rgba(255,239,215,0.09); }
