@@ -862,3 +862,8 @@ body.lobbyView .overview { display: flex; }
 .perf { position: absolute; left: 20px; bottom: 6px; z-index: 50; padding: 8px 12px; border-radius: 4px; background: rgba(0,0,0,0.85); font-size: 14px; line-height: 1.5; pointer-events: none; }
 
 @media (prefers-reduced-motion: reduce) { #chartLines { transition: none; } }
+/* Companion pairing and provisional source label. */
+.companionControls { position: absolute; right: 20px; bottom: 20px; z-index: 12; display: grid; justify-items: end; gap: 6px; }
+.companionControls form { padding: 12px; background: #171717; border: 1px solid #9a8560; }
+.companionControls input[name="code"] { width: 8ch; text-transform: uppercase; }
+#companionSource { padding: 4px 8px; color: #f6d29a; }

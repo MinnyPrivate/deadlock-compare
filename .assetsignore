@@ -8,3 +8,8 @@ README.md
 wrangler.jsonc
 .assetsignore
 node_modules
+companion/
+wrangler.step3.jsonc
+.dev.vars*
+.env*
+.wrangler/
