@@ -11,7 +11,7 @@
   "d1_databases": [{
     "binding": "DB",
     "database_name": "postmortem-companion-pilot",
-    "database_id": "00000000-0000-0000-0000-000000000000",
+    "database_id": "d0596407-f729-4e02-a9d1-ea83221ac4f3",
     "migrations_dir": "companion"
   }],
   "ratelimits": [
