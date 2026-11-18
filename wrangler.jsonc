@@ -1,7 +1,23 @@
 {
   "name": "deadlock-compare",
+  "main": "companion/worker.mjs",
   "compatibility_date": "2026-11-01",
   "assets": {
-    "directory": "."
-  }
+    "directory": ".",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/v1/companion/*"]
+  },
+  "vars": { "PILOT_ENABLED": "false" },
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "postmortem-companion-pilot",
+    "database_id": "d0596407-f729-4e02-a9d1-ea83221ac4f3",
+    "migrations_dir": "companion"
+  }],
+  "ratelimits": [
+    { "name": "UPLOAD_LIMIT", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } },
+    { "name": "READ_LIMIT", "namespace_id": "1002", "simple": { "limit": 60, "period": 60 } },
+    { "name": "PAIR_LIMIT", "namespace_id": "1003", "simple": { "limit": 5, "period": 60 } }
+  ],
+  "triggers": { "crons": ["* * * * *"] }
 }

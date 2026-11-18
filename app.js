@@ -276,14 +276,16 @@ const state = {
   lineOv: {}, hiddenGroups: new Set(),
   focus: null, folds: {}, tray: [], // hover focus key ("t3" a line type, "s5" a hero), legend groups opened, overview compare tray
   laneOf: null, laneTime: 540, laneHover: null,
-  leftTeam: 0, me: null,
+  leftTeam: 0, me: null, previewSlot: null,
   tab: "graphs", mvpPick: null, mvpMode: "valve",
   muStat: "dmg", muWin: "all", muPair: null,
 };
 const $ = id => document.getElementById(id);
 const graphNow = () => GRAPHS.find(g => g.id === state.graph);
 const isStreetBrawl = () => Number(state.match?.game_mode) === 4;
-const availableGraphs = () => isStreetBrawl() ? GRAPHS.filter(g => g.kind !== "lanes") : GRAPHS;
+const officialGraphs = new Set(["dmg_type", "heal_type", "regen_type", "perm_buffs"]);
+const availableGraphs = () => GRAPHS.filter(g =>
+  (!isStreetBrawl() || g.kind !== "lanes") && (state.previewSlot === null || !officialGraphs.has(g.id)));
 // You build the view: nothing is drawn until you pick it. No hero is picked when a match opens; once you pick heroes,
 // they stay picked on every graph until you change them. (kind is kept for the callers; every graph shares one pick.)
 const selFor = kind => state.sel || new Set();
@@ -358,22 +360,63 @@ function mouseIn(el, ev) {
 // show up (and once a minute anyway, in case the match got stored without salts). Both waiting requests pass disable_steam=true,
 // so they never spend the hourly Steam lookups. See waitForMatch.
 let loadSeq = 0;
+let activeMatchId = null;
+CompanionPreview.onChange(() => { if (activeMatchId) void loadMatch(activeMatchId); });
 async function loadMatch(id) {
   const my = ++loadSeq; // only the newest request may draw
+  activeMatchId = id;
+  CompanionPreview.stop();
   clearMatch();
   clearTimeout(checkTimer); clearInterval(waitTimer);
   setStatus("Loading match " + id + "...");
   const src = params.get("src"); // local test file: only files in this repo's test/ folder
   const local = src && /^test\/[\w-]+\.json$/.test(src);
+  const officialUrl = API + encodeURIComponent(id) + "/metadata";
+  const verifiedUrl = officialUrl + "?disable_steam=true";
   try {
-    const r = await getJson(local ? src : API + encodeURIComponent(id) + "/metadata");
+    if (!local) await CompanionPreview.ready;
     if (my !== loadSeq) return;
-    if (r.ok) return show(r.body, my);
+    const paired = !local && CompanionPreview.isPaired();
+    if (paired) CompanionPreview.start(id, {
+      preview(data) {
+        if (my !== loadSeq || !matchesPage(data.match_info, id)) return false;
+        state.previewSlot = data.viewer_slot;
+        setup(data.match_info);
+        return true;
+      },
+      expire() {
+        if (my !== loadSeq || state.previewSlot === null) return;
+        const waiting = state.wait;
+        clearMatch();
+        state.wait = waiting;
+        setStatus("Waiting for this match’s Valve data.");
+      },
+      async official() {
+        try {
+          const response = await getJson(verifiedUrl);
+          if (response.ok && my === loadSeq && matchesPage(response.body?.match_info || response.body, id)) {
+            show(response.body, my);
+            return true;
+          }
+        } catch (_) { /* Existing match checks still handle upstream availability. */ }
+        return false;
+      },
+    });
+    const r = await getJson(local ? src : paired ? verifiedUrl : officialUrl);
+    if (my !== loadSeq || (state.match && state.previewSlot === null)) return;
+    if (r.ok && (local || matchesPage(r.body?.match_info || r.body, id))) return show(r.body, my);
     if (!local && WAIT_STATUS.has(r.status)) return waitForMatch(id, my, r);
     throw new Error("Couldn't load the match (error " + r.status + ").");
   } catch (e) {
+    if (my === loadSeq && !local && CompanionPreview.isPaired()) {
+      if (!state.match || state.previewSlot !== null) return waitForMatch(id, my, { status: 503, body: null });
+      return;
+    }
     fail(e, id, my);
   }
+}
+function matchesPage(info, id) {
+  return !!info && String(info.match_id) === id && Array.isArray(info.players) && info.players.length > 0;
 }
 async function getJson(url) {
   const r = await fetch(url);
@@ -385,13 +428,19 @@ function show(data, my) {
   if (my !== loadSeq) return;
   const mi = data && (data.match_info || data);
   if (!mi || !Array.isArray(mi.players) || !mi.players.length) throw new Error("This match has no player data.");
+  const previous = state.previewSlot === null ? null : state;
+  const picked = previous?.sel && previous.players.filter(p => previous.sel.has(p.slot));
+  const hadGraph = previous?.showGraph;
+  state.previewSlot = null;
+  CompanionPreview.stop();
   clearTimeout(checkTimer); clearInterval(waitTimer);
   state.wait = null;
-  setup(mi);
+  setup(mi, picked, hadGraph);
 }
 function fail(e, id, my) {
   if (my !== loadSeq) return;
   clearTimeout(checkTimer); clearInterval(waitTimer);
+  CompanionPreview.stop();
   clearMatch();
   const msg = e instanceof TypeError ? "Couldn't reach the match server. Check your connection and try again." : e.message || String(e);
   setStatus(msg, true, () => loadMatch(id));
@@ -452,23 +501,24 @@ function plan(w, id, my) {
   if (!w.stopped) checkTimer = setTimeout(() => check(w, id, my), w.next - now);
 }
 async function check(w, id, my) {
-  if (my !== loadSeq) return;
+  if (my !== loadSeq || state.wait !== w) return;
   clearTimeout(checkTimer);
   w.tries++; w.last = Date.now();
   const base = API + encodeURIComponent(id);
   try {
     const s = await getJson(base + "/salts?disable_steam=true");
-    if (my !== loadSeq) return;
+    if (my !== loadSeq || state.wait !== w) return;
     note(w, "salts", s);
     if (s.status !== 429 && (w.salts || Date.now() - w.lastMeta >= META_EVERY_S * 1000)) {
       w.lastMeta = Date.now();
       const m = await getJson(base + "/metadata?disable_steam=true");
-      if (my !== loadSeq) return;
-      if (m.ok) return show(m.body, my);
+      if (my !== loadSeq || state.wait !== w) return;
+      if (m.ok && matchesPage(m.body?.match_info || m.body, id)) return show(m.body, my);
       if (!WAIT_STATUS.has(m.status)) throw new Error("Couldn't load the match (error " + m.status + ").");
       note(w, "metadata", m);
     }
   } catch (e) {
+    if (my !== loadSeq || state.wait !== w) return;
     if (!(e instanceof TypeError)) return fail(e, id, my);
     w.down++; w.phase = "down"; w.detail = "Couldn't reach deadlock-api"; // a dropped connection: keep waiting, it may come back
   }
@@ -476,6 +526,7 @@ async function check(w, id, my) {
 }
 function drawWait(w, id, my) {
   if (my !== loadSeq) { clearInterval(waitTimer); return; }
+  if (state.previewSlot !== null) return;
   const s = $("status");
   s.classList.remove("err");
   s.dataset.detail = `${w.detail || ""} | try ${w.tries} | phase ${w.phase || ""}`; // for debugging only, not shown
@@ -524,6 +575,9 @@ function clearMatch() {
   stopChartHover();
   GraphMarkers.close();
   state.match = null;
+  state.previewSlot = null;
+  state.wait = null;
+  $("companionSource").hidden = true;
   document.body.classList.add("noMatch");
   $("tooltip").hidden = true;
 }
@@ -539,15 +593,20 @@ function applyViewer() {
   const fr = Number(hint("friendly"));
   state.leftTeam = hint("friendly") != null && (fr === 0 || fr === 1) ? fr : 0;
   const meHero = Number(hint("me_hero")) || (window.HERO_CODES || {})[hint("me_name")] || 0;
-  state.me = state.players.find(p => p.heroId === meHero && (hint("friendly") == null || p.team === state.leftTeam)) || null;
+  const previewMe = state.previewSlot === null ? null : state.players.find(p => p.slot === state.previewSlot);
+  state.me = previewMe || state.players.find(p => p.heroId === meHero && (hint("friendly") == null || p.team === state.leftTeam)) || null;
   if (state.me) state.leftTeam = state.me.team;
 }
 
-function setup(mi) {
+function setup(mi, picked, hadGraph) {
   state.match = mi;
   const brawl = isStreetBrawl();
+  const isPreview = state.previewSlot !== null;
+  $("companionSource").hidden = !isPreview;
+  document.querySelector('#tabs [data-tab="matchups"]').disabled = isPreview;
+  if (isPreview && state.tab === "matchups") state.tab = "graphs";
   closeMenu();
-  if (brawl && graphNow().kind === "lanes") openGraph("souls");
+  if (!availableGraphs().includes(graphNow())) openGraph("souls");
   if (brawl && state.mode === "lane") state.mode = "value";
   document.body.classList.remove("noMatch");
   const lane = p => brawl ? 0 : p.assigned_lane || 0;
@@ -566,9 +625,10 @@ function setup(mi) {
   }));
   applyViewer();
 
-  const sel = (params.get("players") || "").split(",").filter(x => /^\d+$/.test(x.trim())).map(Number).filter(n => state.players.some(p => p.slot === n));
+  const sel = picked ? picked.filter(old => state.players.some(p => p.slot === old.slot && p.heroId === old.heroId && p.team === old.team)).map(p => p.slot)
+    : (params.get("players") || "").split(",").filter(x => /^\d+$/.test(x.trim())).map(Number).filter(n => state.players.some(p => p.slot === n));
   state.sel = sel.length ? new Set(sel) : null;
-  state.showGraph = !!sel.length;
+  state.showGraph = !!sel.length && (!picked || hadGraph);
   state.hiddenGroups.clear();
   state.laneOf = null;
   state.laneHover = null;

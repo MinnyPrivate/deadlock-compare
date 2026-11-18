@@ -2,6 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://api.deadlock-api.com; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Postmortem</title>
 <link rel="preload" href="assets/fonts/valveoracle-semibold.woff2" as="font" type="font/woff2" crossorigin>
@@ -29,6 +31,7 @@
     <button class="tab" data-tab="matchups">Matchups</button>
     <button class="tab" data-tab="mvp">MVP</button>
     <span id="lobbyRank" class="lobbyRank"></span>
+    <span id="companionSource" hidden>From your app · awaiting Valve data</span>
   </nav>
 
   <main class="mainCol">
@@ -157,6 +160,15 @@
     <button type="submit" class="graphOptionButton">Load</button>
   </form>
   <div id="status" class="status"></div>
+  <div id="companionControls" class="companionControls">
+    <button id="companionLink" class="graphOptionButton" type="button" hidden>Link companion</button>
+    <form id="companionPair" hidden>
+      <label>Pairing code <input name="code" minlength="6" maxlength="6" autocomplete="off" spellcheck="false" required></label>
+      <label><input name="remember" type="checkbox"> Remember this viewer</label>
+      <button class="graphOptionButton" type="submit">Link</button>
+    </form>
+    <span id="companionMessage" role="status"></span>
+  </div>
   <div id="perf" class="perf" hidden></div>
 </div>
 
@@ -165,6 +177,7 @@
 <script src="heronorms.js"></script>
 <script src="scoring.js"></script>
 <script src="graph-markers.js"></script>
+<script src="companion-preview.js"></script>
 <script src="app.js"></script>
 <script src="mvp.js"></script>
 <script src="matchups.js"></script>

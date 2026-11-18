@@ -1,0 +1,37 @@
+{
+  "match_id": "number",
+  "start_time": "number",
+  "duration_s": "number",
+  "game_mode": "number",
+  "match_mode": "number",
+  "winning_team": "number",
+  "match_outcome": "number",
+  "average_badge_team0": "number",
+  "average_badge_team1": "number",
+  "team_score": [2, "number"],
+  "players": [12, {
+    "player_slot": "number", "team": "number", "hero_id": "number", "assigned_lane": "number",
+    "kills": "number", "deaths": "number", "assists": "number", "net_worth": "number",
+    "last_hits": "number", "denies": "number", "abandon_match_time_s": "number", "mvp_rank": "number",
+    "player_rank_data": {"initial_display_rank": "number"},
+    "accolades": [64, {"accolade_id": "number", "accolade_stat_value": "number", "accolade_threshold_achieved": "number"}],
+    "items": [256, {"item_id": "number", "game_time_s": "number", "sold_time_s": "number", "flags": "number"}],
+    "death_details": [256, {"game_time_s": "number", "killer_player_slot": "number", "death_duration_s": "number"}],
+    "stats": [128, {
+      "time_stamp_s": "number", "kills": "number", "deaths": "number", "assists": "number", "net_worth": "number",
+      "player_healing": "number", "teammate_healing": "number", "player_damage": "number", "player_damage_taken": "number",
+      "creep_kills": "number", "neutral_kills": "number", "creep_damage": "number", "neutral_damage": "number", "boss_damage": "number",
+      "gold_death_loss": "number", "denies": "number", "shots_hit": "number", "shots_missed": "number", "hero_bullets_hit_crit": "number",
+      "hero_bullets_hit": "number", "level": "number", "max_health": "number", "weapon_power": "number", "tech_power": "number",
+      "player_barriering": "number", "heal_prevented": "number", "damage_mitigated": "number", "bullet_kills": "number",
+      "ability_kills": "number", "melee_kills": "number", "headshot_kills": "number",
+      "gold_sources": [32, {"source": "number", "gold": "number", "gold_orbs": "number"}]
+    }]
+  }],
+  "objectives": [64, {"destroyed_time_s": "number", "team_objective_id": "number", "team": "number"}],
+  "mid_boss": [32, {"destroyed_time_s": "number", "team_claimed": "number", "team_killed": "number"}],
+  "street_brawl_rounds": [16, {
+    "winning_team": "number", "round_number": "number", "start_time_s": "number", "end_time_s": "number", "round_duration_s": "number",
+    "duration_s": "number", "match_outcome": "number", "team_scores": [2, "number"]
+  }]
+}
