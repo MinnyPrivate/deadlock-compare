@@ -516,7 +516,7 @@ test("official colors reach Summary, graph strokes, readout swatches and portrai
   const url = `/?match=${standardId}`;
   await navigate(`${url}&tab=summary&pick=${lightSlot}`);
   await loaded(standardId);
-  await waitPage("document.querySelector('.summary-chart svg')");
+  await waitPage("document.querySelector('.hl-card svg')");
   assert.deepEqual(await page(`[
     document.documentElement.style.getPropertyValue("--accent"),
     document.querySelector("#summaryView").style.getPropertyValue("--hero-accent"),
@@ -637,7 +637,7 @@ test("match tabs wait for Valve on the website and in the overlay", { timeout: 3
     assert.equal(await page("document.querySelector('#companionSource').hidden"), false);
     assert.equal(await page("Summary.selected().slot"), viewer.player_slot);
     assert.equal(await page("document.querySelector('.summary-kda b').textContent"), `${viewer.kills} / ${viewer.deaths} / ${viewer.assists}`);
-    assert.equal(await page("!!document.querySelector('.summary-chart')"), !sparse);
+    assert.equal(await page("!!document.querySelector('.hl-grid')"), !sparse);
     assert.equal(await page("!!document.querySelector('.summary-compare')"), false);
 
     const loadingWidth = await page(`${selectors}.slice(1).map(b => b.offsetWidth)`);
@@ -819,7 +819,7 @@ test("a Street Brawl preview shows the scoreboard while Summary waits for Valve"
     setup({...official});
     const tabs = () => Array.from(document.querySelectorAll('#tabs .tab')).map(b => b.disabled);
     const preview = { tab: state.tab, disabled: tabs(), portraits: document.querySelectorAll('[data-summary-portrait]').length,
-      kda: !!document.querySelector('.summary-kda'), grades: !!document.querySelector('.summary-place') };
+      kda: !!document.querySelector('.summary-kda'), grades: !!document.querySelector('.hl-grid') };
     document.querySelector('[data-tab=summary]').focus();
     show(official, loadSeq);
     return { preview, official: { tab: state.tab, disabled: tabs(), focus: document.activeElement.dataset.tab }, errors: auditErrors };
@@ -1010,16 +1010,14 @@ test("recent profiles persist while other settings reset in new tabs and browser
 
   await navigate("/hideout-test.html");
   await waitPage("document.querySelector('#count')?.textContent === '1'");
-  // A previously hidden tag preference keeps the checkbox visible on this fixture.
+  // A tag preference from the old Summary stays in this tab's storage untouched.
   await page("sessionStorage.setItem('postmortem.summary.hideNegativeTags', '1')");
   await navigate(`${localMatch}&tab=summary`);
   await loaded(standardId);
   await page(`
     document.querySelector('.markToggle[data-mark="obj"]').click();
-    document.querySelector('[data-summary-negative]').click();
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'P', shiftKey: true }));
   `);
-  assert.equal(await page("sessionStorage.getItem('postmortem.summary.hideNegativeTags')"), "0");
   assert.deepEqual(await storedKeys("localStorage"), []);
   assert.deepEqual(await storedKeys("sessionStorage"), Object.keys(legacy));
 
