@@ -346,8 +346,18 @@ body.hasBack .matchForm { top: 62px; }
   font-family: var(--oracle); font-weight: 700; font-size: 20px; letter-spacing: 0.5px; text-transform: uppercase;
   color: rgba(255,239,215,0.45); border-bottom: 3px solid transparent;
 }
-.tab:hover { color: var(--offWhite); background: rgba(255,239,215,0.05); }
+.tab:enabled:hover { color: var(--offWhite); background: rgba(255,239,215,0.05); }
 .tab.on { color: #fff; border-bottom-color: var(--offWhite); background: rgba(255,239,215,0.06); }
+.tab[aria-describedby="tabLoading"] { position: relative; opacity: .66; cursor: default; }
+.tab[aria-describedby="tabLoading"]::after {
+  content: ""; position: absolute; right: 3px; top: calc(50% - 5px); box-sizing: border-box;
+  width: 10px; height: 10px; border: 2px solid rgba(255,239,215,.2); border-top-color: var(--offWhite);
+  border-radius: 50%; animation: tab-spin .9s linear infinite;
+}
+@keyframes tab-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .tab[aria-describedby="tabLoading"]::after { animation: none; }
+}
 .lobbyRank { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 .lbl { font-size: 13px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; opacity: 0.7; }
 .rank { display: inline-flex; align-items: center; gap: 6px; font-family: var(--oracle); font-weight: 600; font-size: 16px; white-space: nowrap; }
@@ -448,7 +458,7 @@ body:not(.tabMu) #muView { display: none; }
 .leftTag { font-family: var(--sans); font-size: 11px; font-weight: 700; letter-spacing: 0.5px; padding: 1px 5px; border-radius: 3px; background: #ff8a7a33; color: #ffb3a8; vertical-align: middle; }
 
 /* ---------- no match loaded / failed load ---------- */
-body.noMatch .topPanel, body.noMatch .tabs, body.noMatch .mainCol, body.noMatch #mvpView, body.noMatch #muView { display: none; }
+body.noMatch .topPanel, body.noMatch .mainCol, body.noMatch #mvpView, body.noMatch #muView { display: none; }
 .status .retry { pointer-events: auto; margin-top: 14px; color: var(--offWhite); }
 
 /* ---------- full hover readout ---------- */

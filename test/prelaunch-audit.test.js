@@ -3,7 +3,7 @@
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const { once } = require("node:events");
-const { mkdtemp, readFile } = require("node:fs/promises");
+const { mkdir, mkdtemp, readFile, writeFile } = require("node:fs/promises");
 const { createServer } = require("node:http");
 const { tmpdir } = require("node:os");
 const { extname, join, resolve, sep } = require("node:path");
@@ -34,9 +34,9 @@ async function until(read, label, ms = 4000) {
 before(async () => {
   server = createServer(async (req, res) => {
     const url = new URL(req.url, "http://127.0.0.1");
-    if (url.pathname === "/api/v1/companion/session") return json(res, { state: "paused" }, 503);
-    if (url.pathname.startsWith("/__fixture/")) {
-      const route = routes.get(url.pathname.slice("/__fixture".length));
+    if (url.pathname.startsWith("/api/v1/companion/") || url.pathname.startsWith("/__fixture/")) {
+      const route = routes.get(url.pathname.replace(/^\/__fixture/, ""));
+      if (!route && url.pathname === "/api/v1/companion/session") return json(res, { state: "paused" }, 503);
       return route ? route(res) : json(res, [], 404);
     }
     const file = resolve(site, "." + (url.pathname === "/" ? "/index.html" : url.pathname));
@@ -293,6 +293,116 @@ test("U2 and P1: Summary opens on the viewer and cleans the hint while preservin
   assert.equal(await page("state.summaryPick === null && viewerAccount === null && !new URL(location.href).searchParams.has('pick')"), true);
 });
 
+test("match tabs wait for Valve on the website and in the overlay", { timeout: 30_000 }, async t => {
+  const { normalizeUpload } = await import("../companion/metadata.mjs");
+  const fixture = async (path, fallback) => path ? JSON.parse(await readFile(path, "utf8")) : fallback;
+  const official = await fixture(process.env.PM_LOADING_OFFICIAL, match);
+  const early = await fixture(process.env.PM_LOADING_PREVIEW, official);
+  const id = official.match_info.match_id;
+  const viewer = early.match_info.players[0];
+  const preview = normalizeUpload({ version: 1, viewer_slot: viewer.player_slot, match_info: early.match_info },
+    String(id), (early.match_info.start_time + early.match_info.duration_s) * 1000);
+  const session = "/api/v1/companion/session", previewPath = `/api/v1/companion/matches/${id}`;
+  const initialRoutes = new Map(routes);
+  routes.set(session, res => json(res, { paired: true }));
+  routes.set("/v1/players/steam", res => json(res, []));
+  routes.set("/v1/assets/heroes", res => json(res, []));
+  t.after(async () => {
+    routes.clear();
+    for (const [path, handler] of initialRoutes) routes.set(path, handler);
+    await send("Emulation.setEmulatedMedia", { features: [] });
+    await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+  });
+
+  const selectors = `Array.from(document.querySelectorAll('#tabs .tab'))`;
+  const tabState = () => page(`${selectors}.map(button => [button.dataset.tab, button.disabled,
+    button.getAttribute('aria-current') === 'true', button.hasAttribute('aria-describedby')])`);
+  const pending = [["summary", false, true, false], ["graphs", true, false, true],
+    ["matchups", true, false, true], ["mvp", true, false, true]];
+  const shots = process.env.PM_LOADING_SCREENSHOTS;
+  async function screenshot(name) {
+    if (!shots) return;
+    await mkdir(shots, { recursive: true });
+    await page("document.fonts.ready.then(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))");
+    const { data } = await send("Page.captureScreenshot", { format: "png" });
+    await writeFile(join(shots, name + ".png"), Buffer.from(data, "base64"));
+  }
+
+  for (const [mode, requested, sparse] of [
+    ["website", "summary", false], ["embed", "summary", false],
+    ["embed", "graphs", false], ["embed", "matchups", false], ["website", "mvp", true],
+  ]) {
+    const embed = mode === "embed";
+    let previewResponse, metadataResponse;
+    routes.set(previewPath, res => { previewResponse = res; });
+    routes.set(`/v1/matches/${id}/metadata`, res => { metadataResponse = res; });
+    await send("Emulation.setDeviceMetricsOverride", { width: 1920, height: embed ? 996 : 1080, deviceScaleFactor: 1, mobile: false });
+    const motion = value => send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value }] });
+    await motion("no-preference");
+    await navigate(`/?match=${id}&tab=${requested}${embed ? "&embed=1" : ""}${requested === "graphs" ? "&graph=dmg_type" : ""}`);
+    await until(() => previewResponse && metadataResponse, "Both match requests started");
+    assert.deepEqual(await tabState(), pending);
+    assert.equal(await page("document.querySelector('#status').textContent"), `Loading match ${id}...`);
+
+    const result = structuredClone(preview);
+    result.expires_at = Date.now() + 60_000;
+    if (sparse) delete result.match_info.players[0].stats;
+    json(previewResponse, result);
+    await waitPage("!document.querySelector('#summaryView').hidden && !!document.querySelector('.summary-kda')");
+    assert.deepEqual(await tabState(), pending);
+    assert.equal(await page("document.querySelector('#companionSource').hidden"), false);
+    assert.equal(await page("Summary.selected().slot"), viewer.player_slot);
+    assert.equal(await page("document.querySelector('.summary-kda b').textContent"), `${viewer.kills} / ${viewer.deaths} / ${viewer.assists}`);
+    assert.equal(await page("!!document.querySelector('.summary-chart')"), !sparse);
+    assert.equal(await page("!!document.querySelector('.summary-compare')"), false);
+
+    const loadingWidth = await page(`${selectors}.slice(1).map(b => b.offsetWidth)`);
+    const animation = await page("getComputedStyle(document.querySelector('[data-tab=graphs]'), '::after').animationName");
+    assert.equal(animation, "tab-spin");
+    await motion("reduce");
+    assert.equal(await page("getComputedStyle(document.querySelector('[data-tab=graphs]'), '::after').animationName"), "none");
+
+    if (requested === "summary") await screenshot(`${mode}-loading`);
+    const summary = "document.querySelector('[data-tab=summary]')";
+    assert.equal(await page(`(() => {
+      ${summary}.focus();
+      for (const b of ${selectors}.slice(1)) { b.focus(); b.click(); }
+      ${summary}.click();
+      return document.activeElement === ${summary} && state.tab === 'summary';
+    })()`), true);
+    await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 });
+    await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 });
+    assert.equal(await page("!document.activeElement.closest('#tabs') && document.activeElement !== document.body"), true);
+
+    const root = (await send("DOM.getDocument")).root.nodeId;
+    const { nodeId } = await send("DOM.querySelector", { nodeId: root, selector: '[data-tab="graphs"]' });
+    const { nodes: [accessible] } = await send("Accessibility.getPartialAXTree", { nodeId, fetchRelatives: false });
+    assert.equal(accessible.description.value, "Loading match data");
+    assert.equal(accessible.properties.find(property => property.name === "disabled").value.value, true);
+
+    const picked = result.match_info.players[1].player_slot;
+    if (requested === "summary") {
+      await page(`document.querySelector('[data-summary-portrait="${picked}"]').click(); true`);
+    } else await page(`${summary}.focus(); true`);
+    json(metadataResponse, official);
+    await waitPage(`state.previewSlot === null && state.tab === '${requested}'`);
+    assert.deepEqual(await tabState(), ["summary", "graphs", "matchups", "mvp"].map(tab => [tab, false, tab === requested, false]));
+    assert.deepEqual(await page(`${selectors}.slice(1).map(b => b.offsetWidth)`), loadingWidth);
+    assert.equal(await page("document.querySelector('#companionSource').hidden"), true);
+    assert.equal(await page("state.me.slot"), viewer.player_slot);
+    assert.equal(await page("location.search.includes('tab=' + state.tab)"), true);
+    if (requested === "summary") {
+      assert.equal(await page("Summary.selected().slot"), picked);
+      assert.equal(await page("document.activeElement.dataset.summaryPortrait"), String(picked));
+      assert.equal(await page("!!document.querySelector('.summary-compare')"), true);
+      await page(`Summary.select(${viewer.player_slot}); document.activeElement.blur(); true`);
+      await screenshot(`${mode}-loaded`);
+    } else assert.equal(await page("document.activeElement.dataset.tab"), requested);
+    if (requested === "graphs") assert.equal(await page("state.graph"), "dmg_type");
+    assert.deepEqual(await page("auditErrors"), []);
+  }
+});
+
 test("R1: stalled official headers and body both expire, and Retry loads the match", { timeout: 32_000 }, async () => {
   const metadata = `/v1/matches/${standardId}/metadata`;
   let sent;
@@ -320,12 +430,15 @@ test("R2: salts success cannot reset the metadata failure limit", async () => {
   routes.set(salts, res => json(res, { metadata_salt: 1, cluster_id: 1 }));
   await navigate(`/?match=${id}`);
   await waitPage("state.wait?.tries === 1");
+  assert.deepEqual(await page("[...document.querySelectorAll('#tabs .tab:disabled')].map(b => b.dataset.tab)"), ["graphs", "matchups", "mvp"]);
+  assert.equal(await page("document.querySelector('#tabs').hidden"), false);
   assert.deepEqual(await page(`(async () => {
     const w = state.wait;
     for (let i = 0; i < 5; i++) await check(w, w.id, loadSeq);
     return { failures: w.failures, stopped: w.stopped, retry: !!document.querySelector('#status .retry') };
   })()`), { failures: { salts: 0, metadata: 5 }, stopped: "down", retry: true });
   assert.equal(officialCalls, 6);
+  assert.equal(await page("document.querySelector('#tabs').hidden"), true);
 });
 
 test("B1 and B4: asymmetric crowd control joins by name and world damage sums both dealers", async () => {
@@ -411,23 +524,26 @@ test("R7: profile history renders while its Steam name is pending", async () => 
   assert.equal(await page("window.auditMatches === document.querySelector('#matches')"), true);
 });
 
-test("U2: a preview uses Graphs and opens Summary when eligible official data arrives", async () => {
+test("a Street Brawl preview shows the scoreboard while Summary waits for Valve", async () => {
   await navigate(localMatch);
   await loaded(standardId);
   const result = await page(`(() => {
-    const official = {...state.match};
-    state.previewSlot = state.players[0].slot;
+    const players = [0, 1].flatMap(team => state.match.players.filter(p => p.team === team).slice(0, 4));
+    const official = { ...state.match, game_mode: 4, players };
+    state.awaitingValve = true;
+    state.previewSlot = players[0].player_slot;
     setup({...official});
-    const preview = [state.tab, document.querySelector('[data-tab=summary]').disabled];
+    const tabs = () => Array.from(document.querySelectorAll('#tabs .tab')).map(b => b.disabled);
+    const preview = { tab: state.tab, disabled: tabs(), portraits: document.querySelectorAll('[data-summary-portrait]').length,
+      kda: !!document.querySelector('.summary-kda'), grades: !!document.querySelector('.summary-place') };
+    document.querySelector('[data-tab=summary]').focus();
     show(official, loadSeq);
-    const upgraded = [state.tab, document.querySelector('[data-tab=summary]').disabled];
-    state.previewSlot = state.players[0].slot;
-    setup({...official});
-    document.querySelector('[data-tab=mvp]').click();
-    show({...official}, loadSeq);
-    return {preview, upgraded, manual: state.tab};
+    return { preview, official: { tab: state.tab, disabled: tabs(), focus: document.activeElement.dataset.tab }, errors: auditErrors };
   })()`);
-  assert.deepEqual(result, { preview: ["graphs", true], upgraded: ["summary", false], manual: "mvp" });
+  assert.deepEqual(result, {
+    preview: { tab: "summary", disabled: [false, true, true, true], portraits: 8, kda: true, grades: false },
+    official: { tab: "graphs", disabled: [true, false, false, false], focus: "graphs" }, errors: [],
+  });
 });
 
 // Point PM_AUDIT_MATCHES at the audit's saved matches folder to replay the original sweep.
