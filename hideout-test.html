@@ -25,10 +25,11 @@
 <div class="row"><span class="k">Player id passed (me=)</span><code id="me"></code></div>
 <hr>
 <div class="row"><b>Storage test (answer 3b)</b></div>
-<div class="row"><span class="k">localStorage works</span><code id="ls"></code></div>
+<div class="row"><span class="k">sessionStorage works</span><code id="ls"></code></div>
 <div class="row"><span class="k">First saved at</span><code id="first"></code></div>
 <div class="row"><span class="k">Times opened</span><code id="count"></code></div>
-<div class="row">Open this page, quit Deadlock completely, start it again, open the page again. If "First saved at" is unchanged and "Times opened" went up, storage survives a restart.</div>
+<div class="row">Reload this page in the same panel. If "First saved at" is unchanged and "Times opened" went up, storage survives a reload in this panel.</div>
+<script src="session-storage.js"></script>
 <script>
 (function () {
   function $(id) { return document.getElementById(id); }
@@ -46,10 +47,10 @@
   $("me").textContent = me || "(none)";
   try {
     var k = "dlhideout_test";
-    var raw = localStorage.getItem(k);
+    var raw = sessionStorage.getItem(k);
     var d = raw ? JSON.parse(raw) : { first: new Date().toString(), count: 0 };
     d.count++;
-    localStorage.setItem(k, JSON.stringify(d));
+    sessionStorage.setItem(k, JSON.stringify(d));
     $("ls").textContent = "yes";
     $("first").textContent = d.first;
     $("count").textContent = d.count;

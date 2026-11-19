@@ -19,7 +19,7 @@ const routes = new Map();
 const mime = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json",
   ".png": "image/png", ".webp": "image/webp", ".svg": "image/svg+xml", ".woff2": "font/woff2" };
 const json = (res, body, status = 200) => { res.writeHead(status, { "Content-Type": "application/json" }); res.end(JSON.stringify(body)); };
-let browser, socket, server, origin, send, browserExit;
+let browser, socket, server, origin, send, browserExit, userData, debugPort;
 
 async function until(read, label, ms = 4000) {
   const end = Date.now() + ms;
@@ -50,28 +50,35 @@ before(async () => {
   await once(server, "listening");
   origin = `http://127.0.0.1:${server.address().port}`;
 
-  const userData = await mkdtemp(join(tmpdir(), "postmortem-audit-chrome-"));
+  userData = await mkdtemp(join(tmpdir(), "postmortem-audit-chrome-"));
+  await startBrowser();
+});
+
+async function startBrowser() {
   browser = spawn(chrome, ["--headless=new", "--no-first-run", "--disable-background-networking", "--disable-extensions",
     "--remote-debugging-port=0", `--user-data-dir=${userData}`, "about:blank"], { stdio: "ignore", windowsHide: true });
   browserExit = once(browser, "exit").catch(() => {});
   await once(browser, "spawn");
   const portFile = join(userData, "DevToolsActivePort");
-  const port = await until(async () => {
-    try { return (await readFile(portFile, "utf8")).split(/\r?\n/)[0]; }
-    catch (error) {
-      if (error.code === "ENOENT" || error.code === "EBUSY") return false;
-      throw error;
-    }
-  }, "Chrome debug port", 8000);
+  await connectPage(null, portFile);
+}
+
+async function connectPage(targetId, portFile) {
   const target = await until(async () => {
-    try { return (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()).find(t => t.type === "page"); }
+    try {
+      if (portFile) debugPort = (await readFile(portFile, "utf8")).split(/\r?\n/)[0];
+      const targets = await (await fetch(`http://127.0.0.1:${debugPort}/json/list`)).json();
+      return targets.find(t => t.type === "page" && (!targetId || t.id === targetId));
+    }
     catch (_) { return false; }
-  }, "Chrome debug target");
-  socket = new WebSocket(target.webSocketDebuggerUrl);
-  await new Promise((done, fail) => { socket.addEventListener("open", done, { once: true }); socket.addEventListener("error", fail, { once: true }); });
+  }, "Chrome debug target", 8000);
+  const connection = new WebSocket(target.webSocketDebuggerUrl);
+  await new Promise((done, fail) => { connection.addEventListener("open", done, { once: true }); connection.addEventListener("error", fail, { once: true }); });
+  socket?.close();
+  socket = connection;
   let id = 0;
   const pending = new Map();
-  socket.addEventListener("message", ({ data }) => {
+  connection.addEventListener("message", ({ data }) => {
     const message = JSON.parse(data);
     const callback = pending.get(message.id);
     if (!callback) return;
@@ -81,7 +88,7 @@ before(async () => {
   });
   send = (method, params) => new Promise((done, reject) => {
     pending.set(++id, { done, reject });
-    socket.send(JSON.stringify({ id, method, params }));
+    connection.send(JSON.stringify({ id, method, params }));
   });
   await send("Page.enable");
   await send("Network.enable");
@@ -110,13 +117,18 @@ before(async () => {
       return originalFetch(input, options);
     };
   ` });
-});
+}
 
-after(async () => {
+async function stopBrowser() {
   if (send && socket?.readyState === WebSocket.OPEN) await Promise.race([send("Browser.close").catch(() => {}), delay(500)]);
+  await Promise.race([browserExit, delay(3000)]);
   if (socket?.readyState === WebSocket.OPEN) socket.close();
   if (browser && browser.exitCode === null) browser.kill();
   await browserExit;
+}
+
+after(async () => {
+  await stopBrowser();
   server?.closeAllConnections();
   await new Promise(done => server ? server.close(done) : done());
 });
@@ -295,7 +307,7 @@ async function openThemeProfile(t, history) {
   for (const [path, data] of fixtures) routes.set(path, res => json(res, data));
   t.after(async () => {
     for (const path of fixtures.keys()) routes.delete(path);
-    await page(`localStorage.removeItem("pm_mode"); localStorage.removeItem("pm_with")`);
+    await page(`for (const store of [localStorage, sessionStorage]) { store.removeItem("pm_mode"); store.removeItem("pm_with") }`);
   });
   await navigate(`/profile.html?id=${id}`);
   await waitPage(`document.querySelector(".head h1")?.textContent === "Audit Profile" && P.mates`);
@@ -814,4 +826,92 @@ test("audit match corpus: all 20 matches and Monday's K/D reproduction", {
     return [line.pts.at(-1), auditErrors];
   })()`), [[monday.match_info.duration_s, 11], []]);
   t.diagnostic(`20 matches plus 136949669. ${count.portraits} Summary portraits, ${count.graphs} graphs, ${count.pairs} Matchups pairs, ${count.mvpRows} MVP rows.`);
+});
+
+function serveFilterProfile() {
+  const id = Number(profile.profile.account_id);
+  const mateId = profile.mates.all[0].mate_id;
+  const ranked = profile.history.find(m => m.game_mode === 1 && m.match_mode === 4);
+  const unranked = profile.history.find(m => m.game_mode === 1 && m.match_mode === 1);
+  routes.set(`/v1/players/${id}/match-history`, res => json(res, profile.history));
+  routes.set(`/v1/players/${id}/mate-stats`, res => json(res, [{
+    mate_id: mateId, matches_played: 2, wins: 1, matches: [ranked.match_id, unranked.match_id],
+  }]));
+  routes.set("/v1/players/steam", res => json(res, [profile.profile, ...profile.names]));
+  return { id, mateId, ranked };
+}
+
+test("profile filters survive a tab reload and reset in new tabs and browser sessions", async () => {
+  const { id, mateId, ranked } = serveFilterProfile();
+
+  // Start with the old site's storage and use the real account-saving entry point.
+  routes.set("/storage-seed.html", res => res.writeHead(200, { "Content-Type": "text/html" }).end("<!doctype html>"));
+  await navigate("/__fixture/storage-seed.html");
+  await waitPage("location.pathname === '/__fixture/storage-seed.html'");
+  const legacy = {
+    pm_mode: "street_brawl", pm_with: JSON.stringify({ p: id, id: mateId, kind: "team" }),
+    pm_recent_profiles: "[]", "postmortem.markers": '{"obj":true}',
+    "postmortem.summary.hideNegativeTags": "1", "postmortem.perf": "1", pm_hero_art3: "{}", dlhideout_test: "{}",
+  };
+  await page(`Object.entries(${JSON.stringify(legacy)}).forEach(([key, value]) => localStorage.setItem(key, value))`);
+  const assertDefaults = async () => {
+    await waitPage(`document.querySelector('.head h1')?.textContent === ${JSON.stringify(profile.profile.personaname)}`);
+    assert.deepEqual(await page(`[
+      document.querySelector('#matches [data-mode][aria-pressed="true"]').dataset.mode,
+      Boolean(document.querySelector('#clearWith')), P.hero, P.mateMode, P.range
+    ]`), ["all", false, null, "party", "all"]);
+    assert.equal(await page("localStorage.getItem('pm_me')"), String(id));
+  };
+
+  await navigate(`/profile.html?me=${id}`);
+  await assertDefaults();
+  assert.deepEqual(await page(`Object.keys(${JSON.stringify(legacy)}).filter(key => localStorage.getItem(key) !== null)`), []);
+  await waitPage("P.mates");
+  await page(`
+    document.querySelector('[data-mode="ranked"]').click();
+    document.querySelector('#withBtn').click();
+    document.querySelector('[data-wkind="team"]').click();
+    document.querySelector('[data-pick="${mateId}"]').click();
+  `);
+  const assertFiltered = async () => {
+    await waitPage(`location.pathname === '/profile.html' && typeof P !== 'undefined' && P?.games[0]?.match_id === ${ranked.match_id}`);
+    assert.deepEqual(await page("[P.mode, P.withId, P.withKind, P.games.map(m => m.match_id)]"),
+      ["ranked", mateId, "team", [ranked.match_id]]);
+  };
+  await assertFiltered();
+  await page("window.beforeStorageReload = true");
+  await send("Page.reload");
+  await waitPage("!window.beforeStorageReload");
+  await assertFiltered();
+  await page(`
+    document.querySelector('#matches [data-mode="all"]').click();
+    document.querySelector('[data-mates="all"]').click();
+    document.querySelector('#matches [data-mode="ranked"]').click();
+    document.querySelector('.hRow[data-hero="${ranked.hero_id}"]').click();
+  `);
+  assert.deepEqual(await page("[P.hero, P.mateMode]"), [ranked.hero_id, "all"]);
+
+  const { targetId } = await send("Target.createTarget", { url: "about:blank" });
+  await connectPage(targetId);
+  await navigate("/profile.html");
+  await assertDefaults();
+  assert.deepEqual(await page("['pm_mode', 'pm_with'].map(key => sessionStorage.getItem(key))"), [null, null]);
+
+  await stopBrowser();
+  await startBrowser();
+  await navigate("/profile.html");
+  await assertDefaults();
+});
+
+test("profile filter URLs override tab choices and still apply the existing filters", async () => {
+  const { id, mateId, ranked } = serveFilterProfile();
+  await navigate(`/profile.html?id=${id}`);
+  await waitPage("typeof P !== 'undefined' && P?.mates");
+  await page("sessionStorage.setItem('pm_mode', 'unranked')");
+  await navigate(`/profile.html?id=${id}&mode=ranked&with=${mateId}&withKind=team&hero=${ranked.hero_id}`);
+  await waitPage(`P?.mates && P?.withId === ${mateId} && matchList().length === 1`);
+  assert.deepEqual(await page("[P.mode, P.withKind, P.hero, matchList()[0].match_id]"),
+    ["ranked", "team", ranked.hero_id, ranked.match_id]);
+  await page("document.querySelector('#clearWith').click(); document.querySelector('#clearHero').click()");
+  assert.equal(await page("new URL(location.href).search"), `?id=${id}&mode=ranked`);
 });

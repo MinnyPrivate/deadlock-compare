@@ -24,7 +24,7 @@ const GraphMarkers = (() => {
 
   function load() {
     try {
-      const saved = JSON.parse(localStorage.getItem(key) || "{}");
+      const saved = JSON.parse(sessionStorage.getItem(key) || "{}");
       if (!saved) return;
       for (const [name, value] of Object.entries(defaults)) {
         if (typeof value === "boolean" ? typeof saved[name] === "boolean" : options[name].includes(saved[name])) {
@@ -38,7 +38,7 @@ const GraphMarkers = (() => {
   }
 
   function save() {
-    try { localStorage.setItem(key, JSON.stringify({ ...prefs, hiddenKinds: [...hiddenKinds] })); } catch (e) { /* Storage may be unavailable. */ }
+    try { sessionStorage.setItem(key, JSON.stringify({ ...prefs, hiddenKinds: [...hiddenKinds] })); } catch (e) { /* Storage may be unavailable. */ }
   }
 
   function close(restoreFocus = false) {
