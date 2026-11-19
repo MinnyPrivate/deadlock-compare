@@ -190,13 +190,8 @@ test("the Hideout profile accepts pointer input and typing without running site 
   await waitPage("document.querySelector('#matches') && auditHideoutSignals.includes('ready')");
   assert.deepEqual(await page(`(() => {
     const input = document.querySelector("#q");
-    const bar = document.querySelector(".topbar");
-    const dust = document.querySelector("#dust");
-    return [input.type, getComputedStyle(input).cursor, getComputedStyle(input.nextElementSibling).cursor,
-      getComputedStyle(bar).backdropFilter, getComputedStyle(dust).display, dust.width,
-      getComputedStyle(document.querySelector(".backdrop i")).display,
-      document.querySelector(".profileBackdropArt").childElementCount];
-  })()`), ["text", "default", "default", "none", "none", 300, "none", 0]);
+    return [input.type, getComputedStyle(input).cursor, getComputedStyle(input.nextElementSibling).cursor];
+  })()`), ["text", "default", "default"]);
   async function clickControl(selector) {
     const point = await page(`(() => {
       const control = document.querySelector(${JSON.stringify(selector)});
@@ -297,7 +292,7 @@ function themeHistory() {
   });
 }
 
-async function openThemeProfile(t, history) {
+async function openThemeProfile(t, history, query = "") {
   const id = 42424242;
   const mate = { mate_id: 98765432, matches_played: 2, wins: 1, matches: [140000000, 139999999] };
   const fixtures = new Map([
@@ -310,8 +305,9 @@ async function openThemeProfile(t, history) {
     for (const path of fixtures.keys()) routes.delete(path);
     await page(`for (const store of [localStorage, sessionStorage]) { store.removeItem("pm_mode"); store.removeItem("pm_with") }`);
   });
-  await navigate(`/profile.html?id=${id}`);
-  await waitPage(`document.querySelector(".head h1")?.textContent === "Audit Profile" && P.mates`);
+  const search = `?id=${id}${query}`;
+  await navigate(`/profile.html${search}`);
+  await waitPage(`location.search === "${search}" && document.querySelector(".head h1")?.textContent === "Audit Profile" && P.mates`);
 }
 
 const themeColor = `getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()`;
@@ -320,26 +316,29 @@ const themeTransition = `document.documentElement.getAnimations().find(a => a.tr
 const themeArt = `document.querySelector(".profileBackdropArt")`;
 const artPath = id => `/assets/backdrops/${id}.webp`;
 const clickMode = mode => page(`document.querySelector('[data-mode="${mode}"]').click()`);
+const setViewport = (width, height) => send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
+
+async function captureProfile(folder, name) {
+  await mkdir(folder, { recursive: true });
+  await page("document.fonts.ready.then(() => true)");
+  await waitPage(`getComputedStyle(document.getElementById("backdrop")).opacity === "1"`);
+  await page(`Promise.all([...document.images].filter(img => {
+    const box = img.getBoundingClientRect();
+    return box.width && box.height && box.bottom > 0 && box.top < innerHeight;
+  }).map(img => img.decode().catch(() => {})))`);
+  const { data } = await send("Page.captureScreenshot", { format: "png" });
+  await writeFile(join(folder, name), Buffer.from(data, "base64"));
+}
 
 test("the Profile main hero, backdrop and accents ease together after a mode change", async t => {
   const capture = process.env.PM_THEME_SCREENSHOTS;
   const history = capture ? JSON.parse(await readFile(process.env.PM_THEME_HISTORY, "utf8")) : themeHistory();
-  const setViewport = (width, height) => send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
   if (capture) {
-    await mkdir(capture, { recursive: true });
     await setViewport(1920, 1080);
     t.after(() => setViewport(1440, 900));
   }
   async function screenshot(name) {
-    if (!capture) return;
-    await page("document.fonts.ready.then(() => true)");
-    await waitPage(`getComputedStyle(document.getElementById("backdrop")).opacity === "1"`);
-    await page(`Promise.all([...document.images].filter(img => {
-      const box = img.getBoundingClientRect();
-      return box.width && box.height && box.bottom > 0 && box.top < innerHeight;
-    }).map(img => img.decode().catch(() => {})))`);
-    const { data } = await send("Page.captureScreenshot", { format: "png" });
-    await writeFile(join(capture, name), Buffer.from(data, "base64"));
+    if (capture) await captureProfile(capture, name);
   }
   await openThemeProfile(t, history);
   const graves = "rgb(217, 243, 52)", kelvin = "rgb(116, 171, 188)";
@@ -410,6 +409,62 @@ test("the Profile main hero, backdrop and accents ease together after a mode cha
     assert.ok(state.chip.includes(state.accent), state.chip);
   }
   await screenshot("after-ranked-kelvin.png");
+  assert.deepEqual(await page("auditErrors"), []);
+});
+
+test("the in-game Profile uses one decoded art image and two static circles", async t => {
+  const capture = process.env.PM_INGAME_ART_SCREENSHOTS;
+  const history = capture ? JSON.parse(await readFile(process.env.PM_THEME_HISTORY, "utf8")) : themeHistory();
+  await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "no-preference" }] });
+  t.after(async () => {
+    await send("Emulation.setEmulatedMedia", { features: [] });
+    await setViewport(1440, 900);
+  });
+
+  const activeBackdropAnimations = `document.getAnimations().filter(a => document.querySelector("#backdrop").contains(a.effect?.target ?? null)).length`;
+  async function assertStaticBackdrop(id) {
+    await waitPage(`${themeArt}.lastElementChild?.src.endsWith("${artPath(id)}")`);
+    const state = await page(`(() => {
+      const backdrop = document.querySelector("#backdrop");
+      const art = ${themeArt}.lastElementChild;
+      const nodes = [backdrop, ...backdrop.querySelectorAll("*")];
+      const styles = nodes.flatMap(node => [getComputedStyle(node), getComputedStyle(node, "::before"), getComputedStyle(node, "::after")]);
+      return {
+        art: [${themeArt}.childElementCount, art.naturalWidth > 0, art.getClientRects().length, getComputedStyle(backdrop).opacity],
+        circles: [...backdrop.querySelectorAll("i, b")].map(ring => {
+          const style = getComputedStyle(ring);
+          return [ring.getClientRects().length, style.animationName, style.willChange];
+        }),
+        unfilteredAndStatic: styles.every(style => style.filter === "none" && style.backdropFilter === "none" &&
+          style.animationName === "none" && style.transitionDuration === "0s"),
+        animations: ${activeBackdropAnimations},
+        dust: [getComputedStyle(document.querySelector("#dust")).display, document.querySelector("#dust").width],
+        grain: getComputedStyle(document.querySelector(".grain")).display,
+        topbar: getComputedStyle(document.querySelector(".topbar")).backdropFilter
+      };
+    })()`);
+    assert.deepEqual(state, {
+      art: [1, true, 1, "1"],
+      circles: [[1, "none", "auto"], [1, "none", "auto"]],
+      unfilteredAndStatic: true, animations: 0, dust: ["none", 300], grain: "none", topbar: "none"
+    });
+  }
+
+  await setViewport(1920, 1080);
+  await openThemeProfile(t, history, "&embed=1");
+  assert.equal(await page("getComputedStyle(document.documentElement).transitionProperty"), "none");
+  await assertStaticBackdrop(76);
+  if (capture) await captureProfile(capture, "after.png");
+  assert.deepEqual(await page(`document.querySelector("[data-mode=ranked]").click();
+    [${mainHeroTitle}, ${themeColor}, Boolean(${themeTransition}), ${activeBackdropAnimations}]`),
+    ["Kelvin", "rgb(116, 171, 188)", false, 0]);
+  await assertStaticBackdrop(12);
+  assert.deepEqual(await page("auditErrors"), []);
+
+  await setViewport(640, 900);
+  await clickMode("all");
+  await openThemeProfile(t, history, "&ingame=1");
+  await assertStaticBackdrop(76);
   assert.deepEqual(await page("auditErrors"), []);
 });
 

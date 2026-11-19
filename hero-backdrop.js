@@ -19,13 +19,13 @@ const HeroBackdrop = (() => {
     }
     if (image !== requestedImage || layer.lastElementChild?.src === image.src) return;
 
-    const previous = Array.from(layer.children);
-    if (!previous.length || matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    if (!layer.childElementCount || layer.closest(".profileEmbed") || matchMedia("(prefers-reduced-motion: reduce)").matches) {
       layer.replaceChildren(image);
       return;
     }
 
     // Keep the current art underneath, including any fade still in flight.
+    const previous = Array.from(layer.children);
     layer.append(image);
     image.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 400, easing: "ease" }).onfinish = () => {
       for (const oldImage of previous) oldImage.remove();

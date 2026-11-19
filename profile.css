@@ -456,9 +456,11 @@ a.pl:hover { color: var(--offWhite); text-decoration: underline; }
 /* Hideout's off-screen browser shares rendering time with Deadlock. */
 .profileEmbed, .profileEmbed * { cursor: default !important; }
 .profileEmbed .topbar { background: #080907; backdrop-filter: none; }
-.profileEmbed .backdrop { transition: none; }
-.profileEmbed .backdrop::before { inset: 0; background: radial-gradient(ellipse at 50% 15%, var(--accentSoft), transparent 70%); filter: none; }
-.profileEmbed .backdrop i, .profileEmbed .backdrop b, .profileEmbed .dust, .profileEmbed .grain { display: none; }
+:root.profileEmbed, .profileEmbed .backdrop { transition: none; }
+.profileEmbed .backdrop::before { content: none; filter: none; }
+.profileEmbed .profileBackdropArt { inset: 0; opacity: 0.32; filter: none; }
+.profileEmbed .backdrop i, .profileEmbed .backdrop b { display: block; animation: none; will-change: auto; }
+.profileEmbed .dust, .profileEmbed .grain { display: none; }
 .profileEmbed .spin, .profileEmbed .items.loading i { animation: none; }
 .profileEmbed .match:hover { filter: none; background-color: rgba(255,239,215,0.06); }
 
