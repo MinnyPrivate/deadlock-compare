@@ -12,7 +12,7 @@ A fresh tab or browser session opens the saved profile with All standard games, 
 | `pm_companion_view` | The companion preview pairing token | Keep the existing Secure, HttpOnly, SameSite=Strict cookie. It stays session-only by default and gets a Max-Age when the user chooses Remember. |
 | `pm_mode` | All, Ranked, Unranked, or Street Brawl | Move to `sessionStorage`. An explicit `mode` URL parameter takes priority. |
 | `pm_with` | Profile ID, teammate account ID, and party or team scope | Move to `sessionStorage`. An explicit `with` URL parameter and optional `withKind` take priority. |
-| `pm_recent_profiles` | Up to six recently viewed profile IDs, names and avatars | Move to `sessionStorage`. |
+| `pm_recent_profiles` | Up to six recently viewed profile IDs, names and avatars | Keep in `localStorage` across browser restarts. The legacy cleanup preserves it. |
 | `postmortem.markers` | Graph overlays, objective visibility and marker settings | Move to `sessionStorage`. |
 | `postmortem.summary.hideNegativeTags` | Whether Summary hides negative tags | Move to `sessionStorage`. |
 | `postmortem.perf` | Whether the performance display is enabled | Move to `sessionStorage`. |
@@ -21,7 +21,7 @@ A fresh tab or browser session opens the saved profile with All standard games, 
 
 There are no IndexedDB writers or other cookies in the tracked site source. Hero, sidebar range, teammate list mode, sorting, and other view selections without storage keys remain page state or URL parameters.
 
-The migration runs before application scripts on the profile, match, and Hideout test pages. It removes the eight listed legacy `localStorage` keys without importing their stale values. Removed keys stay gone because their writers use `sessionStorage`. The migration needs no version key and retries on later visits if storage was unavailable.
+The migration runs before application scripts on the profile, match, and Hideout test pages. It removes the seven legacy `localStorage` keys whose writers now use `sessionStorage`, without importing their stale values. The migration needs no version key and retries on later visits if storage was unavailable.
 
 ## Files changed
 
@@ -31,7 +31,7 @@ The migration runs before application scripts on the profile, match, and Hideout
 
 ## Verification
 
-- The Chromium regression starts with the legacy keys, saves the account through `?me=`, selects mode and Played with through the UI, and reloads the tab. It then opens an independent tab and restarts Chromium with the same browser profile to check that only the account carries over.
+- The Chromium regression starts with the legacy keys and six recent profiles, saves the account through `?me=`, selects mode and Played with through the UI, and reloads the tab. It then opens an independent tab and restarts Chromium with the same browser profile to check that the account and capped recent list carry over and the filters reset.
 - The URL regression checks that explicit mode, teammate, scope and hero parameters apply together and that clearing filters updates the URL.
 - `node --test` passed all 28 tests with zero skips, including the saved 20-match audit corpus and Monday's K/D fixture. Scoring passed all five fixtures. The download tests used the repository Worker with a local Node asset binding configured from `_headers`.
 
