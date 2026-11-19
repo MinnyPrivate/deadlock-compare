@@ -6,7 +6,7 @@ const { once } = require("node:events");
 const { mkdir, mkdtemp, readFile, writeFile } = require("node:fs/promises");
 const { createServer } = require("node:http");
 const { tmpdir } = require("node:os");
-const { extname, join, resolve, sep } = require("node:path");
+const { dirname, extname, join, resolve, sep } = require("node:path");
 const { setTimeout: delay } = require("node:timers/promises");
 const { after, before, test } = require("node:test");
 
@@ -221,16 +221,16 @@ test("the Hideout profile accepts pointer input and typing without running site 
   await waitPage("auditHideoutSignals.includes('escape')");
 });
 
-test("Time of day shares a profile-wide color scale across hours and sample sizes", async () => {
+test("Time of day uses five fixed steps around 50% with matching hover and keyboard tooltips", async () => {
   const id = Number(profile.profile.account_id);
-  const hours = [[10, 1, 1], [13, 0, 10], [14, 10, 10], [15, 2, 4], [16, 5, 10],
-    [17, 11, 20], [18, 8, 21], [20, 11, 20]];
+  const hours = [[10, 1, 1], [13, 0, 10], [14, 60, 65], [15, 12, 22], [16, 5, 10],
+    [17, 6, 11], [18, 9, 21], [19, 2, 4], [20, 120, 120]];
   const row = profile.history.find(m => m.game_mode === 1);
   assert.ok(row);
   const history = hours.flatMap(([hour, wins, games]) =>
     Array.from({ length: games }, (_, i) => ({ ...row, hour, player_match_outcome: i < wins ? 1 : 2 })));
-  // Put wins newest so changing the displayed range changes its rate but keeps the same profile baseline.
-  history.sort((a, b) => b.player_match_outcome - a.player_match_outcome);
+  // Keep every 3 PM match in Last 50, with enough recent losses to change the overall rate.
+  history.sort((a, b) => Number(a.hour === 15) - Number(b.hour === 15) || a.player_match_outcome - b.player_match_outcome);
   history.forEach((match, i) => {
     match.match_id = 900000000 + i;
     match.start_time = new Date(2026, 10, i + 1, match.hour).getTime() / 1000;
@@ -238,37 +238,70 @@ test("Time of day shares a profile-wide color scale across hours and sample size
   routes.set(`/v1/players/${id}/match-history`, res => json(res, history));
   routes.set("/v1/players/steam", res => json(res, [profile.profile]));
   await navigate(`/profile.html?id=${id}`);
-  await waitPage("document.querySelector('.clock24')");
-  const cells = await page(`[...document.querySelectorAll(".clock24 .hr")].map(cell => {
+  await waitPage("document.querySelector('.patterns')");
+  await page(`if (!document.querySelector(".clock24")) document.querySelector("#patsAll").click()`);
+  assert.equal(await page(`document.querySelector(".patterns .sub").textContent`), "Overall 81%");
+
+  const boundaries = [400, 401, 469, 470, 530, 531, 599, 600];
+  assert.deepEqual(await page(`${JSON.stringify(boundaries)}.map(wins => timeOfDayStep(wins, 1000))`),
+    [1, 2, 2, 3, 3, 4, 4, 5]);
+
+  const cellStyles = `[...document.querySelectorAll(".clock24 .hr")].map(cell => {
     const swatch = getComputedStyle(cell, "::before");
     return { color: swatch.backgroundColor, opacity: Number(swatch.opacity), text: cell.dataset.tip,
-      sign: cell.querySelector("sup")?.textContent, empty: cell.classList.contains("empty") };
-  })`);
+      label: cell.getAttribute("aria-label"), ink: getComputedStyle(cell).color,
+      step: Number(cell.dataset.step), sign: cell.querySelector("sup")?.textContent };
+  })`;
+  const cells = await page(cellStyles);
   assert.equal(cells.length, 24);
-  assert.equal(cells[17].color, cells[20].color);
-  assert.equal(cells[17].opacity, cells[20].opacity);
-  assert.match(cells[17].text, /55%\) vs your 50%.*Above average/);
-  assert.match(cells[18].text, /38%\) vs your 50%.*Below average/);
-  assert.notEqual(cells[17].color, cells[18].color);
-  assert.equal(cells[17].sign, "+");
+  assert.deepEqual([13, 18, 16, 15, 14].map(hour => cells[hour].step), [1, 2, 3, 4, 5]);
+  const colors = ["rgb(51, 47, 42)", "rgb(107, 101, 93)", "rgb(73, 73, 73)", "rgb(184, 166, 79)", "rgb(255, 237, 121)"];
+  assert.deepEqual([13, 18, 16, 15, 14].map(hour => cells[hour].color), colors);
+  assert.equal(cells[15].color, cells[17].color);
+  assert.equal(cells[15].sign, "+");
   assert.equal(cells[18].sign, "−");
-  assert.equal(cells[15].color, cells[16].color);
-  assert.equal(cells[15].sign, "=");
-  assert.ok(cells[15].opacity < cells[16].opacity);
+  assert.equal(cells[16].sign, "=");
+  assert.equal(cells[16].color, cells[19].color);
+  assert.equal(cells[16].ink, cells[19].ink);
+  assert.equal(cells[16].step, cells[19].step);
   assert.equal(cells[16].opacity, 1);
-  assert.equal(cells[0].empty, true);
-  assert.equal(cells[10].empty, false);
+  assert.equal(cells[19].opacity, 0.75);
+  assert.equal(cells[0].text, "12 AM: no games.");
   assert.equal(cells[0].color, "rgba(0, 0, 0, 0)");
-  assert.match(await page("document.querySelector('.clockLegend').textContent"), /vs your 50%/);
+  const expectedTip = "3 PM: won 12 of 22 (55%)";
+  assert.equal(cells[15].text, expectedTip);
+  assert.equal(cells[15].label, expectedTip);
+  assert.equal(cells[19].text, "7 PM: won 2 of 4 (50%). Fewer than 5 games.");
+  assert.deepEqual(await page(`(() => {
+    const legend = document.querySelector(".clockLegend");
+    return [legend.firstElementChild.textContent, [...legend.querySelectorAll("li")].map(item => item.textContent),
+      [...legend.querySelectorAll("li")].map(item => getComputedStyle(item, "::before").backgroundColor),
+      legend.lastElementChild.textContent];
+  })()`), ["vs 50%", ["≤40%", ">40–<47%", "47–53%", ">53–<60%", "≥60%"], colors, "Fainter with fewer than 5 games."]);
 
-  const ordered = await page(`Array.from({ length: 101 }, (_, i) => {
-    const { direction, intensity } = timeOfDayColor(i / 100, 0.58, 10);
-    return direction * intensity;
-  })`);
-  assert.ok(ordered.every((value, i) => i === 0 || value > ordered[i - 1]));
+  await page(`document.querySelector(".clock24").scrollIntoView({ block: "center" });
+    new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))`);
+  const point = await page(`(() => {
+    const cell = document.querySelectorAll(".clock24 .hr")[15];
+    const { left, top, width, height } = cell.getBoundingClientRect();
+    return { x: left + width / 2, y: top + height / 2 };
+  })()`);
+  const tipIsVisible = text => `!document.querySelector("#tip").hidden && document.querySelector("#tip").textContent === ${JSON.stringify(text)}`;
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", ...point });
+  await waitPage(tipIsVisible(expectedTip));
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 5, y: 5 });
+  await waitPage(`document.querySelector("#tip").hidden`);
+  await page(`scrollTo(0, 0);
+    document.querySelectorAll(".clock24 .hr")[14].focus({ preventScroll: true });`);
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 });
+  await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 });
+  await waitPage(tipIsVisible(expectedTip));
+  assert.equal(await page(`document.activeElement === document.querySelectorAll(".clock24 .hr")[15] &&
+    document.activeElement.matches(":focus-visible") && getComputedStyle(document.activeElement).outlineStyle === "solid"`), true);
 
   await page("document.querySelector('[data-range=\"50\"]').click(); true");
-  await waitPage("document.querySelector('.clockLegend')?.textContent.includes('vs your 50%')");
+  assert.equal(await page(`document.querySelector(".patterns .sub").textContent`), "Overall 24%");
+  assert.deepEqual((await page(cellStyles))[15], cells[15]);
 });
 
 test("all 44 heroes use their official Panorama colors and only unknown IDs use coral", async () => {
@@ -296,7 +329,7 @@ function themeHistory() {
   });
 }
 
-async function openThemeProfile(t, history) {
+async function openAuditProfile(t, history) {
   const id = 42424242;
   const mate = { mate_id: 98765432, matches_played: 2, wins: 1, matches: [140000000, 139999999] };
   const fixtures = new Map([
@@ -312,6 +345,39 @@ async function openThemeProfile(t, history) {
   await navigate(`/profile.html?id=${id}`);
   await waitPage(`document.querySelector(".head h1")?.textContent === "Audit Profile" && P.mates`);
 }
+
+const timeOfDayScreenshot = process.env.PM_TIMEOFDAY_SCREENSHOT;
+if (timeOfDayScreenshot) test("capture Time of day on the saved audit profile", async t => {
+  const history = JSON.parse(await readFile(process.env.PM_TIMEOFDAY_HISTORY, "utf8"));
+  const setViewport = (width, height) => send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
+  await setViewport(1920, 1080);
+  await send("Emulation.setTimezoneOverride", { timezoneId: "America/New_York" });
+  t.after(async () => {
+    await setViewport(1440, 900);
+    await send("Emulation.setTimezoneOverride", { timezoneId: "" });
+  });
+  await openAuditProfile(t, history);
+  await page(`if (!document.querySelector(".clock24")) document.querySelector("#patsAll").click()`);
+  await page("document.fonts.ready.then(() => true)");
+  await waitPage(`getComputedStyle(document.getElementById("backdrop")).opacity === "1"`);
+  await page(`document.querySelector(".clock24").closest(".pat").scrollIntoView({ block: "center" })`);
+  async function capture(path) {
+    const { data } = await send("Page.captureScreenshot", { format: "png" });
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, Buffer.from(data, "base64"));
+  }
+  await capture(timeOfDayScreenshot);
+  const tooltipScreenshot = process.env.PM_TIMEOFDAY_TOOLTIP_SCREENSHOT;
+  if (!tooltipScreenshot) return;
+  const point = await page(`(() => {
+    const cell = document.querySelectorAll(".clock24 .hr")[15];
+    const { left, top, width, height } = cell.getBoundingClientRect();
+    return { x: left + width / 2, y: top + height / 2 };
+  })()`);
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", ...point });
+  await waitPage(`!document.querySelector("#tip").hidden && document.querySelector("#tip").textContent.startsWith("3 PM: won 12 of 22 (55%)")`);
+  await capture(tooltipScreenshot);
+});
 
 const themeColor = `getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()`;
 const mainHeroTitle = `document.querySelector(".mainHero h2")?.textContent`;
@@ -334,7 +400,7 @@ test("the Profile main hero, backdrop and accents ease together after a mode cha
     const { data } = await send("Page.captureScreenshot", { format: "png" });
     await writeFile(join(capture, name), Buffer.from(data, "base64"));
   }
-  await openThemeProfile(t, history);
+  await openAuditProfile(t, history);
   const graves = "rgb(217, 243, 52)", kelvin = "rgb(116, 171, 188)";
   await waitPage(`${themeColor} === "${graves}"`);
   assert.equal(await page(mainHeroTitle), "Graves");
@@ -382,7 +448,7 @@ test("the Profile main hero, backdrop and accents ease together after a mode cha
 test("the Profile swaps instantly with reduced motion and retains its last color on empty filters", async t => {
   await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
   t.after(() => send("Emulation.setEmulatedMedia", { features: [] }));
-  await openThemeProfile(t, themeHistory());
+  await openAuditProfile(t, themeHistory());
   const graves = "rgb(217, 243, 52)", kelvin = "rgb(116, 171, 188)", paige = "rgb(37, 143, 99)";
   const state = () => page(`[${mainHeroTitle}, ${themeColor}, Boolean(${themeTransition})]`);
   assert.deepEqual(await state(), ["Graves", graves, false]);

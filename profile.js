@@ -1022,21 +1022,21 @@ function matesHtml() {
 }
 
 // Patterns: each one answers one question with the picture that suits it, and says the answer in words first.
-// Buckets need 5+ games to show (10+ to be called out), and the game count is always there on hover.
+// Most buckets need 5+ games to show and 10+ to be called out. Hover shows the game count.
 // They are sorted so the most striking one comes first; the rest wait behind "More patterns".
 const MIN_SHOW = 5, MIN_CALL = 10;
 const pctS = x => Math.round(x * 100) + "%";
 const hourName = h => (h % 12 === 0 ? 12 : h % 12) + (h < 12 ? " AM" : " PM");
+const CLOCK_RANGES = ["≤40%", ">40–<47%", "47–53%", ">53–<60%", "≥60%"];
 
-function timeOfDayColor(rate, overall, games) {
-  const delta = rate - overall;
-  // Both directions use the same scale. The square root gives small differences more contrast.
-  const distance = Math.sqrt(Math.abs(delta) / Math.max(overall, 1 - overall));
-  return {
-    intensity: 100 * distance,
-    direction: Math.sign(delta),
-    opacity: Math.min(1, 0.4 + 0.6 * games / MIN_SHOW),
-  };
+function timeOfDayStep(wins, games) {
+  // Compare the unrounded win rate using integer counts.
+  const scaledWins = 100 * wins;
+  if (scaledWins <= 40 * games) return 1;
+  if (scaledWins < 47 * games) return 2;
+  if (scaledWins <= 53 * games) return 3;
+  if (scaledWins < 60 * games) return 4;
+  return 5;
 }
 function bucketStats(buckets, overall) {
   return buckets.map(b => { const s = summarize(b.list); return { ...b, n: b.list.length, wr: s ? s.wr : 0, w: s ? s.w : 0 }; })
@@ -1106,24 +1106,23 @@ function patternsHtml(g) {
       const best = win3.reduce((a, b) => (b.wr > a.wr ? b : a)), worst = win3.reduce((a, b) => (b.wr < a.wr ? b : a));
       const span = x => `${hourName(x.h)} to ${hourName((x.h + 3) % 24)}`;
       const head = best.wr - worst.wr >= 0.08 ? `Best from ${span(best)} (${pctS(best.wr)}), worst from ${span(worst)} (${pctS(worst.wr)}).` : "The clock doesn't matter much for you.";
-      const profileRate = g === P.games ? overall : P.games.filter(isWin).length / P.games.length;
-      const comparison = `vs your ${pctS(profileRate)}`;
       const cell = c => {
         const hour = c.h % 12 || 12;
         const label = hourName(c.h);
-        if (!c.n) return `<i class="hr empty" data-tip="${label}: no games.">${hour}</i>`;
-        const rate = c.w / c.n;
-        const { intensity, direction, opacity } = timeOfDayColor(rate, profileRate, c.n);
-        const edge = direction < 0 ? "var(--bad)" : "var(--good)";
-        const sign = direction < 0 ? "−" : direction > 0 ? "+" : "=";
-        const relation = direction < 0 ? "Below average" : direction > 0 ? "Above average" : "At your average";
-        const tip = `${label}: won ${c.w} of ${c.n} (${pctS(rate)}) ${comparison}. ${relation}.${c.n < MIN_SHOW ? " Few games." : ""}`;
-        return `<i class="hr" role="img" aria-label="${tip}" data-tip="${tip}" style="--hour-edge:${edge};--hour-intensity:${intensity.toFixed(3)}%;--hour-opacity:${opacity.toFixed(2)}"><span>${hour}<sup>${sign}</sup></span></i>`;
+        if (!c.n) {
+          const tip = `${label}: no games.`;
+          return `<span class="hr empty" tabindex="0" role="img" aria-label="${tip}" data-tip="${tip}">${hour}</span>`;
+        }
+        const step = timeOfDayStep(c.w, c.n);
+        const sign = step < 3 ? "−" : step > 3 ? "+" : "=";
+        const few = c.n < MIN_SHOW;
+        const tip = `${label}: won ${c.w} of ${c.n} (${pct(c.w, c.n)}%)${few ? `. Fewer than ${MIN_SHOW} games.` : ""}`;
+        return `<span class="hr${few ? " few" : ""}" data-step="${step}" tabindex="0" role="img" aria-label="${tip}" data-tip="${tip}"><span>${hour}<sup>${sign}</sup></span></span>`;
       };
-      pats.push({ s: Math.max(Math.abs(best.wr - overall) * Math.sqrt(best.n), Math.abs(worst.wr - overall) * Math.sqrt(worst.n)), html: `<div class="pat">
+      pats.push({ s: Math.max(Math.abs(best.wr - overall) * Math.sqrt(best.n), Math.abs(worst.wr - overall) * Math.sqrt(worst.n)), html: `<div class="pat timeOfDay">
         <h3 data-tip="When the game started, in your own time zone.">Time of day</h3><p class="take">${esc(head)}</p>
         <div class="clock24"><span class="ap">AM</span>${cells.slice(0, 12).map(cell).join("")}<span class="ap">PM</span>${cells.slice(12).map(cell).join("")}</div>
-        <p class="clockLegend"><span>− Below</span><span>${comparison}</span><span>+ Above</span><i aria-hidden="true"></i><small>Fainter with fewer than ${MIN_SHOW} games.</small></p></div>` });
+        <div class="clockLegend"><div>vs 50%</div><ul aria-label="Win rate ranges">${CLOCK_RANGES.map((range, i) => `<li data-step="${i + 1}">${esc(range)}</li>`).join("")}</ul><small>Fainter with fewer than ${MIN_SHOW} games.</small></div></div>` });
     }
   }
   // 4. Game length.
@@ -1164,7 +1163,7 @@ function patternsHtml(g) {
   const shown = P.patsAll ? pats : pats.slice(0, 3);
   return `
   <section class="card patterns">
-    <div class="cardHead"><h2>Patterns</h2><span class="sub" data-tip="Every number here is a win rate. Your overall is ${pctS(overall)}.">vs your ${pctS(overall)} overall</span></div>
+    <div class="cardHead"><h2>Patterns</h2><span class="sub" data-tip="Your overall win rate for the games shown in Patterns.">Overall ${pctS(overall)}</span></div>
     ${pats.length ? shown.map(p => p.html).join("") : `<p class="muted pad">Patterns show up after about 20 games.</p>`}
     ${pats.length > 3 ? `<button class="more" id="patsAll">${P.patsAll ? "Fewer patterns" : `${pats.length - 3} more patterns`}</button>` : ""}
   </section>`;
@@ -1691,7 +1690,7 @@ document.addEventListener("pointerout", e => { const el = e.target.closest("[dat
 document.addEventListener("focusin", e => { const el = e.target.closest("[data-tip]"); if (el && el.matches(":focus-visible")) showTip(el.dataset.tip, el); });
 document.addEventListener("focusout", () => hideTip());
 document.addEventListener("click", e => {
-  const el = e.target.closest(".tag, .verdict, .acc, .chipMvp, .it, .fs, .pat h3");
+  const el = e.target.closest(".tag, .verdict, .acc, .chipMvp, .it, .fs, .pat h3, .clock24 .hr");
   if (el && el.dataset.tip && matchMedia("(hover: none)").matches) {
     e.preventDefault();
     if (tipFor === el) hideTip(); else showTip(el.dataset.tip, el);
