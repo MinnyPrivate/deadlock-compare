@@ -1,0 +1,222 @@
+[
+  {
+    "id": 6,
+    "name": "Abrams",
+    "hex": "#2092AE"
+  },
+  {
+    "id": 77,
+    "name": "Apollo",
+    "hex": "#FF3333"
+  },
+  {
+    "id": 88,
+    "name": "Baba",
+    "hex": "#895672"
+  },
+  {
+    "id": 15,
+    "name": "Bebop",
+    "hex": "#9F4734"
+  },
+  {
+    "id": 72,
+    "name": "Billy",
+    "hex": "#D4AD0E"
+  },
+  {
+    "id": 16,
+    "name": "Calico",
+    "hex": "#572798"
+  },
+  {
+    "id": 81,
+    "name": "Celeste",
+    "hex": "#BBA9E1"
+  },
+  {
+    "id": 78,
+    "name": "Deadman Danny",
+    "hex": "#CE8D2A"
+  },
+  {
+    "id": 69,
+    "name": "The Doorman",
+    "hex": "#B77528"
+  },
+  {
+    "id": 64,
+    "name": "Drifter",
+    "hex": "#9D2C2B"
+  },
+  {
+    "id": 11,
+    "name": "Dynamo",
+    "hex": "#D0B945"
+  },
+  {
+    "id": 76,
+    "name": "Graves",
+    "hex": "#D9F334"
+  },
+  {
+    "id": 17,
+    "name": "Grey Talon",
+    "hex": "#5EB083"
+  },
+  {
+    "id": 13,
+    "name": "Haze",
+    "hex": "#AC6133"
+  },
+  {
+    "id": 14,
+    "name": "Holliday",
+    "hex": "#A35A1B"
+  },
+  {
+    "id": 1,
+    "name": "Infernus",
+    "hex": "#C93C26"
+  },
+  {
+    "id": 20,
+    "name": "Ivy",
+    "hex": "#9D8CA9"
+  },
+  {
+    "id": 12,
+    "name": "Kelvin",
+    "hex": "#74ABBC"
+  },
+  {
+    "id": 4,
+    "name": "Lady Geist",
+    "hex": "#218440"
+  },
+  {
+    "id": 31,
+    "name": "Lash",
+    "hex": "#4174BB"
+  },
+  {
+    "id": 8,
+    "name": "McGinnis",
+    "hex": "#23549D"
+  },
+  {
+    "id": 63,
+    "name": "Mina",
+    "hex": "#A9171E"
+  },
+  {
+    "id": 52,
+    "name": "Mirage",
+    "hex": "#6A2E68"
+  },
+  {
+    "id": 18,
+    "name": "Mo & Krill",
+    "hex": "#C58428"
+  },
+  {
+    "id": 87,
+    "name": "Nurse Harrow",
+    "hex": "#55C9BA"
+  },
+  {
+    "id": 67,
+    "name": "Paige",
+    "hex": "#258F63"
+  },
+  {
+    "id": 10,
+    "name": "Paradox",
+    "hex": "#983952"
+  },
+  {
+    "id": 50,
+    "name": "Pocket",
+    "hex": "#858617"
+  },
+  {
+    "id": 84,
+    "name": "Rat King",
+    "hex": "#733033"
+  },
+  {
+    "id": 79,
+    "name": "Rem",
+    "hex": "#5383D1"
+  },
+  {
+    "id": 2,
+    "name": "Seven",
+    "hex": "#CC861E"
+  },
+  {
+    "id": 19,
+    "name": "Shiv",
+    "hex": "#E52A68"
+  },
+  {
+    "id": 80,
+    "name": "Silver",
+    "hex": "#BFBC9F"
+  },
+  {
+    "id": 60,
+    "name": "Sinclair",
+    "hex": "#6B6B6B"
+  },
+  {
+    "id": 85,
+    "name": "Solomon",
+    "hex": "#AA9E7E"
+  },
+  {
+    "id": 65,
+    "name": "Venator",
+    "hex": "#BD3599"
+  },
+  {
+    "id": 66,
+    "name": "Victor",
+    "hex": "#658B6F"
+  },
+  {
+    "id": 3,
+    "name": "Vindicta",
+    "hex": "#A2C7E5"
+  },
+  {
+    "id": 86,
+    "name": "Violet",
+    "hex": "#653CBC"
+  },
+  {
+    "id": 35,
+    "name": "Viscous",
+    "hex": "#319826"
+  },
+  {
+    "id": 58,
+    "name": "Vyper",
+    "hex": "#A7AD00"
+  },
+  {
+    "id": 25,
+    "name": "Warden",
+    "hex": "#4D68A3"
+  },
+  {
+    "id": 7,
+    "name": "Wraith",
+    "hex": "#944D78"
+  },
+  {
+    "id": 27,
+    "name": "Yamato",
+    "hex": "#625789"
+  }
+]

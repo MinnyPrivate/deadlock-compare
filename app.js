@@ -3,11 +3,6 @@
 // Data: https://api.deadlock-api.com/v1/matches/{id}/metadata (Valve match metadata).
 
 const API = "https://api.deadlock-api.com/v1/matches/";
-const PLAYER_COLORS = [
-  "#58D86A", "#8C83FF", "#F25CE0", "#FF5A5F", "#FFD23F", "#3FCBFF",
-  "#FF9A3C", "#C3A6FF", "#38E8B0", "#FF8FB1", "#C6EE4A", "#5C9DFF",
-];
-// Player comparison graphs show few heroes, so they get the most distinct colors in pick order.
 // Player-Specific graphs: color is the line type (Fountain always cyan), and with two heroes the second one is dashed.
 const TYPE_PAL = ["#3FCBFF", "#F25CE0", "#FFD23F", "#FF9A3C", "#58D86A", "#C3A6FF", "#FF5A5F", "#5C9DFF", "#C6EE4A", "#FF8FB1", "#38E8B0", "#8C83FF"];
 const TYPE_FIXED = { "Fountain": "#3FCBFF" };
@@ -321,7 +316,7 @@ const availableGraphs = () => GRAPHS.filter(g => !isStreetBrawl() || g.kind !== 
 const selFor = kind => state.sel || new Set();
 const selNow = () => selFor(graphNow().kind);
 const setSel = s => { state.sel = s; state.showGraph = true; };
-// Picked heroes in order, for the graphs that color them by pick order.
+// Picked heroes in order, including solid and dashed styles on Player-Specific graphs.
 const pickedList = kind => [...selFor(kind)].map(s => state.players.find(p => p.slot === s)).filter(Boolean);
 // On the Player-Specific graphs color means the line type, so a hero is told apart by solid or dashed instead.
 // Their portrait bar is then off-white (dashed for the second hero) rather than a color that would mean a line type.
@@ -743,13 +738,13 @@ function setup(mi, picked, hadGraph, summary) {
   document.body.classList.remove("noMatch");
   const lane = p => brawl ? 0 : p.assigned_lane || 0;
   const ordered = [...mi.players].sort((a, b) => a.team - b.team || lane(a) - lane(b) || a.player_slot - b.player_slot);
-  state.players = ordered.map((p, i) => ({
+  state.players = ordered.map(p => ({
     slot: Number(p.player_slot) || 0, team: Number(p.team) === 1 ? 1 : 0, lane: lane(p), heroId: Number(p.hero_id) || 0,
     hero: (window.HERO_NAMES || {})[p.hero_id] || "Hero " + (Number(p.hero_id) || 0),
     img: `assets/heroes/${Number(p.hero_id) || 0}.png`, // masked card art for the round chips
     card: (window.HERO_CARDS || []).includes(Number(p.hero_id)) ? `assets/cards/${Number(p.hero_id)}.webp` : null, // the game's rectangular card art
     left: Number(p.abandon_match_time_s) || 0,
-    color: PLAYER_COLORS[i % PLAYER_COLORS.length],
+    color: heroColor(p.hero_id),
     stats: scoreboardKda(p),
     kdaGraphStats: kdaGraphStats(p, Number(mi.duration_s)),
     souls: p.net_worth || 0, mvp: p.mvp_rank || 0,

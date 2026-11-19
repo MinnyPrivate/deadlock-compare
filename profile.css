@@ -187,7 +187,7 @@ img.hi { object-fit: contain; flex: none; }
 .mainHero { display: flex; gap: 14px; align-items: stretch; padding: 0 !important; overflow: hidden; border-top: 0; box-shadow: inset 3px 0 0 var(--accent); }
 .mhArt { width: 112px; aspect-ratio: 168 / 228; object-fit: cover; object-position: center top; flex: none; display: block; background: #0004; }
 .mhText { padding: 12px 14px 12px 0; display: flex; flex-direction: column; justify-content: center; min-width: 0; }
-.mhText h2 { color: var(--accent); margin: 2px 0 10px; font-family: var(--oracle); font-weight: 700; font-size: 26px; line-height: 1; }
+.mhText h2 { color: var(--hero-title, var(--offWhite)); margin: 2px 0 10px; font-family: var(--oracle); font-weight: 700; font-size: 26px; line-height: 1; }
 .mhStats { display: flex; gap: 16px; }
 .mhStats div { display: flex; flex-direction: column; }
 .mhStats b { font-family: var(--oracle); font-size: 20px; line-height: 1.1; }
@@ -230,7 +230,7 @@ button.hRow.sel { background: rgba(255,239,215,0.12); box-shadow: inset 3px 0 0 
 .hName img { width: 28px; height: 28px; object-fit: contain; flex: none; }
 .hGames { display: flex; align-items: center; gap: 6px; flex-direction: row-reverse; }
 .hGames b { font-family: var(--oracle); font-size: 16px; min-width: 24px; }
-.hGames i { height: 5px; border-radius: 3px; background: color-mix(in srgb, var(--accent) 60%, transparent); }
+.hGames i { height: 5px; border-radius: 3px; background: color-mix(in srgb, var(--hero-color) 60%, transparent); }
 .faint { color: rgba(255,239,215,0.6); }
 
 /* ---------- teammates ---------- */

@@ -23,14 +23,12 @@ const PlayerAssets = (() => {
       for (const hero of Array.isArray(heroes) ? heroes : []) {
         const images = hero.images || {};
         const pick = (...keys) => keys.map(key => safeUrl(images[key])).find(Boolean) || "";
-        const ui = Array.isArray(hero.colors?.ui) && hero.colors.ui.length === 3 ? hero.colors.ui.map(Number) : null;
         art[hero.id] = {
           mini: pick("minimap_image_webp", "minimap_image", "icon_image_small_webp", "icon_image_small"),
           card: pick("icon_hero_card_webp", "icon_hero_card"),
           bg: pick("background_image_webp", "background_image"),
           gloat: pick("hero_card_gloat_webp", "hero_card_gloat"),
           crit: pick("hero_card_critical_webp", "hero_card_critical"),
-          ui: ui?.every(n => n >= 0 && n <= 255) ? `rgb(${ui.join(",")})` : "",
         };
       }
       try { localStorage.setItem(cacheKey, JSON.stringify({ t: Date.now(), art })); } catch (_) { /* storage may be unavailable */ }

@@ -83,9 +83,17 @@ const moodCard = (id, win) => (HERO_ART[id] && HERO_ART[id][win ? "gloat" : "cri
 const heroCard = id => (HERO_ART[id] && HERO_ART[id].card) || ((window.HERO_CARDS || []).includes(Number(id)) ? `assets/cards/${Number(id)}.webp` : `assets/heroes/${Number(id) || 0}.png`);
 // A match opens on index.html. from=profile and pid let that page show "Back to profile" for this player.
 const matchHref = id => `index.html?match=${id}&from=profile${P && P.id ? "&pid=" + P.id : ""}`;
-// Hero theme: the page takes the official character-select backdrop and one accent colour from a hero
-// (for now the player's most played one). The accent is decoration only: win/loss, team and gold colours never change.
+// The main hero themes the page. Match results, teams and MVP badges keep their own palettes.
 function applyTheme(heroId) { HeroBackdrop.apply(heroId, HERO_ART[heroId]); }
+
+function heroTitleColor(heroId) {
+  const color = heroColor(heroId);
+  const channels = color.slice(1).match(/../g).map(hex => parseInt(hex, 16) / 255);
+  const [r, g, b] = channels.map(c => c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  // Use #242424 as a conservative upper bound for the panel behind the title.
+  return (luminance + 0.05) / (0.01764 + 0.05) >= 4.5 ? color : "var(--offWhite)";
+}
 async function loadHeroArt() { HERO_ART = await PlayerAssets.heroArt(); }
 const safeUrl = PlayerAssets.safeUrl;
 const plural = (n, one, many) => `${n.toLocaleString()} ${n === 1 ? one : many || one + "s"}`;
@@ -870,7 +878,7 @@ function mainHeroHtml(g) {
     <img class="mhArt" src="${art}" alt="">
     <div class="mhText">
       <span class="lbl">Main hero</span>
-      <h2>${esc(heroName(h))}</h2>
+      <h2 style="--hero-title:${heroTitleColor(h)}">${esc(heroName(h))}</h2>
       <div class="mhStats">
         <div><b>${s.n}</b><span>games (${pct(s.n, g.length)}%)</span></div>
         <div><b class="${s.n >= 5 ? (s.wr >= 0.55 ? "good" : s.wr <= 0.45 ? "bad" : "") : ""}">${pct(s.w, s.n)}%</b><span>won</span></div>
@@ -949,7 +957,7 @@ function heroesHtml(g) {
       ${rows.slice(0, showAll ? rows.length : 6).map(r => `
       <button class="hRow ${P.hero === r.h ? "sel" : ""}" data-hero="${r.h}" aria-pressed="${P.hero === r.h}" data-tip="Click to see only ${esc(heroName(r.h))} games. Average ${fmt1(r.s.k)} / ${fmt1(r.s.d)} / ${fmt1(r.s.a)}, ${Math.round(r.s.spm).toLocaleString()} souls a minute, last played ${esc(ago(r.last))}.">
         <span class="hName"><img src="${heroImg(r.h)}" alt="" loading="lazy">${esc(heroName(r.h))}</span>
-        <span class="hGames"><b>${r.s.n}</b><i style="width:${Math.max(6, (r.s.n / max) * 100)}%"></i></span>
+        <span class="hGames"><b>${r.s.n}</b><i style="--hero-color:${heroColor(r.h)};width:${Math.max(6, (r.s.n / max) * 100)}%"></i></span>
         <span class="${wrCls(r)}">${pct(r.s.w, r.s.n)}%</span>
         <span>${fmt1(r.s.kda)}</span>
       </button>`).join("")}
