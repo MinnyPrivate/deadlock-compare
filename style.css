@@ -322,6 +322,8 @@ body.lobbyView .graphCtn.overviewMarkers { display: block; position: relative; i
 .matchForm { position: absolute; left: 38px; top: 22px; display: none; align-items: center; gap: 10px; }
 body.standalone .matchForm { display: flex; }
 .profileLookup { display: inline-flex; align-items: center; white-space: nowrap; text-decoration: none; }
+.landingDownload { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+.landingDownload small { color: var(--offWhite); opacity: 0.7; font-size: 13px; }
 /* Back to the profile you came from (only when the match was opened from a Profile page): sits above the Match box */
 .backLink { position: absolute; left: 38px; top: 18px; display: none; align-items: center; gap: 8px; height: 32px; padding: 0 12px 0 10px; border-radius: 3px; color: var(--offWhite);
   font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,239,215,0.3); }

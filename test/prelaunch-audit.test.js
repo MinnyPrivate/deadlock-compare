@@ -92,6 +92,15 @@ before(async () => {
     window.auditErrors = [];
     addEventListener("error", e => { if (e.message) auditErrors.push(e.message); });
     addEventListener("unhandledrejection", e => auditErrors.push(String(e.reason)));
+    if (new URLSearchParams(location.search).has("dlh")) {
+      window.auditHideoutSignals = [];
+      let lastTitle = "";
+      new MutationObserver(() => {
+        if (document.title === lastTitle) return;
+        lastTitle = document.title;
+        if (lastTitle.startsWith("DLH:7:")) auditHideoutSignals.push(lastTitle.split(":")[2]);
+      }).observe(document, { childList: true, subtree: true, characterData: true });
+    }
     const originalFetch = window.fetch;
     window.fetch = (input, options) => {
       const url = new URL(input, location.href);
@@ -139,9 +148,16 @@ test("U1 and I1: the website can start with a player while the companion session
   await navigate("/");
   await waitPage("!document.querySelector('#profileLookup').hidden");
   assert.equal(await page("document.querySelector('#profileLookup').getClientRects().length"), 1);
+  assert.deepEqual(await page(`(() => {
+    const link = document.querySelector("#companionDownload");
+    return { visible: link.getClientRects().length > 0, label: link.textContent, href: link.getAttribute("href"),
+      download: link.hasAttribute("download"), note: document.querySelector("#companionBuild").textContent };
+  })()`), { visible: true, label: "Download the app", href: "/download/postmortem-companion.zip",
+    download: true, note: "Build Nov 19, 2026" });
   await page("document.querySelector('#profileLookup').click(); true");
   await waitPage("location.pathname === '/profile.html'");
   await waitPage("document.querySelector('#q') !== null");
+  assert.equal(await page("document.querySelector('#q').type"), "search");
   await page(`(() => {
     const input = document.querySelector('#q');
     input.value = ${JSON.stringify(profile.profile.personaname)};
@@ -153,6 +169,94 @@ test("U1 and I1: the website can start with a player while the companion session
   await navigate("/?embed=1");
   await waitPage("document.body.classList.contains('noMatch')");
   assert.equal(await page("document.querySelector('#profileLookup').getClientRects().length"), 0);
+  assert.equal(await page("document.querySelector('#companionDownload').getClientRects().length"), 0);
+});
+
+test("the Hideout profile accepts pointer input and typing without running site backdrop effects", async () => {
+  const id = Number(profile.profile.account_id);
+  await navigate(`/profile.html?id=${id}&src=test/profile_fixture.json&embed=1&dlh=7`);
+  await waitPage("document.querySelector('#matches') && auditHideoutSignals.includes('ready')");
+  assert.deepEqual(await page(`(() => {
+    const input = document.querySelector("#q");
+    const bar = document.querySelector(".topbar");
+    const dust = document.querySelector("#dust");
+    return [input.type, getComputedStyle(input).cursor, getComputedStyle(input.nextElementSibling).cursor,
+      getComputedStyle(bar).backdropFilter, getComputedStyle(dust).display, dust.width,
+      getComputedStyle(document.querySelector(".backdrop i")).display];
+  })()`), ["text", "default", "default", "none", "none", 300, "none"]);
+  async function clickControl(selector) {
+    const point = await page(`(() => {
+      const control = document.querySelector(${JSON.stringify(selector)});
+      const rect = control.getBoundingClientRect();
+      const x = rect.left + rect.width / 2, y = rect.top + rect.height / 2;
+      return { x, y, targetIsControl: document.elementFromPoint(x, y) === control };
+    })()`);
+    assert.equal(point.targetIsControl, true, selector);
+    for (const type of ["mousePressed", "mouseReleased"]) {
+      await send("Input.dispatchMouseEvent", { type, x: point.x, y: point.y, button: "left", clickCount: 1 });
+    }
+  }
+  await clickControl("#q");
+  assert.equal(await page("document.activeElement.id"), "q");
+  await send("Input.insertText", { text: profile.profile.personaname });
+  assert.equal(await page("document.querySelector('#q').value"), profile.profile.personaname);
+  await clickControl("#search button");
+  await waitPage("auditHideoutSignals.includes('submit-search')");
+  assert.deepEqual(await page("auditHideoutSignals"), ["ready", "down-search", "focus-search", "click-search", "type-search", "submit-search"]);
+  assert.deepEqual(await page("[...new URLSearchParams(location.search)]"),
+    [["q", profile.profile.personaname], ["embed", "1"], ["dlh", "7"]]);
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+  await waitPage("auditHideoutSignals.includes('escape')");
+});
+
+test("Time of day shares a profile-wide color scale across hours and sample sizes", async () => {
+  const id = Number(profile.profile.account_id);
+  const hours = [[10, 1, 1], [13, 0, 10], [14, 10, 10], [15, 2, 4], [16, 5, 10],
+    [17, 11, 20], [18, 8, 21], [20, 11, 20]];
+  const row = profile.history.find(m => m.game_mode === 1);
+  assert.ok(row);
+  const history = hours.flatMap(([hour, wins, games]) =>
+    Array.from({ length: games }, (_, i) => ({ ...row, hour, player_match_outcome: i < wins ? 1 : 2 })));
+  // Put wins newest so changing the displayed range changes its rate but keeps the same profile baseline.
+  history.sort((a, b) => b.player_match_outcome - a.player_match_outcome);
+  history.forEach((match, i) => {
+    match.match_id = 900000000 + i;
+    match.start_time = new Date(2026, 10, i + 1, match.hour).getTime() / 1000;
+  });
+  routes.set(`/v1/players/${id}/match-history`, res => json(res, history));
+  routes.set("/v1/players/steam", res => json(res, [profile.profile]));
+  await navigate(`/profile.html?id=${id}`);
+  await waitPage("document.querySelector('.clock24')");
+  const cells = await page(`[...document.querySelectorAll(".clock24 .hr")].map(cell => {
+    const swatch = getComputedStyle(cell, "::before");
+    return { color: swatch.backgroundColor, opacity: Number(swatch.opacity), text: cell.dataset.tip,
+      sign: cell.querySelector("sup")?.textContent, empty: cell.classList.contains("empty") };
+  })`);
+  assert.equal(cells.length, 24);
+  assert.equal(cells[17].color, cells[20].color);
+  assert.equal(cells[17].opacity, cells[20].opacity);
+  assert.match(cells[17].text, /55%\) vs your 50%.*Above average/);
+  assert.match(cells[18].text, /38%\) vs your 50%.*Below average/);
+  assert.notEqual(cells[17].color, cells[18].color);
+  assert.equal(cells[17].sign, "+");
+  assert.equal(cells[18].sign, "−");
+  assert.equal(cells[15].color, cells[16].color);
+  assert.equal(cells[15].sign, "=");
+  assert.ok(cells[15].opacity < cells[16].opacity);
+  assert.equal(cells[16].opacity, 1);
+  assert.equal(cells[0].empty, true);
+  assert.equal(cells[10].empty, false);
+  assert.equal(cells[0].color, "rgba(0, 0, 0, 0)");
+  assert.match(await page("document.querySelector('.clockLegend').textContent"), /vs your 50%/);
+
+  const ordered = await page(`Array.from({ length: 101 }, (_, i) => {
+    const { direction, intensity } = timeOfDayColor(i / 100, 0.58, 10);
+    return direction * intensity;
+  })`);
+  assert.ok(ordered.every((value, i) => i === 0 || value > ordered[i - 1]));
+
+  await page("document.querySelector('[data-range=\"50\"]').click(); true");
+  await waitPage("document.querySelector('.clockLegend')?.textContent.includes('vs your 50%')");
 });
 
 test("U2 and P1: Summary opens on the viewer and cleans the hint while preserving other parameters", async () => {

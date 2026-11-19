@@ -169,6 +169,10 @@
     <input id="matchInput" inputmode="numeric" autocomplete="off" placeholder="Match ID">
     <button type="submit" class="graphOptionButton">Load</button>
     <a id="profileLookup" class="graphOptionButton profileLookup" href="profile.html" hidden>Find a player</a>
+    <span id="landingDownload" class="landingDownload" hidden>
+      <a id="companionDownload" class="graphOptionButton profileLookup" aria-describedby="companionBuild" download>Download the app</a>
+      <small id="companionBuild"></small>
+    </span>
   </form>
   <div id="status" class="status"></div>
   <div id="companionControls" class="companionControls">
@@ -192,6 +196,7 @@
 <script src="scoring.js"></script>
 <script src="graph-markers.js"></script>
 <script src="companion-preview.js"></script>
+<script src="companion-download.js"></script>
 <script src="app.js"></script>
 <script src="mvp.js"></script>
 <script src="matchups.js"></script>

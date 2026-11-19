@@ -11,6 +11,62 @@ const $main = document.getElementById("main");
 const $tip = document.getElementById("tip");
 const $q = document.getElementById("q");
 
+const hideout = (() => {
+  const params = new URL(location.href).searchParams;
+  if (params.get("embed") !== "1" && params.get("ingame") !== "1") return null;
+  document.documentElement.classList.add("profileEmbed");
+
+  // Panorama receives title updates. Space them out and send only fixed names and counters.
+  const seq = params.get("dlh");
+  const canSignal = /^\d{1,10}$/.test(seq || "");
+  const queue = [], sent = new Set();
+  let count = 0, pending = false;
+  function flush() {
+    if (!queue.length) { pending = false; return; }
+    document.title = `DLH:${seq}:${queue.shift()}:${++count}`;
+    setTimeout(flush, 80);
+  }
+  function signal(name) {
+    if (!canSignal || sent.has(name)) return;
+    sent.add(name);
+    if (name === "escape") queue.unshift(name); else queue.push(name);
+    if (pending) return;
+    pending = true;
+    setTimeout(flush, 0);
+  }
+
+  // Keep the Find field on ordinary DOM text handling in the embedded browser.
+  $q.type = "text";
+  $q.addEventListener("mousedown", e => {
+    if (e.button !== 0 || !e.isTrusted) return;
+    signal("down-search");
+    if (document.activeElement !== $q) $q.focus();
+  });
+  $q.addEventListener("focus", () => signal("focus-search"));
+  document.addEventListener("click", e => {
+    if (!e.isTrusted) return;
+    if (e.target === $q) signal("click-search");
+    if (e.target.id === "accountInput") signal("click-account");
+  }, true);
+  document.addEventListener("input", e => {
+    if (!e.isTrusted || !e.target.value) return;
+    if (e.target === $q) signal("type-search");
+    if (e.target.id === "accountInput") signal("type-account");
+  }, true);
+  document.addEventListener("keydown", e => {
+    if (!canSignal || e.key !== "Escape" || e.repeat) return;
+    e.preventDefault();
+    signal("escape");
+  }, true);
+  return {
+    signal,
+    preserve(url) {
+      url.searchParams.set("embed", "1");
+      if (canSignal) url.searchParams.set("dlh", seq);
+    },
+  };
+})();
+
 // ---------- small helpers ----------
 const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
@@ -141,6 +197,7 @@ function go(params, push) {
   const u = new URL(location.href);
   u.search = "";
   for (const [k, v] of Object.entries(params)) if (v != null && v !== "") u.searchParams.set(k, v);
+  hideout?.preserve(u);
   if (push) history.pushState(null, "", u); else history.replaceState(null, "", u);
   route();
 }
@@ -157,6 +214,7 @@ function route() {
     p.delete("id");
     p.delete("q");
     history.replaceState(null, "", u);
+    hideout?.signal("native-id");
     return loadProfile(me, p.get("src"), null, saved);
   }
   if (p.get("id")) return loadProfile(Number(p.get("id")), p.get("src"));
@@ -171,6 +229,7 @@ document.getElementById("search").addEventListener("submit", e => {
   e.preventDefault();
   const r = parseQuery($q.value);
   if (!r) return $q.focus();
+  if (e.isTrusted) hideout?.signal("submit-search");
   $q.blur();
   go(r.id != null ? { id: r.id } : { q: r.q }, true);
 });
@@ -255,7 +314,10 @@ function renderSetup(changing = false) {
     const id = Number(profile.account_id);
     let saved = true;
     try { localStorage.setItem("pm_me", String(id)); } catch (e) { saved = false; }
-    history.replaceState(null, "", location.pathname);
+    const url = new URL(location.pathname, location.href);
+    hideout?.preserve(url);
+    history.replaceState(null, "", url);
+    if (saved) hideout?.signal("confirm-account");
     loadProfile(id, null, profile, saved);
   });
   if (changing) document.getElementById("cancelAccount").addEventListener("click", route);
@@ -937,6 +999,17 @@ function matesHtml() {
 const MIN_SHOW = 5, MIN_CALL = 10;
 const pctS = x => Math.round(x * 100) + "%";
 const hourName = h => (h % 12 === 0 ? 12 : h % 12) + (h < 12 ? " AM" : " PM");
+
+function timeOfDayColor(rate, overall, games) {
+  const delta = rate - overall;
+  // Both directions use the same scale. The square root gives small differences more contrast.
+  const distance = Math.sqrt(Math.abs(delta) / Math.max(overall, 1 - overall));
+  return {
+    intensity: 100 * distance,
+    direction: Math.sign(delta),
+    opacity: Math.min(1, 0.4 + 0.6 * games / MIN_SHOW),
+  };
+}
 function bucketStats(buckets, overall) {
   return buckets.map(b => { const s = summarize(b.list); return { ...b, n: b.list.length, wr: s ? s.wr : 0, w: s ? s.w : 0 }; })
     .map(b => ({ ...b, ok: b.n >= MIN_SHOW, call: b.n >= MIN_CALL, cls: b.n >= MIN_CALL && b.wr >= overall + 0.05 ? "good" : b.n >= MIN_CALL && b.wr <= overall - 0.05 ? "bad" : "" }));
@@ -992,25 +1065,37 @@ function patternsHtml(g) {
   }
   // 3. Time of day: a 24-hour grid, each hour shaded by win rate.
   {
-    const hrs = Array.from({ length: 24 }, (_, h) => g.filter(m => new Date(m.start_time * 1000).getHours() === h));
-    const cells = hrs.map((list, h) => { const s = summarize(list); return { h, n: list.length, w: s ? s.w : 0, wr: s ? s.wr : 0 }; });
+    const cells = Array.from({ length: 24 }, (_, h) => ({ h, n: 0, w: 0 }));
+    for (const match of g) {
+      const cell = cells[new Date(match.start_time * 1000).getHours()];
+      if (!cell) continue;
+      cell.n++;
+      if (isWin(match)) cell.w++;
+    }
     // Best and worst 3-hour windows with enough games.
     const win3 = cells.map((c, h) => { const n = c.n + cells[(h + 1) % 24].n + cells[(h + 2) % 24].n, w = c.w + cells[(h + 1) % 24].w + cells[(h + 2) % 24].w; return { h, n, wr: n ? w / n : 0 }; }).filter(x => x.n >= MIN_CALL);
     if (g.length >= 20 && win3.length) {
       const best = win3.reduce((a, b) => (b.wr > a.wr ? b : a)), worst = win3.reduce((a, b) => (b.wr < a.wr ? b : a));
       const span = x => `${hourName(x.h)} to ${hourName((x.h + 3) % 24)}`;
       const head = best.wr - worst.wr >= 0.08 ? `Best from ${span(best)} (${pctS(best.wr)}), worst from ${span(worst)} (${pctS(worst.wr)}).` : "The clock doesn't matter much for you.";
-      const busiest = Math.max(...cells.map(c => c.n));
+      const profileRate = g === P.games ? overall : P.games.filter(isWin).length / P.games.length;
+      const comparison = `vs your ${pctS(profileRate)}`;
       const cell = c => {
-        if (!c.n) return `<i class="hr empty" data-tip="${hourName(c.h)}: no games.">${c.h % 12 === 0 ? 12 : c.h % 12}</i>`;
-        const d = c.wr - overall, col = c.n < MIN_SHOW ? "var(--neutralCell)" : d >= 0.03 ? "var(--good)" : d <= -0.03 ? "var(--bad)" : "var(--neutralCell)";
-        const a = (0.25 + 0.75 * Math.min(1, c.n / Math.max(10, busiest * 0.6))) * (c.n < MIN_SHOW ? 0.5 : 1);
-        return `<i class="hr" style="--hc:${col};--ha:${a.toFixed(2)}" data-tip="${hourName(c.h)}: ${c.n < MIN_SHOW ? `${c.n} games, too few to count` : `won ${c.w} of ${c.n} (${pctS(c.wr)})`}.">${c.h % 12 === 0 ? 12 : c.h % 12}</i>`;
+        const hour = c.h % 12 || 12;
+        const label = hourName(c.h);
+        if (!c.n) return `<i class="hr empty" data-tip="${label}: no games.">${hour}</i>`;
+        const rate = c.w / c.n;
+        const { intensity, direction, opacity } = timeOfDayColor(rate, profileRate, c.n);
+        const edge = direction < 0 ? "var(--bad)" : "var(--good)";
+        const sign = direction < 0 ? "−" : direction > 0 ? "+" : "=";
+        const relation = direction < 0 ? "Below average" : direction > 0 ? "Above average" : "At your average";
+        const tip = `${label}: won ${c.w} of ${c.n} (${pctS(rate)}) ${comparison}. ${relation}.${c.n < MIN_SHOW ? " Few games." : ""}`;
+        return `<i class="hr" role="img" aria-label="${tip}" data-tip="${tip}" style="--hour-edge:${edge};--hour-intensity:${intensity.toFixed(3)}%;--hour-opacity:${opacity.toFixed(2)}"><span>${hour}<sup>${sign}</sup></span></i>`;
       };
       pats.push({ s: Math.max(Math.abs(best.wr - overall) * Math.sqrt(best.n), Math.abs(worst.wr - overall) * Math.sqrt(worst.n)), html: `<div class="pat">
         <h3 data-tip="When the game started, in your own time zone.">Time of day</h3><p class="take">${esc(head)}</p>
         <div class="clock24"><span class="ap">AM</span>${cells.slice(0, 12).map(cell).join("")}<span class="ap">PM</span>${cells.slice(12).map(cell).join("")}</div>
-        <p class="legend"><i class="lg good"></i>above your average <i class="lg bad"></i>below <span>Paler squares mean fewer games.</span></p></div>` });
+        <p class="clockLegend"><span>− Below</span><span>${comparison}</span><span>+ Above</span><i aria-hidden="true"></i><small>Fainter with fewer than ${MIN_SHOW} games.</small></p></div>` });
     }
   }
   // 4. Game length.
@@ -1415,7 +1500,6 @@ function wireSide() {
 // This reads only those cache entries, takes out three numbers per match (the server number, the match id and the key),
 // shows how many it found, and sends them to deadlock-api's public POST /v1/matches/salts only after the player presses Send.
 // Nothing else from the files is kept or sent.
-const COMPANION_APP_DOWNLOAD_URL = "/download/postmortem-companion.zip";
 const CACHE_ENTRY = /^[0-9a-f]{40}_[0-9a-f]{40}$/i; // how Steam names httpcache files; anything else is never opened
 const SALT_URL = /replay(\d{1,5})\.valve\.net\W{0,8}1422450\/(\d{1,12})_(\d{1,10})\.(meta|dem)\.bz2/gi;
 const U32 = 4294967295;
@@ -1495,7 +1579,7 @@ function openUpload(opener) {
     <div class="upHead"><h2 id="upTitle">Add a missing match</h2><button class="x" id="upClose" type="button" aria-label="Close">✕</button></div>
     <p class="upLead">deadlock-api can only show a game after someone sends it that game's match keys. If a game of yours is missing, you can send the keys yourself.</p>
     <div class="upOpt primary">
-      <div><h3>Postmortem app</h3><p>Optional Windows pilot for approved Steam accounts.<br>Build Nov 19, 2026</p></div>
+      <div><h3>Postmortem app</h3><p>Optional Windows pilot for approved Steam accounts.<br>${esc(COMPANION_APP_BUILD_NOTE)}</p></div>
       <a class="btn" href="${esc(COMPANION_APP_DOWNLOAD_URL)}" download>Download the app</a>
     </div>
     <div class="upOpt">
@@ -1567,4 +1651,5 @@ document.addEventListener("click", e => {
 });
 window.addEventListener("scroll", hideTip, { passive: true });
 
+hideout?.signal("ready");
 route();
