@@ -447,9 +447,9 @@ window.Summary = (() => {
       sub = `${best.length} kills in ${Math.round(best[best.length - 1].t - best[0].t)} s at ${fmtTime(best[0].t)}.`;
       focus = best; tone = "good"; interest = 30 + best.length * 15;
     } else if (first?.killer === p) {
-      word = "First blood"; sub = `Opened the game on ${esc(name(first.victim))} at ${fmtTime(first.t)}.`; focus = [first]; tone = "good"; interest = 40;
+      word = "First blood"; sub = `Opened the game on ${name(first.victim)} at ${fmtTime(first.t)}.`; focus = [first]; tone = "good"; interest = 40;
     } else if (first?.victim === p) {
-      word = "First to fall"; sub = `${esc(name(first.killer))} got ${you(p)} at ${fmtTime(first.t)}.`; focus = [first]; tone = "bad"; interest = 30;
+      word = "First to fall"; sub = `${name(first.killer)} got ${isMe(p) ? "you" : name(p)} at ${fmtTime(first.t)}.`; focus = [first]; tone = "bad"; interest = 30;
     } else {
       word = "Longest life"; sub = `${fmtTime(longest.to - longest.from)} without dying, from ${fmtTime(longest.from)} to ${fmtTime(longest.to)}.`; interest = 15;
     }
