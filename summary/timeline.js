@@ -34,6 +34,12 @@ const SummaryTimeline = (() => {
     const average = averageAtTimes(player, stat, points, overall);
     const duration = Math.max(1, match.duration_s, points[points.length - 1][0]);
     const playerEvents = deaths.filter(event => event.t <= duration && (event.killer === player || event.victim === player));
+    const eventCounts = { kills: 0, deaths: 0 };
+    for (const event of playerEvents) eventCounts[event.victim === player ? "deaths" : "kills"]++;
+    const discrepancies = Object.keys(eventCounts).filter(key =>
+      Number.isInteger(player.raw[key]) && eventCounts[key] !== player.raw[key]);
+    const eventNote = discrepancies.length ? ` Recorded markers differ from the scoreboard (${discrepancies.map(key =>
+      `${eventCounts[key]} recorded / ${player.raw[key]} credited ${key}`).join(", ")}).` : "";
     const involved = [...new Set(playerEvents.map(event => fightByDeath.get(event)).filter(Boolean))];
     const x = t => round(left + (t / duration) * (right - left));
     const highest = Math.max(1, average.flat ?? 0, ...points.map(p => p[1]), ...average.points.map(p => p[1]));
@@ -97,7 +103,7 @@ const SummaryTimeline = (() => {
         </g>
         ${measured.join("")}${fightBands.join("")}${marks.join("")}
       </svg>
-      <p class="summary-chart-caption">${subtitle}${points[points.length - 1][1] !== stat.value ? " The final snapshot differs from the scoreboard." : ""} Player objective hit times are unavailable.</p>`;
+      <p class="summary-chart-caption">${subtitle}${points[points.length - 1][1] !== stat.value ? " The final snapshot differs from the scoreboard." : ""}${eventNote} Player objective hit times are unavailable.</p>`;
   }
 
   function distribution(stat) {

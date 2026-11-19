@@ -598,7 +598,7 @@ window.Summary = (() => {
       openGraph("souls");
       state.mode = "value";
       setSel(new Set([p.slot, Number(summaryCompare)]));
-      state.tab = "graphs";
+      state.requestedTab = state.tab = "graphs";
       renderAll();
       document.querySelector('[data-tab="graphs"]').focus();
     } else if (button.hasAttribute("data-summary-copy")) {

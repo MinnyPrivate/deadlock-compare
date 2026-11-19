@@ -43,7 +43,7 @@ function muParse(mi) {
   const team = {};
   for (const p of state.players) team[p.slot] = p.team;
   const out = { times, dmg: {}, cc: {}, src: {}, srcTo: {}, world: {} };
-  const put = (o, a, b, k, arr) => { ((o[a] = o[a] || {})[b] = o[a][b] || {})[k] = arr; };
+  const put = (o, a, b, k, arr) => { ((o[a] ||= {})[b] ||= Object.create(null))[k] = arr; };
   for (const d of dm.damage_dealers) {
     const a = Number(d.dealer_player_slot);
     for (const s of d.damage_sources || []) {
@@ -52,7 +52,10 @@ function muParse(mi) {
         const b = Number(tp.target_player_slot), arr = tp.damage || [];
         if (!arr.length) continue;
         if (!(a in team)) { // not a hero: troopers, guardians, haunts, the mid boss
-          if (t === 0 && MU_CATS.some(c => c.id === n) && b in team) put(out.world, b, "all", n, arr);
+          if (t === 0 && MU_CATS.some(c => c.id === n) && b in team) {
+            const categories = (out.world[b] ||= {});
+            (categories[n] ||= []).push(arr);
+          }
           continue;
         }
         if (!(b in team) || team[a] === team[b]) continue; // enemy heroes only
@@ -83,15 +86,16 @@ function muVal(mu, arr) {
   const k = mu.times.indexOf(EARLY_S);
   return w === "early" ? muAt(arr, k, n) : muAt(arr, end, n) - muAt(arr, k, n);
 }
-// Parts of one directed pair (a hits b) for the current stat: [{label, c, v}].
+// Parts of one directed pair (a hits b) for the current stat.
 function muParts(mu, a, b) {
   if (state.muStat === "dmg") {
     const o = (mu.dmg[a] || {})[b] || {};
-    return MU_CATS.map(c => ({ label: c.label, c: c.c, v: o[c.id] ? muVal(mu, o[c.id]) : 0 }));
+    return MU_CATS.map(c => ({ ...c, v: o[c.id] ? muVal(mu, o[c.id]) : 0 }));
   }
   const o = (mu.cc[a] || {})[b] || {};
   const keys = state.muStat === "slow" ? ["Slow"] : Object.keys(MU_CC).concat(Object.keys(o)).filter(k => k !== "Slow");
-  return [...new Set(keys)].map(k => ({ label: (MU_CC[k] || { label: k }).label, c: (MU_CC[k] || { c: "#9AA0A6" }).c, v: o[k] ? muVal(mu, o[k]) / 1000 : 0 }));
+  return [...new Set(keys)].map(id => ({ id, ...(Object.hasOwn(MU_CC, id) ? MU_CC[id] : { label: id, c: "#9AA0A6" }),
+    v: Object.hasOwn(o, id) ? muVal(mu, o[id]) / 1000 : 0 }));
 }
 const muSum = parts => parts.reduce((x, p) => x + p.v, 0);
 function muFmt(v) {
@@ -123,7 +127,7 @@ function muSourceName(n) {
 // Damage by source, merged under the game's names. by: { dealerSlot: { sourceName: [arrays] } }.
 function muSources(mu, by) {
   const m = {};
-  for (const [a, srcs] of Object.entries(by || {})) for (const [n, arrs] of Object.entries(srcs)) {
+  for (const [a, srcs] of Object.entries(by || {})) for (const [n, arrs] of Object.entries(srcs || {})) {
     const name = muSourceName(n), k = a + "|" + name;
     const v = arrs.reduce((x, arr) => x + muVal(mu, arr), 0);
     if (!m[k]) m[k] = { slot: Number(a), n: name, v: 0 };
@@ -219,8 +223,8 @@ function muHeroPanel(mu, p) {
   // instead of a row in the hero list (Zachary's pick, Nov 15).
   let worldNote = "";
   if (state.muStat === "dmg") {
-    const w = (mu.world[p.slot] || {}).all || {};
-    const wv = muSum(MU_CATS.map(c => ({ v: w[c.id] ? muVal(mu, w[c.id]) : 0 })));
+    const w = mu.world[p.slot] || {};
+    const wv = Object.values(w).flat().reduce((sum, arr) => sum + muVal(mu, arr), 0);
     if (wv > 0) {
       const examples = isStreetBrawl() ? "" : " (troopers, haunts, guardians, walkers and the mid boss)";
       worldNote = `<div class="muNote">Also took ${muFmt(wv)} from non-heroes${examples}.</div>`;
@@ -257,6 +261,13 @@ function muPairPanel(mu, pair) {
   const [a, b] = pair.map(s => state.players.find(p => p.slot === s));
   const pa = muParts(mu, a.slot, b.slot), pb = muParts(mu, b.slot, a.slot);
   const sa = muSum(pa), sb = muSum(pb), scale = Math.max(1, ...pa.map(x => x.v), ...pb.map(x => x.v));
+  const effects = new Map(pa.map(part => [part.id, { ...part, reverse: 0 }]));
+  for (const part of pb) {
+    if (effects.has(part.id)) effects.get(part.id).reverse = part.v;
+    else effects.set(part.id, { ...part, v: 0, reverse: part.v });
+  }
+  const rows = [...effects.values()].filter(x => x.v || x.reverse).map(x =>
+    `<div class="h2hRow"><span class="v">${muFmt(x.v)}</span><span class="track l"><i style="width:${(x.v / scale) * 100}%;background:${x.c}"></i></span><span class="n">${esc(x.label)}</span><span class="track"><i style="width:${(x.reverse / scale) * 100}%;background:${x.c}"></i></span><span class="v r">${muFmt(x.reverse)}</span></div>`).join("");
   const TA = TEAMS[a.team], TB = TEAMS[b.team];
   const lane = a.lane && a.lane === b.lane;
   // Always say who did it to whom: "Wraith crowd controlled Bebop for 5.0s", never just a number beside a name.
@@ -272,7 +283,7 @@ function muPairPanel(mu, pair) {
       <button class="muSide r" data-hero="${b.slot}"><b style="color:${TB.c}">${muFmt(sb)}</b><span class="nm"><span class="hn">${esc(heroName(b))}</span><span class="cap">${onWord} ${esc(a.hero)}</span></span>${portrait(b, "big")}</button>
     </div>
     <p class="summary">${esc(MU_WINDOWS[state.muWin].name)}: ${esc(did(a, b, sa))}. ${esc(did(b, a, sb))}.${esc(more)}</p>
-    <div class="muH2H"><div class="h2hRow th"><span></span><span class="l">${esc(a.hero)} ${onWord} ${esc(b.hero)}</span><span></span><span>${esc(b.hero)} ${onWord} ${esc(a.hero)}</span><span></span></div>${pa.map((x, i) => `<div class="h2hRow"><span class="v">${muFmt(x.v)}</span><span class="track l"><i style="width:${(x.v / scale) * 100}%;background:${x.c}"></i></span><span class="n">${esc(x.label)}</span><span class="track"><i style="width:${(pb[i].v / scale) * 100}%;background:${pb[i].c}"></i></span><span class="v r">${muFmt(pb[i].v)}</span></div>`).filter((_, i) => pa[i].v || pb[i].v).join("") || `<div class="muNone">Nothing to compare.</div>`}</div>
+    <div class="muH2H"><div class="h2hRow th"><span></span><span class="l">${esc(a.hero)} ${onWord} ${esc(b.hero)}</span><span></span><span>${esc(b.hero)} ${onWord} ${esc(a.hero)}</span><span></span></div>${rows || `<div class="muNone">Nothing to compare.</div>`}</div>
     ${state.muStat === "dmg" ? `<div class="muCols">${muSrcList(`What ${esc(a.hero)} hit ${esc(b.hero)} with`, muSources(mu, { [a.slot]: (mu.srcTo[b.slot] || {})[a.slot] }), { n: 4 })}${muSrcList(`What ${esc(b.hero)} hit ${esc(a.hero)} with`, muSources(mu, { [b.slot]: (mu.srcTo[a.slot] || {})[b.slot] }), { n: 4 })}</div>` : ""}
     ${muSpark(mu, a, b)}
     <button class="graphOptionButton allBtn" id="muBack">Back to ${esc(state.players.find(p => p.slot === state.mvpPick).hero)}</button>
