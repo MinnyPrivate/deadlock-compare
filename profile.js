@@ -189,13 +189,13 @@ async function getSteamProfile(id) {
 }
 const steamAvatar = p => safeUrl(p.avatarfull) || safeUrl(p.avatarmedium) || safeUrl(p.avatar);
 
-// ---------- recent profiles (this tab only) ----------
-function recentGet() { try { return JSON.parse(sessionStorage.getItem("pm_recent_profiles") || "[]").slice(0, 6); } catch (e) { return []; } }
+// ---------- recent profiles (saved in this browser) ----------
+function recentGet() { try { return JSON.parse(localStorage.getItem("pm_recent_profiles") || "[]").slice(0, 6); } catch (e) { return []; } }
 function recentAdd(p) {
   try {
     const list = recentGet().filter(x => x.id !== p.id);
     list.unshift(p);
-    sessionStorage.setItem("pm_recent_profiles", JSON.stringify(list.slice(0, 6)));
+    localStorage.setItem("pm_recent_profiles", JSON.stringify(list.slice(0, 6)));
   } catch (e) { /* storage blocked: fine */ }
 }
 

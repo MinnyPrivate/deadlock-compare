@@ -841,8 +841,9 @@ function serveFilterProfile() {
   return { id, mateId, ranked };
 }
 
-test("profile filters survive a tab reload and reset in new tabs and browser sessions", async () => {
+test("recent profiles persist while other settings reset in new tabs and browser sessions", async () => {
   const { id, mateId, ranked } = serveFilterProfile();
+  routes.set("/v1/assets/heroes", res => json(res, []));
 
   // Start with the old site's storage and use the real account-saving entry point.
   routes.set("/storage-seed.html", res => res.writeHead(200, { "Content-Type": "text/html" }).end("<!doctype html>"));
@@ -850,10 +851,26 @@ test("profile filters survive a tab reload and reset in new tabs and browser ses
   await waitPage("location.pathname === '/__fixture/storage-seed.html'");
   const legacy = {
     pm_mode: "street_brawl", pm_with: JSON.stringify({ p: id, id: mateId, kind: "team" }),
-    pm_recent_profiles: "[]", "postmortem.markers": '{"obj":true}',
+    "postmortem.markers": '{"obj":true}',
     "postmortem.summary.hideNegativeTags": "1", "postmortem.perf": "1", pm_hero_art3: "{}", dlhideout_test: "{}",
   };
-  await page(`Object.entries(${JSON.stringify(legacy)}).forEach(([key, value]) => localStorage.setItem(key, value))`);
+  const sessionKeys = JSON.stringify(Object.keys(legacy));
+  const recent = Array.from({ length: 6 }, (_, i) => ({ id: id + i + 1, name: `Recent player ${i + 1}`, avatar: "" }));
+  const storedRecent = "JSON.parse(localStorage.getItem('pm_recent_profiles'))";
+  await page(`
+    localStorage.clear(); sessionStorage.clear();
+    Object.entries(${JSON.stringify(legacy)}).forEach(([key, value]) => localStorage.setItem(key, value));
+    localStorage.setItem('pm_recent_profiles', ${JSON.stringify(JSON.stringify(recent))});
+  `);
+  const storedKeys = (area) => page(`${sessionKeys}.filter(key => ${area}.getItem(key) !== null)`);
+  await navigate("/profile.html");
+  await waitPage("document.querySelector('#accountTitle')");
+  assert.deepEqual(await page(storedRecent), recent);
+  assert.deepEqual(await page("Array.from(document.querySelectorAll('.recent [data-id]'), link => Number(link.dataset.id))"),
+    recent.map(player => player.id));
+  assert.deepEqual(await storedKeys("localStorage"), []);
+  assert.deepEqual(await storedKeys("sessionStorage"), []);
+
   const assertDefaults = async () => {
     await waitPage(`document.querySelector('.head h1')?.textContent === ${JSON.stringify(profile.profile.personaname)}`);
     assert.deepEqual(await page(`[
@@ -865,7 +882,9 @@ test("profile filters survive a tab reload and reset in new tabs and browser ses
 
   await navigate(`/profile.html?me=${id}`);
   await assertDefaults();
-  assert.deepEqual(await page(`Object.keys(${JSON.stringify(legacy)}).filter(key => localStorage.getItem(key) !== null)`), []);
+  const expectedRecent = [{ id, name: profile.profile.personaname, avatar: "" }, ...recent.slice(0, 5)];
+  assert.deepEqual(await page(storedRecent), expectedRecent);
+  assert.equal(await page("sessionStorage.getItem('pm_recent_profiles')"), null);
   await waitPage("P.mates");
   await page(`
     document.querySelector('[data-mode="ranked"]').click();
@@ -891,16 +910,37 @@ test("profile filters survive a tab reload and reset in new tabs and browser ses
   `);
   assert.deepEqual(await page("[P.hero, P.mateMode]"), [ranked.hero_id, "all"]);
 
+  await navigate("/hideout-test.html");
+  await waitPage("document.querySelector('#count')?.textContent === '1'");
+  // A previously hidden tag preference keeps the checkbox visible on this fixture.
+  await page("sessionStorage.setItem('postmortem.summary.hideNegativeTags', '1')");
+  await navigate(`${localMatch}&tab=summary`);
+  await loaded(standardId);
+  await page(`
+    document.querySelector('.markToggle[data-mark="obj"]').click();
+    document.querySelector('[data-summary-negative]').click();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'P', shiftKey: true }));
+  `);
+  assert.equal(await page("sessionStorage.getItem('postmortem.summary.hideNegativeTags')"), "0");
+  assert.deepEqual(await storedKeys("localStorage"), []);
+  assert.deepEqual(await storedKeys("sessionStorage"), Object.keys(legacy));
+
+  const assertFreshOpen = async () => {
+    await navigate("/__fixture/storage-seed.html");
+    await waitPage("location.pathname === '/__fixture/storage-seed.html'");
+    assert.deepEqual(await storedKeys("sessionStorage"), []);
+    assert.deepEqual(await page(storedRecent), expectedRecent);
+    await navigate("/profile.html");
+    await assertDefaults();
+    assert.deepEqual(await page(storedRecent), expectedRecent);
+  };
   const { targetId } = await send("Target.createTarget", { url: "about:blank" });
   await connectPage(targetId);
-  await navigate("/profile.html");
-  await assertDefaults();
-  assert.deepEqual(await page("['pm_mode', 'pm_with'].map(key => sessionStorage.getItem(key))"), [null, null]);
+  await assertFreshOpen();
 
   await stopBrowser();
   await startBrowser();
-  await navigate("/profile.html");
-  await assertDefaults();
+  await assertFreshOpen();
 });
 
 test("profile filter URLs override tab choices and still apply the existing filters", async () => {
