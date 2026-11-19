@@ -194,8 +194,9 @@ test("the Hideout profile accepts pointer input and typing without running site 
     const dust = document.querySelector("#dust");
     return [input.type, getComputedStyle(input).cursor, getComputedStyle(input.nextElementSibling).cursor,
       getComputedStyle(bar).backdropFilter, getComputedStyle(dust).display, dust.width,
-      getComputedStyle(document.querySelector(".backdrop i")).display];
-  })()`), ["text", "default", "default", "none", "none", 300, "none"]);
+      getComputedStyle(document.querySelector(".backdrop i")).display,
+      document.querySelector(".profileBackdropArt").childElementCount];
+  })()`), ["text", "default", "default", "none", "none", 300, "none", 0]);
   async function clickControl(selector) {
     const point = await page(`(() => {
       const control = document.querySelector(${JSON.stringify(selector)});
@@ -316,6 +317,8 @@ async function openThemeProfile(t, history) {
 const themeColor = `getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()`;
 const mainHeroTitle = `document.querySelector(".mainHero h2")?.textContent`;
 const themeTransition = `document.documentElement.getAnimations().find(a => a.transitionProperty === "--accent")`;
+const themeArt = `document.querySelector(".profileBackdropArt")`;
+const artPath = id => `/assets/backdrops/${id}.webp`;
 const clickMode = mode => page(`document.querySelector('[data-mode="${mode}"]').click()`);
 
 test("the Profile main hero, backdrop and accents ease together after a mode change", async t => {
@@ -331,46 +334,77 @@ test("the Profile main hero, backdrop and accents ease together after a mode cha
     if (!capture) return;
     await page("document.fonts.ready.then(() => true)");
     await waitPage(`getComputedStyle(document.getElementById("backdrop")).opacity === "1"`);
+    await page(`Promise.all([...document.images].filter(img => {
+      const box = img.getBoundingClientRect();
+      return box.width && box.height && box.bottom > 0 && box.top < innerHeight;
+    }).map(img => img.decode().catch(() => {})))`);
     const { data } = await send("Page.captureScreenshot", { format: "png" });
     await writeFile(join(capture, name), Buffer.from(data, "base64"));
   }
   await openThemeProfile(t, history);
   const graves = "rgb(217, 243, 52)", kelvin = "rgb(116, 171, 188)";
-  await waitPage(`${themeColor} === "${graves}"`);
+  const gravesArt = artPath(76), kelvinArt = artPath(12);
+  await waitPage(`${themeColor} === "${graves}" && ${themeArt}.childElementCount === 1 && ${themeArt}.lastElementChild.src.endsWith("${gravesArt}")`);
   assert.equal(await page(mainHeroTitle), "Graves");
-  await screenshot("before-all-graves.png");
+  assert.equal(await page(`getComputedStyle(document.querySelector(".backdrop"), "::before").backgroundImage`), "none");
+  assert.deepEqual(await page(`(() => {
+    const art = ${themeArt}.lastElementChild;
+    const backdrop = document.querySelector(".backdrop");
+    return [art.naturalWidth > 0, getComputedStyle(art.parentElement).filter,
+      ...[...backdrop.querySelectorAll("i, b")].map(ring => getComputedStyle(ring).animationName.startsWith("ringTurn") &&
+        getComputedStyle(ring).animationPlayState === "running"),
+      document.querySelector("#dust").width >= innerWidth, getComputedStyle(document.querySelector(".grain")).opacity];
+  })()`), [true, "blur(110px) saturate(1.5) brightness(0.9)", true, true, true, "0.045"]);
+  await screenshot("after-all-graves.png");
 
-  const result = await page(`(() => {
+  const start = await page(`(() => {
     const nodes = [".head", "#side", "#matches", "#backdrop"];
     const originals = nodes.map(s => document.querySelector(s));
-    const read = () => ({
+    window.readThemeFrame = () => ({
       accent: ${themeColor},
       ring: getComputedStyle(document.querySelector(".backdrop i")).backgroundColor,
-      wash: getComputedStyle(document.querySelector(".backdrop"), "::before").backgroundImage,
       chip: getComputedStyle(document.querySelector(".modeSeg .on")).boxShadow,
-      title: getComputedStyle(document.querySelector(".mainHero h2")).color
+      title: getComputedStyle(document.querySelector(".mainHero h2")).color,
+      art: [...${themeArt}.children].map(img => ({ path: new URL(img.src).pathname, opacity: Number(getComputedStyle(img).opacity) }))
     });
-    const before = read();
+    const before = readThemeFrame();
     document.querySelector("[data-mode=ranked]").click();
-    getComputedStyle(document.documentElement).getPropertyValue("--accent");
+    const pending = readThemeFrame();
     const transition = ${themeTransition};
     transition.pause();
     transition.currentTime = 200;
-    const middle = read();
-    transition.finish();
-    return { before, middle, after: read(), duration: transition.effect.getTiming().duration,
+    return { before, pending, duration: transition.effect.getTiming().duration,
       hero: ${mainHeroTitle}, stable: nodes.every((s, i) => document.querySelector(s) === originals[i]) };
   })()`);
-  assert.equal(result.hero, "Kelvin");
-  assert.equal(result.duration, 400);
-  assert.equal(result.stable, true);
-  assert.equal(result.before.accent, graves);
-  assert.equal(result.after.accent, kelvin);
-  assert.notEqual(result.middle.accent, graves);
-  assert.notEqual(result.middle.accent, kelvin);
-  assert.notEqual(result.middle.wash, result.before.wash);
-  assert.notEqual(result.middle.wash, result.after.wash);
-  for (const state of [result.before, result.middle, result.after]) {
+  assert.equal(start.hero, "Kelvin");
+  assert.equal(start.duration, 400);
+  assert.equal(start.stable, true);
+  assert.equal(start.before.accent, graves);
+  assert.deepEqual(start.before.art, [{ path: gravesArt, opacity: 1 }]);
+  assert.deepEqual(start.pending.art, start.before.art, "keep Graves while Kelvin decodes");
+  const artDuration = await waitPage(`(() => {
+    const fade = ${themeArt}.lastElementChild.getAnimations()[0];
+    if (!fade) return false;
+    fade.pause();
+    fade.currentTime = 200;
+    return fade.effect.getTiming().duration;
+  })()`);
+  const middle = await page("readThemeFrame()");
+  assert.equal(artDuration, 400);
+  assert.notEqual(middle.accent, graves);
+  assert.notEqual(middle.accent, kelvin);
+  assert.equal(middle.art.length, 2);
+  assert.deepEqual(middle.art[0], { path: gravesArt, opacity: 1 });
+  assert.equal(middle.art[1].path, kelvinArt);
+  assert.ok(middle.art[1].opacity > 0 && middle.art[1].opacity < 1);
+  await screenshot("midpoint-graves-to-kelvin.png");
+
+  await page(`${themeTransition}.finish(); ${themeArt}.lastElementChild.getAnimations()[0].finish()`);
+  await waitPage(`${themeArt}.childElementCount === 1`);
+  const after = await page("readThemeFrame()");
+  assert.equal(after.accent, kelvin);
+  assert.deepEqual(after.art, [{ path: kelvinArt, opacity: 1 }]);
+  for (const state of [start.before, middle, after]) {
     assert.equal(state.ring, state.accent);
     assert.equal(state.title, state.accent);
     assert.ok(state.chip.includes(state.accent), state.chip);
@@ -385,9 +419,16 @@ test("the Profile swaps instantly with reduced motion and retains its last color
   await openThemeProfile(t, themeHistory());
   const graves = "rgb(217, 243, 52)", kelvin = "rgb(116, 171, 188)", paige = "rgb(37, 143, 99)";
   const state = () => page(`[${mainHeroTitle}, ${themeColor}, Boolean(${themeTransition})]`);
+  const assertArt = async id => {
+    await waitPage(`${themeArt}.lastElementChild?.src.endsWith("${artPath(id)}")`);
+    assert.deepEqual(await page(`[${themeArt}.childElementCount, ${themeArt}.getAnimations({ subtree: true }).length,
+      getComputedStyle(${themeArt}.lastElementChild).opacity]`), [1, 0, "1"]);
+  };
   assert.deepEqual(await state(), ["Graves", graves, false]);
+  await assertArt(76);
   assert.deepEqual(await page(`document.querySelector("[data-mode=ranked]").click();
     [${mainHeroTitle}, ${themeColor}, Boolean(${themeTransition})]`), ["Kelvin", kelvin, false]);
+  await assertArt(12);
   await clickMode("unranked");
   assert.deepEqual(await state(), ["Graves", graves, false]);
   await clickMode("street_brawl");
@@ -402,8 +443,10 @@ test("the Profile swaps instantly with reduced motion and retains its last color
   await page(`document.querySelector("[data-range='all']").click()`);
   await page(`document.querySelector("#withBtn").click(); document.querySelector("[data-pick='98765432']").click()`);
   assert.deepEqual(await state(), ["Kelvin", kelvin, false], "the lower hero ID wins a tie even if its game is older");
+  await assertArt(12);
   await clickMode("street_brawl");
   assert.deepEqual(await state(), [null, kelvin, false]);
+  await assertArt(12);
   await page(`document.querySelector("#clearWith").click()`);
   assert.deepEqual(await state(), ["Paige", paige, false]);
   assert.deepEqual(await page("auditErrors"), []);

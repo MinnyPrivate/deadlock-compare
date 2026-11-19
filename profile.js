@@ -84,7 +84,7 @@ const heroCard = id => (HERO_ART[id] && HERO_ART[id].card) || ((window.HERO_CARD
 // A match opens on index.html. from=profile and pid let that page show "Back to profile" for this player.
 const matchHref = id => `index.html?match=${id}&from=profile${P && P.id ? "&pid=" + P.id : ""}`;
 // The main hero themes the page. Match results, teams and MVP badges keep their own palettes.
-function applyTheme(heroId) { HeroBackdrop.apply(heroId, null); }
+function applyTheme(heroId) { HeroBackdrop.apply(heroId, hideout ? null : HERO_ART[heroId]); }
 
 function heroTitleColor(heroId) {
   const color = heroColor(heroId);
