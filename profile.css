@@ -8,6 +8,12 @@
 @font-face { font-family: "Oracle"; src: url("assets/fonts/valveoracle-semibold.woff2") format("woff2"); font-weight: 600 700; }
 @font-face { font-family: "Pulp"; src: url("assets/fonts/valvepulp-bold.woff2") format("woff2"); font-weight: 400 700; }
 
+@property --accent {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #FFEFD7;
+}
+
 :root {
   --offWhite: #FFEFD7;
   --offBlack: #10130D;
@@ -31,6 +37,12 @@
   --oracle: "Oracle", "Radiance", serif;
   --block: "Pulp", "Radiance", sans-serif;
   color-scheme: dark;
+}
+@media (prefers-reduced-motion: no-preference) {
+  :root { transition: --accent 400ms ease; }
+}
+body > .backdrop::before {
+  background: radial-gradient(ellipse at 70% 30%, color-mix(in srgb, var(--accent) 55%, transparent), transparent 72%);
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }

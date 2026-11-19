@@ -9,7 +9,9 @@
   const ctx = cv.getContext("2d");
   const layer = cv.closest("#summaryBackdrop");
   const still = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const root = document.documentElement;
   let W = 0, H = 0, dpr = 1, specks = [], raf = 0, last = 0, accent = "#FFEFD7";
+  let changingAccent = false;
 
   const rnd = (a, b) => a + Math.random() * (b - a);
   function make(anywhere) {
@@ -30,7 +32,7 @@
     specks.length = want;
   }
   function readAccent() {
-    const v = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
+    const v = getComputedStyle(root).getPropertyValue("--accent").trim();
     if (v) accent = v;
   }
   function draw(t) {
@@ -55,6 +57,7 @@
       s.y += s.vy * dt; s.x += s.vx * dt;
       if (s.y < -10 || s.x < -20 || s.x > W + 20) specks[i] = make(false);
     }
+    if (changingAccent) readAccent();
     draw(now / 1000);
     raf = requestAnimationFrame(step);
   }
@@ -69,7 +72,14 @@
     else if (still) draw(0);
     else start();
   }).observe(layer, { attributes: true, attributeFilter: ["hidden"] });
-  // the accent changes when a profile loads; re-read it then
-  new MutationObserver(() => { readAccent(); if (still) draw(0); }).observe(document.documentElement, { attributes: true, attributeFilter: ["style", "data-theme"] });
+  // Read the shared CSS color while it eases, and on instant swaps.
+  for (const type of ["transitionrun", "transitionend", "transitioncancel"]) {
+    root.addEventListener(type, e => {
+      if (e.target !== root || e.propertyName !== "--accent") return;
+      changingAccent = type === "transitionrun";
+      readAccent();
+    });
+  }
+  new MutationObserver(() => { readAccent(); if (still) draw(0); }).observe(root, { attributes: true, attributeFilter: ["style", "data-theme"] });
   if (still) draw(0); else start();
 })();

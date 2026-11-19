@@ -84,7 +84,7 @@ const heroCard = id => (HERO_ART[id] && HERO_ART[id].card) || ((window.HERO_CARD
 // A match opens on index.html. from=profile and pid let that page show "Back to profile" for this player.
 const matchHref = id => `index.html?match=${id}&from=profile${P && P.id ? "&pid=" + P.id : ""}`;
 // The main hero themes the page. Match results, teams and MVP badges keep their own palettes.
-function applyTheme(heroId) { HeroBackdrop.apply(heroId, HERO_ART[heroId]); }
+function applyTheme(heroId) { HeroBackdrop.apply(heroId, null); }
 
 function heroTitleColor(heroId) {
   const color = heroColor(heroId);
@@ -92,7 +92,7 @@ function heroTitleColor(heroId) {
   const [r, g, b] = channels.map(c => c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
   const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
   // Use #242424 as a conservative upper bound for the panel behind the title.
-  return (luminance + 0.05) / (0.01764 + 0.05) >= 4.5 ? color : "var(--offWhite)";
+  return (luminance + 0.05) / (0.01764 + 0.05) >= 4.5 ? "var(--accent)" : "var(--offWhite)";
 }
 async function loadHeroArt() { HERO_ART = await PlayerAssets.heroArt(); }
 const safeUrl = PlayerAssets.safeUrl;
@@ -515,7 +515,7 @@ async function loadMates() {
   const mates = Object.values(p.mates).flatMap(lists => [...(lists.party || []), ...(lists.all || [])]);
   await loadNames(mates.filter(m => m.matches_played >= MATE_MIN).map(m => Number(m.mate_id)));
   if (my !== loadSeq || request !== p.matesRequest) return;
-  if (P.withId) { recomputeGames(); renderProfile(); loadMetaFor(matchList().slice(0, 20)); } else renderSide();
+  if (P.withId) { recomputeGames(); renderProfileData(); loadMetaFor(matchList().slice(0, 20)); } else renderSide();
   paintWithList();
 }
 async function loadSeasons() {
@@ -595,7 +595,7 @@ async function refreshProfile() {
     p.refreshMsg = added ? `${plural(added, "new game")} found` : "No new games yet. A game can take a few minutes to show up.";
     const y = window.scrollY;
     p.refreshing = false;
-    renderProfile();
+    renderProfileData();
     window.scrollTo(0, y);
     loadMetaFor(matchList().slice(0, 20));
     if (p.allGames.length) loadMates();
@@ -747,7 +747,7 @@ function profileTags(games) {
   if (top && last50.length >= 10) {
     const share = top[1] / last50.length;
     if (share >= 0.6) tags.push({ t: `${heroName(top[0])} one-trick`, c: "neutral", rule: `${heroName(top[0])} in ${pct(top[1], last50.length)}% of the last ${last50.length} games.` });
-    else if (share >= 0.3) tags.push({ t: `${heroName(top[0])} main`, c: "neutral", rule: `${heroName(top[0])} in ${pct(top[1], last50.length)}% of the last ${last50.length} games.` });
+    else if (share >= 0.3) tags.push({ t: `Often plays ${heroName(top[0])}`, c: "neutral", rule: `${heroName(top[0])} in ${pct(top[1], last50.length)}% of the last ${last50.length} games.` });
   }
   const flex = Object.values(counts).filter(c => c >= 3).length;
   if (flex >= 7) tags.push({ t: "Flex pick", c: "neutral", rule: `${flex} different heroes with 3 or more games each in the last ${last50.length}.` });
@@ -773,43 +773,19 @@ function profileTags(games) {
 }
 
 // ---------- page layout: header, then a sidebar (left) and the matches (right) ----------
-const HERO_NAMES_OK = id => !!(window.HERO_NAMES || {})[id];
-function mostPlayed(g) {
-  const n = {};
-  for (const m of g) n[m.hero_id] = (n[m.hero_id] || 0) + 1;
-  return Number(Object.keys(n).sort((a, b) => n[b] - n[a])[0]) || 0;
-}
 function renderProfile() {
-  const all = P.games, prof = P.profile || {};
-  const brawl = P.mode === "street_brawl";
-  // ?theme=<hero id> previews another hero's theme; picking your own theme needs Steam sign-in, so later.
-  const pick = Number(new URLSearchParams(location.search).get("theme"));
-  applyTheme(pick && HERO_NAMES_OK(pick) ? pick : mostPlayed(gamesForMode(P.allGames, "all")));
-  const latestRanked = all.find(m => isRanked(m) && m.ranked_display_badge && Math.floor(m.ranked_display_badge / 10) > 0);
-  const st = streaks(all), tags = profileTags(all), sAll = summarize(all);
-  const rank = latestRanked
-    ? `<span data-tip="Badge after their latest ranked game (${esc(ago(latestRanked.start_time))}).">${rankHtml(latestRanked.ranked_display_badge, 34)}</span>`
-    : `<span class="muted">No ranked badge yet</span>`;
+  const prof = P.profile || {};
   $main.innerHTML = `
   <section class="card head">
     <div class="who">
       ${steamAvatar(prof) ? `<img class="avatar" src="${esc(steamAvatar(prof))}" alt="">` : `<span class="avatar none"></span>`}
       <div class="whoText">
         <h1>${esc(P.name)}</h1>
-        <div class="line">
-          ${showsRank(P.mode) && all.length ? `${rank}<span class="dot"></span>` : ""}
-          ${brawl ? `<span>Street Brawl</span><span class="dot"></span>` : ""}
-          <span>${plural(all.length, "game")}</span>
-          ${sAll ? `<span class="dot"></span><span>${pct(sAll.w, sAll.n)}% won</span>
-          <span class="dot"></span><span class="muted">Last played ${esc(ago(all[0].start_time))}</span>` : ""}
-        </div>
-        ${tags.length ? `<div class="tags">${tags.map(t => `<button class="tag ${t.c}" data-tip="${esc(t.rule)}">${esc(t.t)}</button>`).join("")}</div>` : ""}
+        <div class="line"></div>
+        <div class="tags" hidden></div>
       </div>
     </div>
     <div class="headSide">
-      ${st.cur ? `<div class="streak ${st.curWin ? "good" : "bad"}" data-tip="Best win streak on record: ${st.best}.">
-        <b>${st.cur}</b><span>${st.cur === 1 ? (st.curWin ? "win" : "loss") : (st.curWin ? "wins" : "losses")} in a row</span>
-      </div>` : ""}
       <button class="btn ghost" id="copyLink" data-tip="Copy a link to this profile to send to friends.">Copy link</button>
       ${P.id === savedMe()
         ? `<button class="link changeAccount" id="changeAccount" type="button">Change account</button>`
@@ -818,15 +794,13 @@ function renderProfile() {
   </section>
   ${P.accountSaved ? "" : `<p class="accountStorage muted">This browser can't remember your account. ${location.search.includes("me=") ? "Bookmark this page to come back to it." : "Set it up again next time."}</p>`}
   <div class="layout">
-    <aside class="side" id="side" aria-label="${brawl ? "Street Brawl stats" : "Standard stats"}"></aside>
+    <aside class="side" id="side"></aside>
     <div class="mainCol">
-      ${all.length ? formHtml(all, brawl) : ""}
       <section class="card" id="matches"></section>
     </div>
   </div>
-  <p class="foot">Data: deadlock-api${P.skipped ? `. ${plural(P.skipped, "game")} outside supported matchmaking queues` : ""}. Stats use available match history. New games can take a few minutes to appear.${brawl ? "" : " Standard match verdicts use each hero's averages from about 24,000 recent matches."} Match accolade tags come from Valve.</p>`;
-  renderSide();
-  renderMatches();
+  <p class="foot"></p>`;
+  renderProfileData();
   const change = document.getElementById("changeAccount");
   if (change) change.addEventListener("click", () => renderSetup(true));
   const saveMe = document.getElementById("saveMe");
@@ -845,20 +819,58 @@ function renderProfile() {
   });
 }
 
+function renderProfileData() {
+  const all = P.games, brawl = P.mode === "street_brawl";
+  const latestRanked = all.find(m => isRanked(m) && m.ranked_display_badge && Math.floor(m.ranked_display_badge / 10) > 0);
+  const st = streaks(all), tags = profileTags(all), sAll = summarize(all);
+  const rank = latestRanked
+    ? `<span data-tip="Badge after their latest ranked game (${esc(ago(latestRanked.start_time))}).">${rankHtml(latestRanked.ranked_display_badge, 34)}</span>`
+    : `<span class="muted">No ranked badge yet</span>`;
+  $main.querySelector(".head .line").innerHTML = `
+    ${showsRank(P.mode) && all.length ? `${rank}<span class="dot"></span>` : ""}
+    ${brawl ? `<span>Street Brawl</span><span class="dot"></span>` : ""}
+    <span>${plural(all.length, "game")}</span>
+    ${sAll ? `<span class="dot"></span><span>${pct(sAll.w, sAll.n)}% won</span>
+    <span class="dot"></span><span class="muted">Last played ${esc(ago(all[0].start_time))}</span>` : ""}`;
+  const tagBox = $main.querySelector(".head .tags");
+  tagBox.hidden = !tags.length;
+  tagBox.innerHTML = tags.map(t => `<button class="tag ${t.c}" data-tip="${esc(t.rule)}">${esc(t.t)}</button>`).join("");
+  $main.querySelector(".head .streak")?.remove();
+  if (st.cur) document.getElementById("copyLink").insertAdjacentHTML("beforebegin", `
+    <div class="streak ${st.curWin ? "good" : "bad"}" data-tip="Best win streak on record: ${st.best}.">
+      <b>${st.cur}</b><span>${st.cur === 1 ? (st.curWin ? "win" : "loss") : (st.curWin ? "wins" : "losses")} in a row</span>
+    </div>`);
+  const form = $main.querySelector(".mainCol .form");
+  if (form) form.outerHTML = all.length ? formHtml(all, brawl) : "";
+  else if (all.length) document.getElementById("matches").insertAdjacentHTML("beforebegin", formHtml(all, brawl));
+  $main.querySelector(".foot").textContent = `Data: deadlock-api${P.skipped ? `. ${plural(P.skipped, "game")} outside supported matchmaking queues` : ""}. Stats use available match history. New games can take a few minutes to appear.${brawl ? "" : " Standard match verdicts use each hero's averages from about 24,000 recent matches."} Match accolade tags come from Valve.`;
+  renderSide();
+  renderMatches();
+}
+
 function renderSide() {
   const el = document.getElementById("side");
   if (!el) return;
   const g = inRange();
+  const heroGames = P.hero ? g.filter(m => m.hero_id === P.hero) : g;
+  const mainHero = mainHeroFor(heroGames);
+  // Keep this profile's last hero through an empty filter. Start a new profile at neutral if it has no main yet.
+  const themeHero = mainHero?.id ?? P.themeHero ?? 0;
+  if (themeHero !== P.themeHero) {
+    P.themeHero = themeHero;
+    applyTheme(themeHero);
+  }
   el.hidden = !g.length;
   P.rankData = null;
-  if (!g.length) return;
   const brawl = P.mode === "street_brawl";
+  el.setAttribute("aria-label", brawl ? "Street Brawl stats" : "Standard stats");
+  if (!g.length) { el.replaceChildren(); return; }
   el.innerHTML = `
     <div class="rangeRow">
       <span class="lbl">${brawl ? "Street Brawl" : "Counting"}</span>
       <div class="seg" role="group" aria-label="Which games the sidebar counts">${RANGES.map(([v, l]) => `<button data-range="${v}" class="${P.range === v ? "on" : ""}" aria-pressed="${P.range === v}" ${v !== "all" && P.games.length <= Number(v) ? "disabled" : ""}>${l}</button>`).join("")}</div>
     </div>
-    ${mainHeroHtml(g)}
+    ${mainHero ? mainHeroHtml(mainHero, heroGames.length) : ""}
     ${showsRank(P.mode) ? rankCardHtml(g) : ""}
     ${heroesHtml(g)}
     ${P.mode === "all" || brawl ? matesHtml() : ""}
@@ -866,12 +878,16 @@ function renderSide() {
   wireSide();
 }
 
-function mainHeroHtml(g) {
+function mainHeroFor(g) {
   const by = {};
   for (const m of g) (by[m.hero_id] = by[m.hero_id] || []).push(m);
-  const top = Object.entries(by).sort((a, b) => b[1].length - a[1].length)[0];
-  if (!top) return "";
-  const h = Number(top[0]), s = summarize(top[1]);
+  // The card has always picked the lower numeric hero ID when match counts tie.
+  const top = Object.entries(by).sort((a, b) => b[1].length - a[1].length || Number(a[0]) - Number(b[0]))[0];
+  return top ? { id: Number(top[0]), games: top[1] } : null;
+}
+
+function mainHeroHtml({ id: h, games }, total) {
+  const s = summarize(games);
   const art = heroCard(h);
   return `
   <section class="card mainHero">
@@ -880,7 +896,7 @@ function mainHeroHtml(g) {
       <span class="lbl">Main hero</span>
       <h2 style="--hero-title:${heroTitleColor(h)}">${esc(heroName(h))}</h2>
       <div class="mhStats">
-        <div><b>${s.n}</b><span>games (${pct(s.n, g.length)}%)</span></div>
+        <div><b>${s.n}</b><span>games (${pct(s.n, total)}%)</span></div>
         <div><b class="${s.n >= 5 ? (s.wr >= 0.55 ? "good" : s.wr <= 0.45 ? "bad" : "") : ""}">${pct(s.w, s.n)}%</b><span>won</span></div>
         <div><b>${fmt1(s.kda)}</b><span>KDA</span></div>
       </div>
@@ -1301,7 +1317,7 @@ function setWith(id, kind) {
   if (P.range !== "all" && P.games.length <= Number(P.range)) P.range = "all";
   P.shown = 20;
   const y = window.scrollY;
-  renderProfile();
+  renderProfileData();
   window.scrollTo(0, y);
   loadMetaFor(matchList().slice(0, 20));
 }
@@ -1390,7 +1406,7 @@ function setMode(mode) {
   if (P.range !== "all" && P.games.length <= Number(P.range)) P.range = "all";
   P.shown = 20;
   try { localStorage.setItem("pm_mode", mode); } catch (e) { /* use the selection for this visit */ }
-  renderProfile();
+  renderProfileData();
   const b = $main.querySelector(`[data-mode="${mode}"]`);
   if (b) b.focus({ preventScroll: true });
   loadMetaFor(matchList().slice(0, 20));
