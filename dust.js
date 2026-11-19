@@ -5,7 +5,7 @@
 // - stops in background tabs; with "reduce motion" on it draws one still frame
 (() => {
   const cv = document.getElementById("dust");
-  if (!cv || !cv.getContext) return;
+  if (!cv || !cv.getContext || document.documentElement.classList.contains("profileEmbed")) return;
   const ctx = cv.getContext("2d");
   const layer = cv.closest("#summaryBackdrop");
   const still = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;

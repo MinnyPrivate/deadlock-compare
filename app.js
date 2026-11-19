@@ -400,6 +400,7 @@ async function loadMatch(id) {
   const requests = loadRequests = new AbortController();
   activeMatchId = id;
   $("profileLookup").hidden = true;
+  $("landingDownload").hidden = true;
   CompanionPreview.stop();
   clearMatch();
   clearTimeout(checkTimer); clearInterval(waitTimer);
@@ -1979,6 +1980,9 @@ document.addEventListener("DOMContentLoaded", () => {
   else {
     clearMatch();
     $("profileLookup").hidden = EMBED;
+    $("companionDownload").href = COMPANION_APP_DOWNLOAD_URL;
+    $("companionBuild").textContent = COMPANION_APP_BUILD_NOTE;
+    $("landingDownload").hidden = EMBED;
     setStatus(EMBED ? "No match ID was passed in." : "Enter a match ID to load it.");
   }
 }, { once: true });

@@ -4,6 +4,7 @@ import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 
 test("the missing-match dialog links to the Windows pilot ZIP", () => {
+  const download = readFileSync(new URL("../companion-download.js", import.meta.url), "utf8");
   const source = readFileSync(new URL("../profile.js", import.meta.url), "utf8");
   const noop = () => {};
   const control = { addEventListener: noop, querySelector: () => control, querySelectorAll: () => [] };
@@ -13,7 +14,7 @@ test("the missing-match dialog links to the Windows pilot ZIP", () => {
     querySelector: () => control,
     showModal() { this.open = true; },
   };
-  runInNewContext(source + "\nopenUpload();", {
+  runInNewContext(download + "\n" + source + "\nopenUpload();", {
     URL,
     setInterval: noop,
     location: { href: "http://localhost/profile.html" },
@@ -36,4 +37,5 @@ test("the missing-match dialog links to the Windows pilot ZIP", () => {
   const link = /<a class="btn" href="([^"]+)" download>Download the app<\/a>/.exec(dialog.innerHTML);
   assert.ok(link, "the dialog has a styled Download the app link");
   assert.equal(link[1], "/download/postmortem-companion.zip");
+  assert.match(dialog.innerHTML, /Build Nov 19, 2026/);
 });
