@@ -9,7 +9,7 @@ const PlayerAssets = (() => {
   async function readHeroArt() {
     const cacheKey = "pm_hero_art3";
     try {
-      const cached = JSON.parse(localStorage.getItem(cacheKey) || "null");
+      const cached = JSON.parse(sessionStorage.getItem(cacheKey) || "null");
       if (cached?.t > Date.now() - 86400000 && cached.art) return cached.art;
     } catch (_) { /* storage may be unavailable */ }
 
@@ -31,7 +31,7 @@ const PlayerAssets = (() => {
           crit: pick("hero_card_critical_webp", "hero_card_critical"),
         };
       }
-      try { localStorage.setItem(cacheKey, JSON.stringify({ t: Date.now(), art })); } catch (_) { /* storage may be unavailable */ }
+      try { sessionStorage.setItem(cacheKey, JSON.stringify({ t: Date.now(), art })); } catch (_) { /* storage may be unavailable */ }
       return art;
     } catch (_) {
       return {};

@@ -15,7 +15,7 @@ window.Summary = (() => {
   const lookups = new Map();
   const NEGATIVE_TAGS_KEY = "postmortem.summary.hideNegativeTags";
   let hideNegative = false;
-  try { hideNegative = localStorage.getItem(NEGATIVE_TAGS_KEY) === "1"; } catch (_) { /* storage may be unavailable */ }
+  try { hideNegative = sessionStorage.getItem(NEGATIVE_TAGS_KEY) === "1"; } catch (_) { /* storage may be unavailable */ }
   let names = new Map(), art = {}, match, rows, deaths, fights, fightByDeath, activeGraph, shownTip, percentiles;
   let enteredMatch, renderedBackdrop, tipTimer;
 
@@ -619,7 +619,7 @@ window.Summary = (() => {
   view.addEventListener("change", event => {
     if (!event.target.matches("[data-summary-negative]")) return;
     hideNegative = event.target.checked;
-    try { localStorage.setItem(NEGATIVE_TAGS_KEY, hideNegative ? "1" : "0"); } catch (_) { /* keep the setting for this visit */ }
+    try { sessionStorage.setItem(NEGATIVE_TAGS_KEY, hideNegative ? "1" : "0"); } catch (_) { /* keep the setting for this visit */ }
     render();
     view.querySelector("[data-summary-focus=tag-options]")?.focus({ preventScroll: true });
   });

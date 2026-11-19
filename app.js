@@ -1906,14 +1906,14 @@ function perfShow() {
 }
 function perfToggle() {
   perf.on = !perf.on;
-  try { localStorage.setItem("postmortem.perf", perf.on ? "1" : ""); } catch (e) { /* storage blocked */ }
+  try { sessionStorage.setItem("postmortem.perf", perf.on ? "1" : ""); } catch (e) { /* storage blocked */ }
   $("perf").hidden = !perf.on;
   perf.render = []; perf.hover = []; perf.frames = []; perf.last = 0;
   if (perf.on) { requestAnimationFrame(perfLoop); renderAll(); }
 }
 setInterval(perfShow, 500);
 document.addEventListener("keydown", ev => { if (ev.shiftKey && (ev.key === "P" || ev.key === "p")) perfToggle(); });
-try { if (localStorage.getItem("postmortem.perf") === "1") setTimeout(perfToggle, 0); } catch (e) { /* storage blocked */ }
+try { if (sessionStorage.getItem("postmortem.perf") === "1") setTimeout(perfToggle, 0); } catch (e) { /* storage blocked */ }
 
 // ---------- helpers ----------
 function niceTicks(lo, hi, n, whole) {

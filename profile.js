@@ -189,13 +189,13 @@ async function getSteamProfile(id) {
 }
 const steamAvatar = p => safeUrl(p.avatarfull) || safeUrl(p.avatarmedium) || safeUrl(p.avatar);
 
-// ---------- recent profiles (this browser only) ----------
-function recentGet() { try { return JSON.parse(localStorage.getItem("pm_recent_profiles") || "[]").slice(0, 6); } catch (e) { return []; } }
+// ---------- recent profiles (this tab only) ----------
+function recentGet() { try { return JSON.parse(sessionStorage.getItem("pm_recent_profiles") || "[]").slice(0, 6); } catch (e) { return []; } }
 function recentAdd(p) {
   try {
     const list = recentGet().filter(x => x.id !== p.id);
     list.unshift(p);
-    localStorage.setItem("pm_recent_profiles", JSON.stringify(list.slice(0, 6)));
+    sessionStorage.setItem("pm_recent_profiles", JSON.stringify(list.slice(0, 6)));
   } catch (e) { /* storage blocked: fine */ }
 }
 
@@ -376,9 +376,11 @@ const modeTip = mode => {
   if (mode === "all") return `${plural(n, "standard game")} across Ranked and Unranked.`;
   return `${plural(n, mode === "street_brawl" ? "Street Brawl game" : "unranked game")}.`;
 };
-function savedMode() {
+function savedMode(params) {
+  const requested = params.get("mode");
+  if (MODES.some(([value]) => value === requested)) return requested;
   try {
-    const mode = localStorage.getItem("pm_mode");
+    const mode = sessionStorage.getItem("pm_mode");
     if (MODES.some(([value]) => value === mode)) return mode;
   } catch (e) { /* use the default */ }
   return "all";
@@ -614,6 +616,7 @@ function paintFreshNow() { const el = document.getElementById("freshBox"); if (e
 function wireRefresh() { const b = document.getElementById("refreshBtn"); if (b) b.addEventListener("click", refreshProfile); }
 
 async function loadProfile(id, src, confirmedProfile = null, accountSaved = true) {
+  const filters = new URLSearchParams(location.search);
   const my = ++loadSeq;
   if (!Number.isInteger(id) || id <= 0 || id > MAX_ACCOUNT_ID) return renderState("That ID doesn't look right", "Account IDs are numbers like 135548265. A Steam profile link works too.");
   $q.value = "";
@@ -637,13 +640,14 @@ async function loadProfile(id, src, confirmedProfile = null, accountSaved = true
     }
     if (my !== loadSeq) return;
     const { all, allGames } = splitHistory(history);
-    const mode = savedMode(), games = gamesForMode(allGames, mode);
-    const withSaved = savedWith(id); // the played-with filter, kept for this profile
+    const mode = savedMode(filters), games = gamesForMode(allGames, mode);
+    const withSaved = savedWith(id, filters);
+    const hero = Number(filters.get("hero"));
     const name = (profile && profile.personaname) || `Player ${id}`;
     document.title = `${name} · Postmortem`;
     if (profile) NAMES.set(id, { name, avatar: steamAvatar(profile) });
     recentAdd({ id, name, avatar: profile && steamAvatar(profile) });
-    P = { id, profile, name, allGames, games, mode, accountSaved, skipped: all.length - allGames.length, range: "all", hero: null, shown: 20, mates: null, matesRequest: 0, mateMode: "party", seasons: null,
+    P = { id, profile, name, allGames, games, mode, accountSaved, skipped: all.length - allGames.length, range: "all", hero: allGames.some(m => m.hero_id === hero) ? hero : null, shown: 20, mates: null, matesRequest: 0, mateMode: "party", seasons: null,
       fetchedAt: Date.now(), refreshing: false, refreshMsg: "", src: local ? src : null,
       withId: withSaved ? withSaved.id : null, withKind: withSaved ? withSaved.kind : "party" };
     closeWith();
@@ -1286,18 +1290,35 @@ function recomputeGames() {
 }
 const withLoading = () => !!(P.withId && !P.mates);
 const nameOf = id => (NAMES.get(id) || {}).name || `Player ${id}`;
-function savedWith(profileId) {
-  try { const v = JSON.parse(localStorage.getItem("pm_with") || "null"); if (v && v.p === profileId && Number.isInteger(v.id) && v.id > 0 && ["party", "team"].includes(v.kind)) return v; } catch (e) { /* none */ }
+function savedWith(profileId, params) {
+  const id = accountId(params.get("with"));
+  if (id !== null) return { id, kind: params.get("withKind") === "team" ? "team" : "party" };
+  try { const v = JSON.parse(sessionStorage.getItem("pm_with") || "null"); if (v && v.p === profileId && Number.isInteger(v.id) && v.id > 0 && ["party", "team"].includes(v.kind)) return v; } catch (e) { /* none */ }
   return null;
 }
+
+// If a bookmarked filter was supplied, keep its URL in step with edits to that filter.
+function updateFilterUrl(name, value) {
+  const url = new URL(location.href);
+  if (!url.searchParams.has(name)) return;
+  if (value == null) url.searchParams.delete(name); else url.searchParams.set(name, value);
+  if (name === "with") {
+    if (value == null) url.searchParams.delete("withKind");
+    else url.searchParams.set("withKind", P.withKind);
+  }
+  history.replaceState(history.state, "", url);
+}
+
 function setWith(id, kind) {
   hideTip();
   P.withId = id ? Number(id) : null;
   if (kind) P.withKind = kind;
-  try { if (P.withId) localStorage.setItem("pm_with", JSON.stringify({ p: P.id, id: P.withId, kind: P.withKind })); else localStorage.removeItem("pm_with"); } catch (e) { /* this visit only */ }
+  try { if (P.withId) sessionStorage.setItem("pm_with", JSON.stringify({ p: P.id, id: P.withId, kind: P.withKind })); else sessionStorage.removeItem("pm_with"); } catch (e) { /* this visit only */ }
   if (P.withId) loadNames([P.withId]).then(() => { if (P && P.withId) renderMatches(); });
   recomputeGames();
   if (P.hero && !P.games.some(m => m.hero_id === P.hero)) P.hero = null;
+  updateFilterUrl("with", P.withId);
+  updateFilterUrl("hero", P.hero);
   if (P.range !== "all" && P.games.length <= Number(P.range)) P.range = "all";
   P.shown = 20;
   const y = window.scrollY;
@@ -1389,7 +1410,9 @@ function setMode(mode) {
   if (P.hero && !P.games.some(m => m.hero_id === P.hero)) P.hero = null;
   if (P.range !== "all" && P.games.length <= Number(P.range)) P.range = "all";
   P.shown = 20;
-  try { localStorage.setItem("pm_mode", mode); } catch (e) { /* use the selection for this visit */ }
+  try { sessionStorage.setItem("pm_mode", mode); } catch (e) { /* use the selection for this visit */ }
+  updateFilterUrl("mode", mode);
+  updateFilterUrl("hero", P.hero);
   renderProfile();
   const b = $main.querySelector(`[data-mode="${mode}"]`);
   if (b) b.focus({ preventScroll: true });
@@ -1443,7 +1466,7 @@ function renderMatches() {
   const more = document.getElementById("moreMatches");
   if (more) more.addEventListener("click", () => { P.shown += 20; renderMatches(); loadMetaFor(list.slice(P.shown - 20, P.shown)); });
   const clr = document.getElementById("clearHero");
-  if (clr) clr.addEventListener("click", () => { P.hero = null; P.shown = 20; renderSide(); renderMatches(); loadMetaFor(P.games.slice(0, 20)); });
+  if (clr) clr.addEventListener("click", () => { P.hero = null; P.shown = 20; updateFilterUrl("hero", null); renderSide(); renderMatches(); loadMetaFor(P.games.slice(0, 20)); });
   el.querySelectorAll("[data-mode]").forEach(b => b.addEventListener("click", () => setMode(b.dataset.mode)));
   const wb = document.getElementById("withBtn");
   if (wb) wb.addEventListener("click", () => { if (wpEl && !wpEl.hidden) closeWith(); else openWith(wb); });
@@ -1465,6 +1488,7 @@ function wireSide() {
   side.querySelectorAll(".hRow[data-hero]").forEach(b => b.addEventListener("click", () => {
     const h = Number(b.dataset.hero);
     P.hero = P.hero === h ? null : h; P.shown = 20;
+    updateFilterUrl("hero", P.hero);
     renderSide(); renderMatches();
     loadMetaFor(matchList().slice(0, 20));
     if (P.hero && window.innerWidth < 900) document.getElementById("matches").scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
