@@ -18,6 +18,7 @@ Open `index.html?match=<match id>`.
 - Time axis: totals start at 0:00, the Power graphs start at each hero's spawn values (level 1, base health from `heroes.vdata`), and rates and percentages start from 0 with a dotted line up to Valve's first snapshot (3:00), since there's no value before it.
 - Matchups tab: hero damage, hard crowd control and slows between every pair of opponents, from Valve's damage matrix, with a head-to-head for any pair. The side panel lists a hero's top damage sources and what hit them (enemy hero and ability or gun). Totals match the scoreboard's hero damage exactly. Crowd control values are milliseconds (whole 1/64 s ticks).
 - The MVP tab offers Raw and Impact scores and shows Valve's recorded picks and accolades. Standard matches also offer the Valve score based on hero averages.
+- The Summary tab opens on your player when the match can identify you. Select a portrait to switch players. Hover or focus a score or percentile for its breakdown, and click a stat card to graph its recorded snapshots.
 
 Optional URL parameters: `graph=<id>` (for example `souls_lead`), `players=<slot,slot>`, `embed=1` (in-game overlay mode: ESC asks the game to close it), `scale=transform` (old scaling, in case CSS zoom misbehaves).
 
@@ -26,6 +27,8 @@ The page is laid out in Deadlock's 1080p units and scaled with CSS `zoom`, which
 Data: [deadlock-api](https://deadlock-api.com/) `/v1/matches/{id}/metadata`. Hero names come from the game's own files (`heroes.js`).
 
 Local test without the API: `python -m http.server`, then `index.html?match=136014932&src=test/match_136014932.json`. Add `tab=matchups` or `tab=mvp` to open another tab.
+
+Summary fixture: `index.html?match=137018749&src=test/137018749.json&tab=summary&me=81646827`. Add `embed=1` for the in-game layout or `pick=10` to select Silver.
 
 ## Profile (prototype)
 

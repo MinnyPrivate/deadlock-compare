@@ -277,7 +277,7 @@ const state = {
   focus: null, folds: {}, tray: [], // hover focus key ("t3" a line type, "s5" a hero), legend groups opened, overview compare tray
   laneOf: null, laneTime: 540, laneHover: null,
   leftTeam: 0, me: null, previewSlot: null,
-  tab: "graphs", mvpPick: null, mvpMode: "valve",
+  tab: "graphs", mvpPick: null, mvpMode: "valve", summaryPick: null, summaryStat: null, pendingSummary: false,
   muStat: "dmg", muWin: "all", muPair: null,
 };
 const $ = id => document.getElementById(id);
@@ -580,6 +580,10 @@ function clearMatch() {
   $("companionSource").hidden = true;
   document.body.classList.add("noMatch");
   $("tooltip").hidden = true;
+  $("summaryView").hidden = $("summaryBackdrop").hidden = true;
+  document.querySelector('[data-tab="summary"]').disabled = true;
+  document.body.classList.remove("tabSummary");
+  window.Summary?.hideTip();
 }
 
 // Viewer hints from the game (friendly team, local hero). They come in the query, or in the #hash: the mod preloads the
@@ -594,8 +598,18 @@ function applyViewer() {
   state.leftTeam = hint("friendly") != null && (fr === 0 || fr === 1) ? fr : 0;
   const meHero = Number(hint("me_hero")) || (window.HERO_CODES || {})[hint("me_name")] || 0;
   const previewMe = state.previewSlot === null ? null : state.players.find(p => p.slot === state.previewSlot);
-  state.me = previewMe || state.players.find(p => p.heroId === meHero && (hint("friendly") == null || p.team === state.leftTeam)) || null;
+  let saved = null;
+  try { saved = localStorage.getItem("pm_me"); } catch (_) { /* storage may be unavailable */ }
+  const account = Number(hint("me") || saved);
+  const accountMe = account > 0 && state.players.find(p => Number(p.raw.account_id) === account);
+  const gameMe = state.players.find(p => p.heroId === meHero && (hint("friendly") == null || p.team === state.leftTeam));
+  state.me = previewMe || accountMe || gameMe || null;
   if (state.me) state.leftTeam = state.me.team;
+}
+
+function summaryAvailable() {
+  return state.previewSlot === null && !isStreetBrawl() && !state.match?.not_scored &&
+    state.players.length > 0 && state.players.every(player => player.stats.length > 0);
 }
 
 function setup(mi, picked, hadGraph) {
@@ -605,6 +619,13 @@ function setup(mi, picked, hadGraph) {
   $("companionSource").hidden = !isPreview;
   document.querySelector('#tabs [data-tab="matchups"]').disabled = isPreview;
   if (isPreview && state.tab === "matchups") state.tab = "graphs";
+  if (isPreview && state.tab === "summary") {
+    state.tab = "graphs";
+    state.pendingSummary = true;
+  } else if (!isPreview && state.pendingSummary) {
+    state.tab = "summary";
+    state.pendingSummary = false;
+  }
   closeMenu();
   if (!availableGraphs().includes(graphNow())) openGraph("souls");
   if (brawl && state.mode === "lane") state.mode = "value";
@@ -624,6 +645,10 @@ function setup(mi, picked, hadGraph) {
     raw: p,
   }));
   applyViewer();
+  const requested = params.get("pick");
+  state.summaryPick = String(mi.match_id) === params.get("match") && /^\d+$/.test(requested || "") ? Number(requested) : null;
+  state.summaryStat = null;
+  document.querySelector('[data-tab="summary"]').disabled = !summaryAvailable();
 
   const sel = picked ? picked.filter(old => state.players.some(p => p.slot === old.slot && p.heroId === old.heroId && p.team === old.team)).map(p => p.slot)
     : (params.get("players") || "").split(",").filter(x => /^\d+$/.test(x.trim())).map(Number).filter(n => state.players.some(p => p.slot === n));
@@ -714,8 +739,10 @@ function rankHtml(badge, cls, plain) {
 }
 
 // ---------- top bar ----------
-function renderTop() {
-  const mvp = state.tab === "mvp" || state.tab === "matchups"; // tabs that focus one hero
+function renderTop(tab = state.tab) {
+  const summary = tab === "summary";
+  const mvp = summary || tab === "mvp" || tab === "matchups"; // tabs that focus one hero
+  const focused = summary ? window.Summary.selected().slot : state.mvpPick;
   const lanesG = !mvp && graphNow().kind === "lanes"; // Lane Stats: a portrait picks its lane
   const leadG = !mvp && !lanesG && (graphNow().kind === "lead" || grouped(graphNow())); // views where hero picks don't apply
   const curLane = lanesG ? laneNow() : null;
@@ -729,11 +756,18 @@ function renderTop() {
     const ps = state.players.filter(p => p.team === team);
     for (const p of ps) {
       const dash2 = !mvp && !lanesG && brkView(graphNow()) === "overlay" && [...sel].indexOf(p.slot) === 1; // the dashed hero
-      const d = el("button", "player" + (sel.has(p.slot) ? " sel" : "") + (mvp && state.mvpPick === p.slot ? " pick" : "") + (dash2 ? " dash2" : ""));
-      d.setAttribute("aria-pressed", mvp ? String(state.mvpPick === p.slot) : String(sel.has(p.slot)));
+      const d = el("button", "player" + (sel.has(p.slot) ? " sel" : "") + (mvp && focused === p.slot ? " pick" : "") + (dash2 ? " dash2" : ""));
+      d.setAttribute("aria-pressed", mvp ? String(focused === p.slot) : String(sel.has(p.slot)));
       d.style.setProperty("--tc", T.c); d.style.setProperty("--coin", T.coin); d.style.setProperty("--pc", colorOf(p));
       const rk = rankOf(p.badge);
-      d.title = `${p.hero}${rk ? " (" + rk.name + " going into the match)" : ""}${p.left ? "\nLeft the match at " + fmtTime(p.left) : ""}\n` + (mvp ? "Click to see why they placed where they did." : lanesG ? "Click to see their lane. Hover to see their part." : "Click to add or remove. Ctrl+Click to show only this hero.");
+      const playerName = summary ? window.Summary.name(p) : p.hero;
+      const action = summary ? "Click to open this player's Summary." : mvp ? "Click to see why they placed where they did."
+        : lanesG ? "Click to see their lane. Hover to see their part." : "Click to add or remove. Ctrl+Click to show only this hero.";
+      d.title = `${playerName}${rk ? " (" + rk.name + " going into the match)" : ""}${p.left ? "\nLeft the match at " + fmtTime(p.left) : ""}\n${action}`;
+      if (summary) {
+        d.dataset.summaryPortrait = p.slot;
+        d.setAttribute("aria-label", `${playerName}${playerName !== p.hero ? " on " + p.hero : ""}${p === state.me ? ", you" : ""}`);
+      }
       if (lanesG) {
         d.onmouseenter = () => { if (laneName(p) === curLane) { state.laneHover = p.slot; window.renderLanes(); } };
         d.onmouseleave = () => { if (state.laneHover === p.slot) { state.laneHover = null; window.renderLanes(); } };
@@ -746,6 +780,11 @@ function renderTop() {
       if (p.mvp === 1) d.append(el("div", "badge", "MVP"));
       else if (p.mvp > 1) d.append(el("div", "badge key", "KEY"));
       d.onclick = ev => {
+        if (summary) {
+          window.Summary.select(p.slot);
+          document.querySelector(`[data-summary-portrait="${p.slot}"]`)?.focus({ preventScroll: true });
+          return;
+        }
         if (mvp) { state.mvpPick = p.slot; state.muPair = null; renderAll(); return; }
         if (lanesG) { if (laneName(p)) { state.laneOf = laneName(p); state.laneHover = p.slot; renderAll(); } return; }
         if (leadG) return;
@@ -764,7 +803,7 @@ function renderTop() {
       : (team === 0 ? state.match.average_badge_team0 : state.match.average_badge_team1) || avgBadge(ps.map(p => p.badge));
     const ta = $("avg" + side);
     ta.innerHTML = tb ? `<span class="lbl">Avg</span>${rankHtml(tb, "", true)}` : "";
-    sc.title = `${T.name}\nClick to show only this team. Click again to show everyone.`;
+    sc.title = summary ? T.name : `${T.name}\nClick to show only this team. Click again to show everyone.`;
     const onlyThis = ps.length && ps.every(p => sel.has(p.slot)) && [...sel].every(s => ps.some(p => p.slot === s));
     sc.classList.toggle("dim", sel.size > 0 && !ps.some(p => sel.has(p.slot)));
     sc.onclick = () => { if (mvp || leadG || lanesG) return; setSel(onlyThis ? new Set(state.players.map(p => p.slot)) : new Set(ps.map(p => p.slot))); renderAll(); };
@@ -1073,19 +1112,27 @@ function renderAll() {
   ctn.style.height = "";
   ctn.classList.remove("overviewMarkers");
   const t0 = performance.now();
-  document.querySelectorAll("#tabs .tab").forEach(b => b.classList.toggle("on", b.dataset.tab === state.tab));
-  document.body.classList.toggle("tabMvp", state.tab === "mvp");
-  document.body.classList.toggle("tabMu", state.tab === "matchups");
-  document.body.classList.toggle("tabPick", state.tab !== "graphs");
+  if (state.tab === "summary" && !summaryAvailable()) state.tab = "graphs";
+  const activeTab = state.tab;
+  const summary = activeTab === "summary";
+  document.querySelectorAll("#tabs .tab").forEach(b => b.classList.toggle("on", b.dataset.tab === activeTab));
+  document.body.classList.toggle("tabMvp", activeTab === "mvp");
+  document.body.classList.toggle("tabMu", activeTab === "matchups");
+  document.body.classList.toggle("tabSummary", summary);
+  document.body.classList.toggle("tabPick", activeTab !== "graphs");
+  $("summaryView").hidden = !summary;
+  $("summaryBackdrop").hidden = EMBED || !summary;
+  if (!summary) window.Summary?.hideTip();
   const lb = avgBadge(state.players.map(p => p.badge));
   $("lobbyRank").innerHTML = lb ? `<span class="lbl">Lobby</span>${rankHtml(lb, "", true)}` : "";
-  renderTop();
-  if (state.tab !== "graphs") {
+  renderTop(activeTab);
+  if (activeTab !== "graphs") {
     GraphMarkers.close();
     document.body.classList.remove("hasLegend", "lobbyView");
   }
-  if (state.tab === "mvp") { window.renderMvp(); return; }
-  if (state.tab === "matchups") { window.renderMatchups(); return; }
+  if (summary) { window.Summary.render(); return; }
+  if (activeTab === "mvp") { window.renderMvp(); return; }
+  if (activeTab === "matchups") { window.renderMatchups(); return; }
   renderOptions();
   const g0 = graphNow();
   if (g0.kind === "lanes") { $("tooltip").hidden = true; document.body.classList.remove("hasLegend", "lobbyView"); window.renderLanes(); return; }
@@ -1785,8 +1832,13 @@ fit();
 window.addEventListener("resize", () => { fit(); renderAll(); });
 wireDropDown();
 GraphMarkers.wireMenus();
-document.querySelectorAll("#tabs .tab").forEach(b => b.onclick = () => { state.tab = b.dataset.tab; closeMenu(); renderAll(); });
-if (["mvp", "matchups"].includes(params.get("tab"))) state.tab = params.get("tab");
+document.querySelectorAll("#tabs .tab").forEach(b => b.onclick = () => {
+  state.pendingSummary = false;
+  state.tab = b.dataset.tab;
+  closeMenu();
+  renderAll();
+});
+if (["summary", "mvp", "matchups"].includes(params.get("tab"))) state.tab = params.get("tab");
 buildDropDown();
 if (params.get("graph") && GRAPHS.some(g => g.id === params.get("graph"))) state.graph = params.get("graph");
 // Opened from a Profile page: a Back control returns to that profile. When the profile is the page just before this one,
@@ -1806,12 +1858,14 @@ $("matchForm").onsubmit = ev => {
   ev.preventDefault();
   const id = $("matchInput").value.trim();
   if (!/^\d+$/.test(id)) return setStatus("Enter a numeric match ID.", true);
+  state.pendingSummary = false;
   const u = new URL(location.href); u.searchParams.set("match", id); u.searchParams.delete("players"); history.replaceState(null, "", u);
   loadMatch(id);
 };
 // In game, ESC or the overlay's own Close closes it. The page can also ask Panorama to close via the title.
 document.addEventListener("keydown", ev => {
   if (ev.key !== "Escape") return;
+  if (window.Summary?.dismissTip()) { ev.preventDefault(); return; }
   if (GraphMarkers.close(true)) { ev.preventDefault(); return; }
   if (EMBED && $("ddMenu").hidden) document.title = "DLC_CLOSE:" + Date.now();
 });
@@ -1829,6 +1883,9 @@ if (EMBED) {
   setTimeout(ready, 400);
   setInterval(() => { if (told) document.title = "DLC_ALIVE:" + mid + ":" + Date.now(); }, 2000);
 }
-const startId = params.get("match");
-if (startId && /^\d+$/.test(startId)) loadMatch(startId);
-else { clearMatch(); setStatus(EMBED ? "No match ID was passed in." : "Enter a match ID to load it."); }
+// The match can arrive from disk before the tab scripts below app.js have run.
+document.addEventListener("DOMContentLoaded", () => {
+  const startId = params.get("match");
+  if (startId && /^\d+$/.test(startId)) loadMatch(startId);
+  else { clearMatch(); setStatus(EMBED ? "No match ID was passed in." : "Enter a match ID to load it."); }
+}, { once: true });

@@ -1,12 +1,13 @@
 // Slow floating dust behind the Profile page. Purely decoration:
 // - sits behind every panel (z-index -1), never catches clicks
 // - a few dozen specks, drifting up and sideways, fading in and out
-// - a few specks take the hero accent colour (--accent, set by applyTheme in profile.js)
+// - a few specks take the hero accent colour (--accent, set by HeroBackdrop)
 // - stops in background tabs; with "reduce motion" on it draws one still frame
 (() => {
   const cv = document.getElementById("dust");
   if (!cv || !cv.getContext) return;
   const ctx = cv.getContext("2d");
+  const layer = cv.closest("#summaryBackdrop");
   const still = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
   let W = 0, H = 0, dpr = 1, specks = [], raf = 0, last = 0, accent = "#FFEFD7";
 
@@ -57,12 +58,17 @@
     draw(now / 1000);
     raf = requestAnimationFrame(step);
   }
-  function start() { if (!raf && !still && !document.hidden) { last = 0; raf = requestAnimationFrame(step); } }
+  function start() { if (!raf && !still && !document.hidden && !layer?.hidden) { last = 0; raf = requestAnimationFrame(step); } }
   function stop() { if (raf) cancelAnimationFrame(raf); raf = 0; }
 
   size(); readAccent();
   window.addEventListener("resize", () => { size(); if (still) draw(0); });
   document.addEventListener("visibilitychange", () => (document.hidden ? stop() : start()));
+  if (layer) new MutationObserver(() => {
+    if (layer.hidden) stop();
+    else if (still) draw(0);
+    else start();
+  }).observe(layer, { attributes: true, attributeFilter: ["hidden"] });
   // the accent changes when a profile loads; re-read it then
   new MutationObserver(() => { readAccent(); if (still) draw(0); }).observe(document.documentElement, { attributes: true, attributeFilter: ["style", "data-theme"] });
   if (still) draw(0); else start();
