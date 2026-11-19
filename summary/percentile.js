@@ -6,7 +6,7 @@
 
   function load() {
     if (!loading) {
-      loading = fetch("data/hero_percentiles.json").then(response => {
+      loading = fetch("/data/hero_percentiles.json").then(response => {
         if (!response.ok) throw new Error("Could not load hero percentiles.");
         return response.json();
       }).then(data => { table = data; }).catch(() => { loading = null; });

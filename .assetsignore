@@ -10,6 +10,7 @@ wrangler.jsonc
 .assetsignore
 node_modules
 companion/
+share/
 wrangler.step3.jsonc
 .dev.vars*
 .env*

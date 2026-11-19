@@ -8,7 +8,7 @@ const HeroBackdrop = (() => {
     const root = document.documentElement;
     const backdrop = document.getElementById("backdrop");
     const local = (window.HERO_BACKDROPS || []).includes(id);
-    const background = local ? `assets/backdrops/${id}.webp` : art.bg || "assets/backdrops/generic.webp";
+    const background = local ? `/assets/backdrops/${id}.webp` : art.bg || "/assets/backdrops/generic.webp";
     if (accent) root.style.setProperty("--accent", accent);
     else root.style.removeProperty("--accent");
     root.dataset.theme = id ? String(id) : "";

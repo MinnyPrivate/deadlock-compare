@@ -54,7 +54,7 @@ const GraphMarkers = (() => {
   function wireMenus() {
     const bar = $("optMarks");
     $("markTypes").innerHTML = kinds.map(([kind, name, icon]) =>
-      `<label class="markCheck"><input type="checkbox" data-kind="${kind}"><i class="markKind" style="--icon:url(assets/ui/${icon})"></i><span>${name}</span><b data-count="${kind}"></b></label>`
+      `<label class="markCheck"><input type="checkbox" data-kind="${kind}"><i class="markKind" style="--icon:url(/assets/ui/${icon})"></i><span>${name}</span><b data-count="${kind}"></b></label>`
     ).join("");
     bar.onclick = ev => {
       const arrow = ev.target.closest(".markArrow");
@@ -196,7 +196,7 @@ const GraphMarkers = (() => {
   }
 
   function itemArt(item) {
-    return `<i class="purchaseArt" style="--sc:${slotColors[item.slot]};--art:url(assets/items/${item.icon}.webp)" aria-hidden="true"></i>`;
+    return `<i class="purchaseArt" style="--sc:${slotColors[item.slot]};--art:url(/assets/items/${item.icon}.webp)" aria-hidden="true"></i>`;
   }
 
   function itemTip(item, dur) {

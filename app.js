@@ -13,8 +13,8 @@ const TYPE_PAL = ["#3FCBFF", "#F25CE0", "#FFD23F", "#FF9A3C", "#58D86A", "#C3A6F
 const TYPE_FIXED = { "Fountain": "#3FCBFF" };
 const HERO_DASH = ["", "9 6"];
 const TEAMS = {
-  0: { name: "Hidden King", color: "Hidden King", c: "#D4860B", coin: "#6F3806", icon: "assets/ui/icon_team1.png" },
-  1: { name: "Archmother", color: "Archmother", c: "#4D75C3", coin: "#243265", icon: "assets/ui/icon_team2.png" },
+  0: { name: "Hidden King", color: "Hidden King", c: "#D4860B", coin: "#6F3806", icon: "/assets/ui/icon_team1.png" },
+  1: { name: "Archmother", color: "Archmother", c: "#4D75C3", coin: "#243265", icon: "/assets/ui/icon_team2.png" },
 };
 // Objective lane index (ECitadelTeamObjective _LaneN) -> lane color. The current map uses lanes 1, 3 and 4.
 const LANES = { 1: "Yellow", 2: "Green", 3: "Blue", 4: "Green" };
@@ -269,6 +269,8 @@ function pct(a, b) { return b ? (100 * (a || 0)) / b : null; }
 
 const params = new URLSearchParams(location.search);
 const EMBED = params.get("embed") === "1";
+let shareTarget = PostmortemShare.parsePath(location.pathname);
+const startMatchId = shareTarget?.matchId || params.get("match");
 const state = {
   match: null, players: [], events: [],
   sel: null, // the heroes you picked; null until you pick, then it stays the same on every graph
@@ -361,7 +363,7 @@ function mouseIn(el, ev) {
 // so they never spend the hourly Steam lookups. See waitForMatch.
 let loadSeq = 0;
 let activeMatchId = null;
-CompanionPreview.onChange(() => { if (activeMatchId) void loadMatch(activeMatchId); });
+CompanionPreview.onChange(() => { if (activeMatchId && !shareTarget) void loadMatch(activeMatchId); });
 async function loadMatch(id) {
   const my = ++loadSeq; // only the newest request may draw
   activeMatchId = id;
@@ -370,13 +372,14 @@ async function loadMatch(id) {
   clearTimeout(checkTimer); clearInterval(waitTimer);
   setStatus("Loading match " + id + "...");
   const src = params.get("src"); // local test file: only files in this repo's test/ folder
-  const local = src && /^test\/[\w-]+\.json$/.test(src);
+  const shared = id === shareTarget?.matchId;
+  const local = !shared && src && /^test\/[\w-]+\.json$/.test(src);
   const officialUrl = API + encodeURIComponent(id) + "/metadata";
   const verifiedUrl = officialUrl + "?disable_steam=true";
   try {
-    if (!local) await CompanionPreview.ready;
+    if (!local && !shared) await CompanionPreview.ready;
     if (my !== loadSeq) return;
-    const paired = !local && CompanionPreview.isPaired();
+    const paired = !local && !shared && CompanionPreview.isPaired();
     if (paired) CompanionPreview.start(id, {
       preview(data) {
         if (my !== loadSeq || !matchesPage(data.match_info, id)) return false;
@@ -402,13 +405,13 @@ async function loadMatch(id) {
         return false;
       },
     });
-    const r = await getJson(local ? src : paired ? verifiedUrl : officialUrl);
+    const r = await getJson(local ? "/" + src : paired || shared ? verifiedUrl : officialUrl);
     if (my !== loadSeq || (state.match && state.previewSlot === null)) return;
     if (r.ok && (local || matchesPage(r.body?.match_info || r.body, id))) return show(r.body, my);
     if (!local && WAIT_STATUS.has(r.status)) return waitForMatch(id, my, r);
     throw new Error("Couldn't load the match (error " + r.status + ").");
   } catch (e) {
-    if (my === loadSeq && !local && CompanionPreview.isPaired()) {
+    if (my === loadSeq && !local && !shared && CompanionPreview.isPaired()) {
       if (!state.match || state.previewSlot !== null) return waitForMatch(id, my, { status: 503, body: null });
       return;
     }
@@ -635,8 +638,8 @@ function setup(mi, picked, hadGraph) {
   state.players = ordered.map((p, i) => ({
     slot: Number(p.player_slot) || 0, team: Number(p.team) === 1 ? 1 : 0, lane: lane(p), heroId: Number(p.hero_id) || 0,
     hero: (window.HERO_NAMES || {})[p.hero_id] || "Hero " + (Number(p.hero_id) || 0),
-    img: `assets/heroes/${Number(p.hero_id) || 0}.png`, // masked card art for the round chips
-    card: (window.HERO_CARDS || []).includes(Number(p.hero_id)) ? `assets/cards/${Number(p.hero_id)}.webp` : null, // the game's rectangular card art
+    img: `/assets/heroes/${Number(p.hero_id) || 0}.png`, // masked card art for the round chips
+    card: (window.HERO_CARDS || []).includes(Number(p.hero_id)) ? `/assets/cards/${Number(p.hero_id)}.webp` : null, // the game's rectangular card art
     left: Number(p.abandon_match_time_s) || 0,
     color: PLAYER_COLORS[i % PLAYER_COLORS.length],
     stats: scoreboardKda(p),
@@ -646,9 +649,21 @@ function setup(mi, picked, hadGraph) {
   }));
   applyViewer();
   const requested = params.get("pick");
-  state.summaryPick = String(mi.match_id) === params.get("match") && /^\d+$/.test(requested || "") ? Number(requested) : null;
+  const hasSummary = summaryAvailable();
+  if (String(mi.match_id) === shareTarget?.matchId) {
+    const sharedPlayer = state.players.find(p => String(p.raw.account_id) === shareTarget.accountId);
+    if (!sharedPlayer || !hasSummary) {
+      $("matchInput").value = mi.match_id;
+      clearMatch();
+      setStatus("This player's Summary is unavailable for this match.", true);
+      return;
+    }
+    state.summaryPick = sharedPlayer.slot;
+  } else {
+    state.summaryPick = String(mi.match_id) === params.get("match") && /^\d+$/.test(requested || "") ? Number(requested) : null;
+  }
   state.summaryStat = null;
-  document.querySelector('[data-tab="summary"]').disabled = !summaryAvailable();
+  document.querySelector('[data-tab="summary"]').disabled = !hasSummary;
 
   const sel = picked ? picked.filter(old => state.players.some(p => p.slot === old.slot && p.heroId === old.heroId && p.team === old.team)).map(p => p.slot)
     : (params.get("players") || "").split(",").filter(x => /^\d+$/.test(x.trim())).map(Number).filter(n => state.players.some(p => p.slot === n));
@@ -697,13 +712,13 @@ function buildEvents(mi) {
     else if (id === 0) { what = "Patron"; type = "patron"; icon = "team"; }
     else continue;
     const name = lane ? `${team.color}'s ${lane} ${what}` : `${team.color}'s ${what}`;
-    ev.push({ t, type, text: `${name} destroyed`, color: team.c, icon: icon === "team" ? team.icon : `assets/ui/${icon}.svg` });
+    ev.push({ t, type, text: `${name} destroyed`, color: team.c, icon: icon === "team" ? team.icon : `/assets/ui/${icon}.svg` });
   }
   for (const mb of mi.mid_boss || []) {
     if (!mb.destroyed_time_s) continue;
     const tm = mb.team_claimed ?? mb.team_killed;
     const by = TEAMS[tm] ? TEAMS[tm].color : "";
-    ev.push({ t: mb.destroyed_time_s, type: "mid", text: `Mid Boss taken${by ? " by " + by : ""}`, color: "#70F8C1", icon: "assets/ui/icon_soul.svg", mid: true });
+    ev.push({ t: mb.destroyed_time_s, type: "mid", text: `Mid Boss taken${by ? " by " + by : ""}`, color: "#70F8C1", icon: "/assets/ui/icon_soul.svg", mid: true });
   }
   return ev.sort((a, b) => a.t - b.t);
 }
@@ -722,7 +737,7 @@ function rankOf(badge) {
   if (!badge) return null;
   const tier = Math.floor(badge / 10), sub = badge % 10;
   if (!RANK_NAMES[tier]) return null;
-  return { tier, sub, name: tier === 0 || !SUBRANKS[sub] ? RANK_NAMES[tier] : `${RANK_NAMES[tier]} ${SUBRANKS[sub]}`, img: `assets/ranks/${tier}.png`,
+  return { tier, sub, name: tier === 0 || !SUBRANKS[sub] ? RANK_NAMES[tier] : `${RANK_NAMES[tier]} ${SUBRANKS[sub]}`, img: `/assets/ranks/${tier}.png`,
     mark: tier === 0 ? "" : SUBRANKS[sub] || "" };
 }
 // Average as steps (tier * 6 + subrank), then back to a badge.
@@ -1838,14 +1853,15 @@ document.querySelectorAll("#tabs .tab").forEach(b => b.onclick = () => {
   closeMenu();
   renderAll();
 });
-if (["summary", "mvp", "matchups"].includes(params.get("tab"))) state.tab = params.get("tab");
+if (shareTarget) state.tab = "summary";
+else if (["summary", "mvp", "matchups"].includes(params.get("tab"))) state.tab = params.get("tab");
 buildDropDown();
 if (params.get("graph") && GRAPHS.some(g => g.id === params.get("graph"))) state.graph = params.get("graph");
 // Opened from a Profile page: a Back control returns to that profile. When the profile is the page just before this one,
 // it uses the browser's own back, so the profile comes back exactly as it was (scroll, filters).
 if (!EMBED && params.get("from") === "profile") {
   const back = $("backLink"), pid = (params.get("pid") || "").replace(/\D/g, "");
-  back.href = pid ? "profile.html?id=" + pid : "profile.html";
+  back.href = pid ? "/profile.html?id=" + pid : "/profile.html";
   back.hidden = false;
   document.body.classList.add("hasBack");
   back.addEventListener("click", ev => {
@@ -1859,7 +1875,18 @@ $("matchForm").onsubmit = ev => {
   const id = $("matchInput").value.trim();
   if (!/^\d+$/.test(id)) return setStatus("Enter a numeric match ID.", true);
   state.pendingSummary = false;
-  const u = new URL(location.href); u.searchParams.set("match", id); u.searchParams.delete("players"); history.replaceState(null, "", u);
+  const u = new URL(location.href);
+  if (shareTarget) {
+    shareTarget = null;
+    u.pathname = "/";
+    for (const key of ["src", "pick", "tab"]) {
+      params.delete(key);
+      u.searchParams.delete(key);
+    }
+  }
+  u.searchParams.set("match", id);
+  u.searchParams.delete("players");
+  history.replaceState(null, "", u);
   loadMatch(id);
 };
 // In game, ESC or the overlay's own Close closes it. The page can also ask Panorama to close via the title.
@@ -1877,7 +1904,7 @@ window.addEventListener("hashchange", () => { if (state.match) { applyViewer(); 
 // the heartbeat stops and the mod hides the browser, shows its own "Loading" text and loads the page again.
 if (EMBED) {
   let told = false;
-  const mid = /^\d+$/.test(params.get("match") || "") ? params.get("match") : "0";
+  const mid = /^\d+$/.test(startMatchId || "") ? startMatchId : "0";
   const ready = () => { if (!told) { told = true; document.title = "DLC_READY:" + mid + ":" + Date.now(); } };
   requestAnimationFrame(() => requestAnimationFrame(ready));
   setTimeout(ready, 400);
@@ -1885,7 +1912,6 @@ if (EMBED) {
 }
 // The match can arrive from disk before the tab scripts below app.js have run.
 document.addEventListener("DOMContentLoaded", () => {
-  const startId = params.get("match");
-  if (startId && /^\d+$/.test(startId)) loadMatch(startId);
+  if (startMatchId && /^\d+$/.test(startMatchId)) loadMatch(startMatchId);
   else { clearMatch(); setStatus(EMBED ? "No match ID was passed in." : "Enter a match ID to load it."); }
 }, { once: true });

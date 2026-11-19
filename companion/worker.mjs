@@ -1,4 +1,5 @@
 import { core, matchIdentity, normalizeUpload, pack, readJson, TooLarge, unpack } from "./metadata.mjs";
+import { handleShare } from "../share/worker.mjs";
 
 const prefix = "/api/v1/companion";
 const alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
@@ -243,10 +244,12 @@ async function handleApi(request, env, now) {
   return json({ state: "method_not_allowed" }, 405);
 }
 
-export function createWorker({ now = Date.now, fetchOfficial = (...args) => fetch(...args) } = {}) {
+export function createWorker({ now = Date.now, fetchOfficial = (...args) => fetch(...args), share } = {}) {
   return {
     async fetch(request, env) {
-      if (!new URL(request.url).pathname.startsWith(prefix + "/")) return env.ASSETS.fetch(request);
+      const url = new URL(request.url);
+      if (url.pathname.startsWith("/m/")) return handleShare(request, env, url, share);
+      if (!url.pathname.startsWith(prefix + "/")) return env.ASSETS.fetch(request);
       try {
         return await handleApi(request, env, now());
       } catch (error) {

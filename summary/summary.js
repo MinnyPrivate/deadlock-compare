@@ -273,7 +273,7 @@ window.Summary = (() => {
     const items = GraphMarkers.itemRecords(p).filter(item => !item.sold)
       .sort((a, b) => order.indexOf(a.slot) - order.indexOf(b.slot) || a.t - b.t).slice(0, 12);
     const slots = items.map(item => `<span class="summary-item" data-category="${esc(item.slot)}" ${explain(`${item.name}. Bought at ${fmtTime(item.t)}.`)}>
-      <img src="assets/items/${esc(item.icon)}.webp" alt="${esc(item.name)}"></span>`);
+      <img src="/assets/items/${esc(item.icon)}.webp" alt="${esc(item.name)}"></span>`);
     while (slots.length < 12) slots.push('<span class="summary-item empty-slot" aria-hidden="true"></span>');
     return `<section class="summary-build"><h3>Final build</h3><div class="summary-items">${slots.join("")}</div></section>`;
   }
@@ -323,6 +323,7 @@ window.Summary = (() => {
             `<button type="button" data-summary-compare="${q.slot}">${portraitOf(q)}${label(name(q), fullName(q))}</button>`).join("")}</div>
         </details>
         <button class="graphOptionButton" type="button" data-summary-copy data-summary-focus="copy">Copy link</button>
+        <!-- TODO: Add the Share control here once the share card design is ready. -->
         <span class="summary-copy-status" role="status"></span>
       </div></section>`;
   }
@@ -563,12 +564,17 @@ window.Summary = (() => {
 
   async function copyLink() {
     const status = view.querySelector(".summary-copy-status");
-    const link = new URL(location.pathname, location.origin);
-    link.searchParams.set("match", match.match_id);
-    link.searchParams.set("tab", "summary");
-    link.searchParams.set("pick", selected().slot);
     const source = params.get("src");
-    if (String(match.match_id) === params.get("match") && /^test\/[\w-]+\.json$/.test(source || "")) link.searchParams.set("src", source);
+    const local = !shareTarget && String(match.match_id) === params.get("match") && /^test\/[\w-]+\.json$/.test(source || "");
+    const player = selected();
+    const path = !local && PostmortemShare.playerPath(match.match_id, player.raw.account_id);
+    const link = new URL(path || "/", location.origin);
+    if (!path) {
+      link.searchParams.set("match", match.match_id);
+      link.searchParams.set("tab", "summary");
+      link.searchParams.set("pick", player.slot);
+      if (local) link.searchParams.set("src", source);
+    }
     try {
       await navigator.clipboard.writeText(link.href);
       status.textContent = "Link copied";
