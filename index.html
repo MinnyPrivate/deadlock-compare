@@ -33,7 +33,7 @@
     </div>
   </header>
 
-  <nav id="tabs" class="tabs">
+  <nav id="tabs" class="tabs" hidden>
     <button class="tab" data-tab="summary" disabled>Summary</button>
     <button class="tab on" data-tab="graphs">Graphs</button>
     <button class="tab" data-tab="matchups">Matchups</button>
@@ -41,6 +41,7 @@
     <span id="lobbyRank" class="lobbyRank"></span>
     <span id="companionSource" hidden>From your app · awaiting Valve data</span>
   </nav>
+  <span id="tabLoading" hidden>Loading match data</span>
 
   <main class="mainCol">
     <div class="graphSelectCtn">

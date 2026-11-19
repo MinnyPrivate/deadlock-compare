@@ -307,16 +307,15 @@ const state = {
   lineOv: {}, hiddenGroups: new Set(),
   focus: null, folds: {}, tray: [], // hover focus key ("t3" a line type, "s5" a hero), legend groups opened, overview compare tray
   laneOf: null, laneTime: 540, laneHover: null,
-  leftTeam: 0, me: null, previewSlot: null,
+  leftTeam: 0, me: null, previewSlot: null, previewViewer: null, awaitingValve: false,
   tab: "graphs", requestedTab: entryTab(), mvpPick: null, mvpMode: "valve", summaryPick: null, summaryStat: null,
   muStat: "dmg", muWin: "all", muPair: null,
 };
 const $ = id => document.getElementById(id);
+const tabs = [...document.querySelectorAll("#tabs .tab")];
 const graphNow = () => GRAPHS.find(g => g.id === state.graph);
 const isStreetBrawl = () => Number(state.match?.game_mode) === 4;
-const officialGraphs = new Set(["dmg_type", "heal_type", "regen_type", "perm_buffs"]);
-const availableGraphs = () => GRAPHS.filter(g =>
-  (!isStreetBrawl() || g.kind !== "lanes") && (state.previewSlot === null || !officialGraphs.has(g.id)));
+const availableGraphs = () => GRAPHS.filter(g => !isStreetBrawl() || g.kind !== "lanes");
 // You build the view: nothing is drawn until you pick it. No hero is picked when a match opens; once you pick heroes,
 // they stay picked on every graph until you change them. (kind is kept for the callers; every graph shares one pick.)
 const selFor = kind => state.sel || new Set();
@@ -401,7 +400,7 @@ async function loadMatch(id) {
   activeMatchId = id;
   $("profileLookup").hidden = true;
   CompanionPreview.stop();
-  clearMatch();
+  clearMatch(true);
   clearTimeout(checkTimer); clearInterval(waitTimer);
   setStatus("Loading match " + id + "...");
   const src = params.get("src"); // local test file: only files in this repo's test/ folder
@@ -422,9 +421,10 @@ async function loadMatch(id) {
       expire() {
         if (my !== loadSeq || state.previewSlot === null) return;
         const waiting = state.wait;
-        clearMatch();
+        clearMatch(!waiting?.stopped || !!waiting?.checking);
         state.wait = waiting;
-        setStatus("Waiting for this match’s Valve data.");
+        if (waiting) drawWait(waiting, id, my);
+        else setStatus("Waiting for this match’s Valve data.");
       },
       async official() {
         try {
@@ -475,17 +475,34 @@ async function getJson(url, parentSignal) {
   }
 }
 function show(data, my) {
-  if (my !== loadSeq) return;
+  if (my !== loadSeq || (state.match && state.previewSlot === null)) return;
   const mi = data && (data.match_info || data);
   if (!mi || !Array.isArray(mi.players) || !mi.players.length) throw new Error("This match has no player data.");
-  const previous = state.previewSlot === null ? null : state;
-  const picked = previous?.sel && previous.players.filter(p => previous.sel.has(p.slot));
-  const hadGraph = previous?.showGraph;
+  const fromPreview = state.previewSlot !== null;
+  const picked = fromPreview && state.sel ? state.players.filter(p => state.sel.has(p.slot)) : null;
+  const hadGraph = fromPreview && state.showGraph;
+  const summary = fromPreview ? {
+    picked: state.summaryPick !== null, player: window.Summary.selected(), stat: state.summaryStat,
+  } : null;
+  const focus = document.activeElement;
+  const fromSummary = state.awaitingValve && (
+    $("summaryView").contains(focus) || focus?.hasAttribute("data-summary-portrait") || focus === tabs[0]);
+  state.previewViewer = fromPreview ? state.players.find(p => p.slot === state.previewSlot) : null;
   state.previewSlot = null;
+  state.awaitingValve = false;
   CompanionPreview.stop();
   clearTimeout(checkTimer); clearInterval(waitTimer);
   state.wait = null;
-  setup(mi, picked, hadGraph);
+  setup(mi, picked, hadGraph, summary);
+  if (fromSummary && (state.tab !== "summary" || !focus.isConnected)) {
+    let replacement;
+    if (state.tab === "summary") {
+      const { summaryPortrait, summaryFocus } = focus.dataset;
+      if (summaryPortrait !== undefined) replacement = document.querySelector(`[data-summary-portrait="${window.Summary.selected().slot}"]`);
+      else if (summaryFocus) replacement = $("summaryView").querySelector(`[data-summary-focus="${CSS.escape(summaryFocus)}"]`);
+    }
+    (replacement || tabs.find(button => button.dataset.tab === state.tab))?.focus({ preventScroll: true });
+  }
 }
 function fail(e, id, my) {
   if (my !== loadSeq) return;
@@ -553,6 +570,10 @@ function plan(w, id, my) {
 async function check(w, id, my) {
   if (my !== loadSeq || state.wait !== w || w.checking) return;
   w.checking = true;
+  if (!state.match && !state.awaitingValve) {
+    state.awaitingValve = true;
+    renderTabs();
+  }
   clearTimeout(checkTimer);
   w.tries++; w.last = Date.now();
   const base = API + encodeURIComponent(id);
@@ -583,6 +604,11 @@ async function check(w, id, my) {
 function drawWait(w, id, my) {
   if (my !== loadSeq || state.wait !== w) return;
   if (state.previewSlot !== null) return;
+  const awaitingValve = !w.stopped || w.checking;
+  if (awaitingValve !== state.awaitingValve) {
+    state.awaitingValve = awaitingValve;
+    renderTabs();
+  }
   const s = $("status");
   s.classList.remove("err");
   s.dataset.detail = `${w.detail || ""} | try ${w.tries} | phase ${w.phase || ""}`; // for debugging only, not shown
@@ -627,17 +653,20 @@ function waitMeter(elapsed) {
   return `<div class="waitRange">${lead}</div>` +
     `<div class="waitBar${over ? " hold" : ""}" role="progressbar" aria-label="Time waited against the usual range" aria-valuemin="0" aria-valuemax="${TYPICAL_HI_S}" aria-valuenow="${Math.min(TYPICAL_HI_S, Math.round(elapsed))}"><i style="width:${pct}%"></i><span class="tick" style="left:${(TYPICAL_LO_S / TYPICAL_HI_S) * 100}%"></span></div>`;
 }
-function clearMatch() {
+function clearMatch(awaitingValve = false) {
   stopChartHover();
   GraphMarkers.close();
   state.match = null;
   state.previewSlot = null;
+  state.previewViewer = null;
+  state.awaitingValve = awaitingValve;
   state.wait = null;
   $("companionSource").hidden = true;
   document.body.classList.add("noMatch");
   $("tooltip").hidden = true;
   $("summaryView").hidden = $("summaryBackdrop").hidden = true;
-  document.querySelector('[data-tab="summary"]').disabled = true;
+  state.tab = awaitingValve ? "summary" : "graphs";
+  renderTabs();
   document.body.classList.remove("tabSummary");
   window.Summary?.hideTip();
 }
@@ -673,23 +702,40 @@ function applyViewer() {
   const account = viewerAccount?.matchId === String(state.match.match_id) ? viewerAccount.id : Number(saved);
   const accountMe = account > 0 && state.players.find(p => Number(p.raw.account_id) === account);
   const gameMe = state.players.find(p => p.heroId === meHero && (hint("friendly") == null || p.team === state.leftTeam));
-  state.me = previewMe || accountMe || gameMe || null;
+  const known = state.previewViewer;
+  const confirmedMe = known && state.players.find(p => samePlayer(p, known));
+  state.me = previewMe || accountMe || gameMe || confirmedMe || null;
   if (state.me) state.leftTeam = state.me.team;
 }
 
-function summaryAvailable() {
-  return state.previewSlot === null && !isStreetBrawl() && !state.match?.not_scored &&
+function hasSummaryStats() {
+  return !isStreetBrawl() && !state.match?.not_scored &&
     state.players.length > 0 && state.players.every(player => player.stats.length > 0);
 }
+const samePlayer = (a, b) => a.slot === b.slot && a.heroId === b.heroId && a.team === b.team;
 
-function setup(mi, picked, hadGraph) {
+function renderTabs() {
+  const canSummarize = state.awaitingValve || (state.match && hasSummaryStats());
+  $("tabs").hidden = !state.awaitingValve && !state.match;
+  for (const button of tabs) {
+    const summary = button.dataset.tab === "summary";
+    const loading = state.awaitingValve && !summary;
+    const active = button.dataset.tab === state.tab;
+    button.disabled = summary ? !canSummarize : loading;
+    if (loading) button.setAttribute("aria-describedby", "tabLoading");
+    else button.removeAttribute("aria-describedby");
+    if (active) button.setAttribute("aria-current", "true");
+    else button.removeAttribute("aria-current");
+    button.classList.toggle("on", active);
+  }
+}
+
+function setup(mi, picked, hadGraph, summary) {
   state.match = mi;
   state.deaths = null;
   state.exactKda = new Map();
   const brawl = isStreetBrawl();
-  const isPreview = state.previewSlot !== null;
-  $("companionSource").hidden = !isPreview;
-  document.querySelector('#tabs [data-tab="matchups"]').disabled = isPreview;
+  $("companionSource").hidden = state.previewSlot === null;
   closeMenu();
   if (!availableGraphs().includes(graphNow())) openGraph("souls");
   if (brawl && state.mode === "lane") state.mode = "value";
@@ -710,15 +756,16 @@ function setup(mi, picked, hadGraph) {
     raw: p,
   }));
   applyViewer();
+  const stillPresent = old => state.players.some(p => samePlayer(p, old));
   const requested = params.get("pick");
   state.summaryPick = String(mi.match_id) === params.get("match") && /^\d+$/.test(requested || "") ? Number(requested) : null;
-  state.summaryStat = null;
-  const canSummarize = summaryAvailable();
-  document.querySelector('[data-tab="summary"]').disabled = !canSummarize;
-  state.tab = state.requestedTab || (canSummarize ? "summary" : "graphs");
-  if ((state.tab === "summary" && !canSummarize) || (state.tab === "matchups" && isPreview)) state.tab = "graphs";
+  if (summary?.picked && stillPresent(summary.player)) state.summaryPick = summary.player.slot;
+  state.summaryStat = summary && samePlayer(window.Summary.selected(), summary.player) ? summary.stat : null;
+  const canSummarize = hasSummaryStats();
+  state.tab = state.awaitingValve ? "summary" : state.requestedTab || (canSummarize ? "summary" : "graphs");
+  if (!state.awaitingValve && state.tab === "summary" && !canSummarize) state.tab = "graphs";
 
-  const sel = picked ? picked.filter(old => state.players.some(p => p.slot === old.slot && p.heroId === old.heroId && p.team === old.team)).map(p => p.slot)
+  const sel = picked ? picked.filter(stillPresent).map(p => p.slot)
     : (params.get("players") || "").split(",").filter(x => /^\d+$/.test(x.trim())).map(Number).filter(n => state.players.some(p => p.slot === n));
   state.sel = sel.length ? new Set(sel) : null;
   state.showGraph = !!sel.length && (!picked || hadGraph);
@@ -843,7 +890,8 @@ function renderTop(tab = state.tab) {
       const hi = el("div", "heroImg");
       const img = document.createElement("img"); img.src = p.img; img.alt = p.hero; img.onerror = () => { img.remove(); };
       hi.append(img);
-      const souls = el("div", "souls"); souls.innerHTML = fmtSouls(p.souls);
+      const souls = el("div", "souls");
+      if (!state.awaitingValve || Number.isFinite(p.raw.net_worth)) souls.innerHTML = fmtSouls(p.souls);
       d.append(hi, souls, el("div", "pcolor"));
       if (p.mvp === 1) d.append(el("div", "badge", "MVP"));
       else if (p.mvp > 1) d.append(el("div", "badge key", "KEY"));
@@ -866,7 +914,8 @@ function renderTop(tab = state.tab) {
     const sc = $("score" + side);
     const total = ps.reduce((a, p) => a + p.souls, 0);
     sc.style.setProperty("--tc", T.c);
-    sc.innerHTML = `<span>${fmtSouls(total)}</span><span class="icon" style="background-image:url(${T.icon})"></span>`;
+    const hasTotal = !state.awaitingValve || ps.every(p => Number.isFinite(p.raw.net_worth));
+    sc.innerHTML = `<span>${hasTotal ? fmtSouls(total) : "–"}</span><span class="icon" style="background-image:url(${T.icon})"></span>`;
     const tb = isStreetBrawl() ? 0
       : (team === 0 ? state.match.average_badge_team0 : state.match.average_badge_team1) || avgBadge(ps.map(p => p.badge));
     const ta = $("avg" + side);
@@ -1181,10 +1230,9 @@ function renderAll() {
   ctn.style.height = "";
   ctn.classList.remove("overviewMarkers");
   const t0 = performance.now();
-  if (state.tab === "summary" && !summaryAvailable()) state.tab = "graphs";
   const activeTab = state.tab;
   const summary = activeTab === "summary";
-  document.querySelectorAll("#tabs .tab").forEach(b => b.classList.toggle("on", b.dataset.tab === activeTab));
+  renderTabs();
   document.body.classList.toggle("tabMvp", activeTab === "mvp");
   document.body.classList.toggle("tabMu", activeTab === "matchups");
   document.body.classList.toggle("tabSummary", summary);
@@ -1910,7 +1958,8 @@ fit();
 window.addEventListener("resize", () => { fit(); renderAll(); });
 wireDropDown();
 GraphMarkers.wireMenus();
-document.querySelectorAll("#tabs .tab").forEach(b => b.onclick = () => {
+tabs.forEach(b => b.onclick = () => {
+  if (b.disabled || state.awaitingValve) return;
   state.requestedTab = state.tab = b.dataset.tab;
   closeMenu();
   renderAll();

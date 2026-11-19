@@ -53,7 +53,7 @@ window.Summary = (() => {
   function prepareMatch() {
     if (match === state.match) return;
     match = state.match;
-    rows = valveRows();
+    rows = canGrade() ? valveRows() : [];
     deaths = deathEvents();
     fights = SummaryFights.groupFights(deaths);
     fightByDeath = new Map(fights.flatMap(fight => fight.deaths.map(event => [event, fight])));
@@ -96,12 +96,26 @@ window.Summary = (() => {
   }
 
   const cue = { up: "▲", down: "▼", even: "≈" };
+  function availableValues(p) {
+    const raw = p.raw, snap = p.stats[p.stats.length - 1];
+    const damage = Number.isFinite(snap?.player_damage) && Number.isFinite(snap?.teammate_healing) ? STATS[3].read(snap) : null;
+    return [raw.kills, raw.deaths, raw.assists, damage, snap?.boss_damage, raw.net_worth];
+  }
+
+  function canGrade() {
+    return hasSummaryStats() && (!state.awaitingValve || state.players.every(p => availableValues(p).every(Number.isFinite)));
+  }
+
   const finalValues = p => {
     const raw = p.raw, snap = p.stats[p.stats.length - 1];
     return [raw.kills || 0, raw.deaths || 0, raw.assists || 0, STATS[3].read(snap), snap.boss_damage || 0, p.souls];
   };
 
   function statsFor(p) {
+    if (!rows.length) {
+      const values = availableValues(p);
+      return STATS.map((stat, index) => ({ ...stat, value: values[index] }));
+    }
     const values = finalValues(p), lobby = state.players.map(finalValues), average = actualAverage(p);
     return STATS.map((stat, index) => {
       const value = values[index];
@@ -175,6 +189,10 @@ window.Summary = (() => {
   }
 
   function matchStrip() {
+    if (!rows.length) {
+      const winner = TEAMS[match.winning_team].name;
+      return `<header class="summary-match"><div class="summary-match-copy"><h1>${winner} won</h1><span>${fmtTime(match.duration_s)}</span></div></header>`;
+    }
     const [title, subtitle, rule] = matchTitle();
     const viewer = state.me && rowOf(state.me);
     return `<header class="summary-match">
@@ -261,9 +279,9 @@ window.Summary = (() => {
       ${visible.length > 4 ? `<span class="summary-tag" ${explain(visible.slice(4).map(tag => `${tag.word}. ${tag.why}`).join(" "))}>+${visible.length - 4}</span>` : ""}${settings}</div>` : "";
   }
 
-  function heroArt(r) {
-    const p = r.p, fallback = p.card || p.img;
-    const mood = r.place <= 3 ? "gloat" : r.place > rows.length - 3 ? "crit" : "card";
+  function heroArt(p, place) {
+    const fallback = p.card || p.img;
+    const mood = place <= 3 ? "gloat" : place > rows.length - 3 ? "crit" : "card";
     const source = art[p.heroId]?.[mood] || fallback;
     return `<img src="${esc(source)}" data-summary-art-fallback="${esc(fallback)}" alt="">`;
   }
@@ -297,37 +315,41 @@ window.Summary = (() => {
 
   function heroCard(p, stats, lane) {
     const r = rowOf(p), won = Number(match.winning_team) === p.team, team = TEAMS[p.team];
-    const [word, why] = verdict(p, stats);
+    const [word, why] = r ? verdict(p, stats) : [];
     const username = name(p);
     const showHero = username !== p.hero;
+    const kda = stats.slice(0, 3).map(stat => stat.value ?? "–").join(" <i>/</i> ");
+    const souls = stats[5].value;
     return `<section class="summary-hero summary-panel" style="--team:${team.c}" aria-label="Player overview">
       <div class="summary-hero-head">
-        <div class="summary-art">${heroArt(r)}<span class="summary-result summary-${won ? "up" : "down"}">${won ? "+ Victory" : "− Defeat"}</span></div>
+        <div class="summary-art">${heroArt(p, r?.place)}<span class="summary-result summary-${won ? "up" : "down"}">${won ? "+ Victory" : "− Defeat"}</span></div>
         <div class="summary-who">
           <div class="summary-player">${showHero ? "" : portraitOf(p)}<h2 class="summary-name" title="${esc(username)}">${esc(username)}</h2>${p === state.me ? '<span class="summary-you">You</span>' : ""}</div>
           ${showHero ? `<div class="summary-hero-name">${portraitOf(p)}${esc(p.hero)}</div>` : ""}
           <div class="summary-meta"><span>${team.name}</span> · ${LANES_BY_COLOR[p.lane] ? LANES_BY_COLOR[p.lane] + " lane" : "No lane"} · ${fmtTime(match.duration_s)}</div>
-          <div class="summary-hero-rank">${rankHtml(p.badge) || '<span class="rank none">Unranked</span>'}${valveBadge(p)}</div>
-          <div class="summary-place" tabindex="0" data-summary-focus="place" data-summary-score="${p.slot}"><b>${ordinal(r.place)}</b><span>of ${rows.length} · ${r.score.toFixed(1)} pts</span></div>
-          ${gap(r)}
+          <div class="summary-hero-rank">${rankHtml(p.badge) || (state.awaitingValve ? "" : '<span class="rank none">Unranked</span>')}${valveBadge(p)}</div>
+          ${r ? `<div class="summary-place" tabindex="0" data-summary-focus="place" data-summary-score="${p.slot}"><b>${ordinal(r.place)}</b><span>of ${rows.length} · ${r.score.toFixed(1)} pts</span></div>${gap(r)}` : ""}
         </div>
       </div>
-      <div class="summary-kda" aria-label="Kills, deaths, assists and souls"><b>${stats[0].value} <i>/</i> ${stats[1].value} <i>/</i> ${stats[2].value}</b><span>${fmtStat(p.souls)} souls</span></div>
-      <p class="summary-verdict" ${explain(why)}>${esc(word)}</p>
-      ${tagsFor(p, stats, lane)}
-      ${itemGrid(p)}
+      <div class="summary-kda" aria-label="Kills, deaths, assists and souls"><b>${kda}</b>${Number.isFinite(souls) ? `<span>${fmtStat(souls)} souls</span>` : ""}</div>
+      ${r ? `<p class="summary-verdict" ${explain(why)}>${esc(word)}</p>${tagsFor(p, stats, lane)}` : ""}
+      ${!state.awaitingValve || Array.isArray(p.raw.items) ? itemGrid(p) : ""}
       ${accolades(p)}
       <div class="summary-actions">
-        <details class="summary-compare"><summary class="graphOptionButton" data-summary-focus="compare">Compare with…</summary>
+        ${state.awaitingValve ? "" : `<details class="summary-compare"><summary class="graphOptionButton" data-summary-focus="compare">Compare with…</summary>
           <div class="summary-compare-menu" aria-label="Choose a player to compare on the Graphs tab">${state.players.filter(q => q !== p).map(q =>
             `<button type="button" data-summary-compare="${q.slot}">${portraitOf(q)}${label(name(q), fullName(q))}</button>`).join("")}</div>
-        </details>
+        </details>`}
         <button class="graphOptionButton" type="button" data-summary-copy data-summary-focus="copy">Copy link</button>
         <span class="summary-copy-status" role="status"></span>
       </div></section>`;
   }
 
   function statCards(p, stats) {
+    if (!rows.length) {
+      return `<div class="summary-stat-grid" aria-label="Match stats">${stats.filter(stat => Number.isFinite(stat.value)).map(stat =>
+        `<div class="summary-stat summary-panel"><span class="summary-label">${stat.label}</span><b>${fmtStat(stat.value)}</b></div>`).join("")}</div>`;
+    }
     const cards = stats.map(stat => {
       const [word, tone] = stat.bounds ? bucket(stat.bounds) : [];
       const why = [stat.bounds && proof(p, stat), rankingWhy(stat)].filter(Boolean).join(" ");
@@ -466,7 +488,7 @@ window.Summary = (() => {
 
   function render(preserveFocus = false) {
     prepareMatch();
-    const p = selected(), stats = statsFor(p), lane = laneInfo(p);
+    const p = selected(), stats = statsFor(p), lane = rows.length ? laneInfo(p) : null;
     const focus = preserveFocus && view.contains(document.activeElement) && document.activeElement.dataset.summaryFocus;
     hideTip();
     const accent = accentFor(p);
@@ -483,12 +505,12 @@ window.Summary = (() => {
     }
     view.innerHTML = `<div class="summary-layout">
       ${matchStrip()}${heroCard(p, stats, lane)}
-      <div class="summary-center">${statCards(p, stats)}<section class="summary-panel summary-chart" aria-label="Standout stat chart"></section></div>
-      <aside class="summary-side">
+      <div class="summary-center">${statCards(p, stats)}${rows.length ? '<section class="summary-panel summary-chart" aria-label="Standout stat chart"></section>' : ""}</div>
+      ${rows.length ? `<aside class="summary-side">
         ${lanePanel(p, lane)}${foughtPanel(p)}
         <section class="summary-panel summary-side-panel summary-phase"><h2>Before and after 15:00</h2>${whenHtml(p, true) || "<p>No phase grade available.</p>"}</section>
-      </aside></div>`;
-    renderGraph(p, stats);
+      </aside>` : ""}</div>`;
+    if (rows.length) renderGraph(p, stats);
     if (focus) view.querySelector(`[data-summary-focus="${CSS.escape(focus)}"]`)?.focus({ preventScroll: true });
   }
 
@@ -594,7 +616,7 @@ window.Summary = (() => {
       state.summaryStat = summaryStat || summaryGraphStat;
       renderGraph(p, statsFor(p));
       if (summaryGraphStat) view.querySelector("[data-summary-focus=graph]").focus({ preventScroll: true });
-    } else if (summaryCompare != null) {
+    } else if (summaryCompare != null && !state.awaitingValve) {
       openGraph("souls");
       state.mode = "value";
       setSel(new Set([p.slot, Number(summaryCompare)]));
