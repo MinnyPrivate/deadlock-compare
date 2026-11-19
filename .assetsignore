@@ -3,6 +3,7 @@
 .github
 mod
 test
+docs/
 tools
 README.md
 wrangler.jsonc

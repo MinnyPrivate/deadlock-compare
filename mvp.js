@@ -371,7 +371,7 @@ function whyValve(rows, pick) {
 }
 
 // ---- "When they contributed": Early and Late grades (before and after 15:00) ----
-function whenHtml(p) {
+function whenHtml(p, summary = false) {
   if (isStreetBrawl()) return "";
   const c = valveCache(), ph = c.phase, me = ph.find(r => r.slot === p.slot);
   if (!me || me.early_valve == null) return "";
@@ -381,9 +381,14 @@ function whenHtml(p) {
     return `${ordinal(1 + all.filter(x => x > val).length)} of ${all.length}`;
   };
   const scale = Math.max(0.5, ...ph.map(r => Math.abs(r.early_valve || 0)), ...ph.map(r => Math.abs(r.late_valve || 0)));
-  const bar = (label, key) => `<div class="whenRow"><span class="wl">${label}</span>${divBar(me[key], scale, "wide")}<span class="wv ${dvClass(me[key], 1)}" title="${dvWord(me[key])} for this hero">${dv(me[key], 1)}</span><span class="wk">${rankOf(key, me[key])}</span></div>`;
+  const bar = (label, key) => {
+    const explanation = `${dvWord(me[key])} for this hero. ${tip} Lobby place ranks this period's grade highest first.`;
+    const help = summary ? `tabindex="0" data-summary-tip="${esc(explanation)}"` : "";
+    return `<div class="whenRow" ${help}><span class="wl">${label}</span>${divBar(me[key], scale, "wide")}<span class="wv ${dvClass(me[key], 1)}"${summary ? "" : ` title="${dvWord(me[key])} for this hero"`}>${dv(me[key], 1)}</span><span class="wk">${rankOf(key, me[key])}</span></div>`;
+  };
   const eLabel = me.early_time_s === 900 ? "Before 15:00" : `Before ${fmtTime(me.early_time_s)}`;
-  let h = `<div class="when" title="${esc(tip)}"><div class="accHead"><span>When they contributed</span><span class="accSub">Graded separately from the total</span></div>${bar(eLabel, "early_valve")}`;
+  const head = summary ? "" : `<div class="accHead"><span>When they contributed</span><span class="accSub">Graded separately from the total</span></div>`;
+  let h = `<div class="when"${summary ? "" : ` title="${esc(tip)}"`}>${head}${bar(eLabel, "early_valve")}`;
   if (me.late_valve == null) h += `<div class="vNote">Match too short to split.</div>`;
   else {
     h += bar("After 15:00", "late_valve");

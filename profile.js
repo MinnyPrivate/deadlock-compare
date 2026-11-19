@@ -29,40 +29,9 @@ const heroCard = id => (HERO_ART[id] && HERO_ART[id].card) || ((window.HERO_CARD
 const matchHref = id => `index.html?match=${id}&from=profile${P && P.id ? "&pid=" + P.id : ""}`;
 // Hero theme: the page takes the official character-select backdrop and one accent colour from a hero
 // (for now the player's most played one). The accent is decoration only: win/loss, team and gold colours never change.
-function applyTheme(heroId) {
-  const id = Number(heroId) || 0, root = document.documentElement, bd = document.getElementById("backdrop");
-  const local = (window.HERO_BACKDROPS || []).includes(id);
-  const art = HERO_ART[id] || {};
-  const bg = local ? `assets/backdrops/${id}.webp` : art.bg || "assets/backdrops/generic.webp";
-  const accent = (window.HERO_ACCENTS || {})[id] || art.ui || "";
-  if (accent) root.style.setProperty("--accent", accent); else root.style.removeProperty("--accent");
-  root.dataset.theme = id ? String(id) : "";
-  if (bd) { bd.style.setProperty("--bd", `url("${bg}")`); bd.classList.add("on"); }
-}
-async function loadHeroArt() {
-  try {
-    const c = JSON.parse(localStorage.getItem("pm_hero_art3") || "null");
-    if (c && c.t > Date.now() - 86400000 && c.art) { HERO_ART = c.art; return; }
-  } catch (e) { /* no cache */ }
-  try {
-    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 3000);
-    const r = await fetch("https://api.deadlock-api.com/v1/assets/heroes", { signal: ctl.signal });
-    clearTimeout(timer);
-    if (!r.ok) return;
-    const list = await r.json(), art = {};
-    for (const h of Array.isArray(list) ? list : []) {
-      const im = h.images || {};
-      const pick = (...k) => k.map(x => safeUrl(im[x])).find(Boolean) || "";
-      const ui = h.colors && Array.isArray(h.colors.ui) && h.colors.ui.length === 3 ? h.colors.ui.map(Number) : null;
-      art[h.id] = { mini: pick("minimap_image_webp", "minimap_image", "icon_image_small_webp", "icon_image_small"), card: pick("icon_hero_card_webp", "icon_hero_card"),
-        bg: pick("background_image_webp", "background_image"),
-        gloat: pick("hero_card_gloat_webp", "hero_card_gloat"), crit: pick("hero_card_critical_webp", "hero_card_critical"), ui: ui && ui.every(n => n >= 0 && n <= 255) ? `rgb(${ui.join(",")})` : "" };
-    }
-    HERO_ART = art;
-    try { localStorage.setItem("pm_hero_art3", JSON.stringify({ t: Date.now(), art })); } catch (e) { /* storage blocked */ }
-  } catch (e) { /* keep the local images */ }
-}
-const safeUrl = u => (typeof u === "string" && /^https:\/\//.test(u) ? u : "");
+function applyTheme(heroId) { HeroBackdrop.apply(heroId, HERO_ART[heroId]); }
+async function loadHeroArt() { HERO_ART = await PlayerAssets.heroArt(); }
+const safeUrl = PlayerAssets.safeUrl;
 const plural = (n, one, many) => `${n.toLocaleString()} ${n === 1 ? one : many || one + "s"}`;
 function mmss(s) { const m = Math.floor(s / 60); return `${m}:${String(s % 60).padStart(2, "0")}`; }
 function ago(t) {
@@ -151,7 +120,7 @@ async function getJson(url, opts) {
 }
 
 async function getSteamProfile(id) {
-  const list = await getJson(`${API}players/steam?account_ids=${id}`);
+  const list = await PlayerAssets.steamProfiles([id], getJson);
   return Array.isArray(list) ? list.find(p => Number(p.account_id) === id) : null;
 }
 const steamAvatar = p => safeUrl(p.avatarfull) || safeUrl(p.avatarmedium) || safeUrl(p.avatar);
@@ -453,7 +422,7 @@ async function loadNames(ids) {
   const need = [...new Set(ids)].filter(id => id && !NAMES.has(id)).slice(0, 900);
   if (!need.length) return;
   let list = [];
-  try { list = FX ? FX.names || [] : await getJson(`${API}players/steam?account_ids=${need.join(",")}`); } catch (e) { return; }
+  try { list = FX ? FX.names || [] : await PlayerAssets.steamProfiles(need, getJson); } catch (e) { return; }
   for (const s of Array.isArray(list) ? list : []) NAMES.set(Number(s.account_id), { name: s.personaname || "", avatar: safeUrl(s.avatarmedium || s.avatar) });
   for (const id of need) if (!NAMES.has(id)) NAMES.set(id, { name: "", avatar: "" });
 }
