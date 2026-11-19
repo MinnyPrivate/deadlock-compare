@@ -1415,7 +1415,7 @@ function wireSide() {
 // This reads only those cache entries, takes out three numbers per match (the server number, the match id and the key),
 // shows how many it found, and sends them to deadlock-api's public POST /v1/matches/salts only after the player presses Send.
 // Nothing else from the files is kept or sent.
-const COMPANION_APP_DOWNLOAD_URL = "https://example.invalid/postmortem-companion.zip"; // Replace with the pilot download URL.
+const COMPANION_APP_DOWNLOAD_URL = "/download/postmortem-companion.zip";
 const CACHE_ENTRY = /^[0-9a-f]{40}_[0-9a-f]{40}$/i; // how Steam names httpcache files; anything else is never opened
 const SALT_URL = /replay(\d{1,5})\.valve\.net\W{0,8}1422450\/(\d{1,12})_(\d{1,10})\.(meta|dem)\.bz2/gi;
 const U32 = 4294967295;
@@ -1495,8 +1495,8 @@ function openUpload(opener) {
     <div class="upHead"><h2 id="upTitle">Add a missing match</h2><button class="x" id="upClose" type="button" aria-label="Close">✕</button></div>
     <p class="upLead">deadlock-api can only show a game after someone sends it that game's match keys. If a game of yours is missing, you can send the keys yourself.</p>
     <div class="upOpt primary">
-      <div><h3>Postmortem app</h3><p>Optional Windows pilot for approved Steam accounts.</p></div>
-      <a class="btn" href="${esc(COMPANION_APP_DOWNLOAD_URL)}" target="_blank" rel="noopener">Download the app</a>
+      <div><h3>Postmortem app</h3><p>Optional Windows pilot for approved Steam accounts.<br>Build Nov 19, 2026</p></div>
+      <a class="btn" href="${esc(COMPANION_APP_DOWNLOAD_URL)}" download>Download the app</a>
     </div>
     <div class="upOpt">
       <div><h3>Upload from Steam cache</h3>

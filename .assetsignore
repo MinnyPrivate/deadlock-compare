@@ -10,6 +10,8 @@ wrangler.jsonc
 .assetsignore
 node_modules
 companion/
+/download/*
+!/download/postmortem-companion.zip
 wrangler.step3.jsonc
 .dev.vars*
 .env*
