@@ -10,9 +10,10 @@
   const SNAP_TIMES = [180, 360, 540, 720, 900];
 
   function gradedHero(p, table) {
+    const own = String(p.hero_id);
+    if (!Object.hasOwn(table.heroes, own)) return own;
     const acc = {};
     for (const a of p.accolades || []) acc[a.accolade_id] = a;
-    const own = String(p.hero_id);
     let bestH = own, bestS = -1, ownS = -1;
     for (const h of Object.keys(table.heroes)) {
       const row = table.heroes[h];
@@ -29,7 +30,7 @@
       if (h === own) ownS = s;
       if (s > bestS) { bestH = h; bestS = s; }
     }
-    if (own in table.heroes && ownS >= bestS) return own;
+    if (ownS >= bestS) return own;
     return bestS > ownS ? bestH : own;
   }
 
@@ -46,12 +47,13 @@
     const out = [];
     for (const p of mi.players) {
       const g = gradedHero(p, table);
-      const row = table.heroes[g] || table.fallback;
+      const inTable = Object.hasOwn(table.heroes, g);
+      const row = inTable ? table.heroes[g] : table.fallback;
       const x = statValues(p);
       const pts = x.map((v, i) => row.ppu[i] * (v - row.mean[i]));
       const off = row.offset;
       out.push({ slot: p.player_slot, team: p.team, hero_id: p.hero_id, graded_hero: /^\d+$/.test(g) ? Number(g) : g,
-        inTable: g in table.heroes, values: x, points: pts, offset: off, score: pts.reduce((a, b) => a + b, 0) + off, valve_rank: p.mvp_rank || 0 });
+        inTable, values: x, points: pts, offset: off, score: pts.reduce((a, b) => a + b, 0) + off, valve_rank: p.mvp_rank || 0 });
     }
     const win = mi.winning_team;
     const W = out.filter(r => r.team === win).sort((a, b) => b.score - a.score);

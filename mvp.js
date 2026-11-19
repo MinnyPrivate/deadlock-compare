@@ -49,7 +49,7 @@ const MVP_MERGED = [
 ];
 const SURV_IDS = new Set(["deaths", "taken", "mitig"]);
 const MVP_MODES = {
-  valve: { name: "Valve", sub: "Valve's six stats, each compared with the average for that hero" },
+  valve: { name: "Valve", sub: "Estimated points from Valve's six stats, each compared with the average for that hero" },
   impact: { name: "Impact", sub: "Weighted toward what wins fights and games" },
   raw: { name: "Raw", sub: "The scoreboard: every stat counts the same" },
 };
@@ -157,8 +157,8 @@ window.renderMvp = function renderMvp() {
       ${cardFace(p, "row")}
       <span class="who"><span class="hn">${esc(heroName(p))}${p.left ? ` <span class="leftTag" title="Left the match at ${fmtTime(p.left)}">LEFT</span>` : ""}</span>${brawl ? "" : rankHtml(p.badge) || `<span class="rank none">Unranked</span>`}</span>
       ${valve ? divBar(r.score, top, "") : catBar(r, top)}
-      <span class="score ${valve ? dvClass(r.score, 1) : ""}"${valve ? ` title="${dvWord(r.score)} for the hero"` : ""}>${valve ? dv(r.score, 1) : Math.round(r.score)}</span>
-      <span class="valve">${v ? `<span class="badge${p.mvp > 1 ? " key" : ""}" title="Valve's pick">${p.mvp === 1 ? "MVP" : "KEY"}</span>` : ""}</span>
+      <span class="score ${valve ? dvClass(r.score, 1) : ""}"${valve ? ` title="Estimated points. ${dvWord(r.score)} for the hero."` : ""}>${valve ? `${dv(r.score, 1)} <small>est.</small>` : Math.round(r.score)}</span>
+      <span class="valve">${v ? `<span class="badge${p.mvp > 1 ? " key" : ""}" title="Valve's recorded ${p.mvp === 1 ? "MVP" : "Key Player"}">${p.mvp === 1 ? "MVP" : "KEY"}</span>` : ""}</span>
     </button>`;
   }
   h += `</div>`;
@@ -169,7 +169,12 @@ window.renderMvp = function renderMvp() {
   view.innerHTML = h;
   view.querySelectorAll("[data-mode]").forEach(b => b.onclick = () => { state.mvpMode = b.dataset.mode; renderAll(); });
   if ($("mvpAll")) $("mvpAll").onclick = () => { state.mvpAll = !state.mvpAll; renderAll(); };
-  view.querySelectorAll(".mvpRow").forEach(b => b.onclick = () => { state.mvpPick = Number(b.dataset.slot); renderAll(); });
+  view.querySelectorAll(".mvpRow").forEach(b => b.onclick = () => {
+    const restoreFocus = document.activeElement === b;
+    state.mvpPick = Number(b.dataset.slot);
+    renderAll();
+    if (restoreFocus) view.querySelector(`.mvpRow[data-slot="${state.mvpPick}"]`)?.focus({ preventScroll: true });
+  });
 };
 
 const LANES_BY_COLOR = { 1: "Yellow", 3: "Green", 4: "Blue", 6: "Green" };
@@ -312,13 +317,13 @@ function whyValve(rows, pick) {
   const p = pick.p, T = TEAMS[p.team], v = pick.v;
   const won = state.match.winning_team === p.team;
   const table = window.HERO_TABLE;
-  const gradedRow = table.heroes[String(v.graded_hero)] || table.fallback;
+  const gradedRow = v.inTable ? table.heroes[String(v.graded_hero)] : table.fallback;
   const gname = (window.HERO_NAMES || {})[v.graded_hero] || "Hero " + v.graded_hero;
   const pts = VALVE_ROWS.map(([label, i]) => ({ label, i, v: v.values[i], avg: gradedRow.mean[i], pts: v.points[i] }));
   const maxAbs = Math.max(0.5, ...pts.map(x => Math.abs(x.pts)));
   const byPts = pts.slice().sort((a, b) => b.pts - a.pts);
   const best = byPts.filter(x => x.pts > 0).slice(0, 2), worst = byPts.filter(x => x.pts < -0.15 && !best.includes(x)).reverse().slice(0, 2);
-  let summary = `${ordinal(pick.place)} of ${rows.length} with ${pick.score.toFixed(2)} points`;
+  let summary = `${ordinal(pick.place)} of ${rows.length} with ${pick.score.toFixed(2)} estimated points`;
   summary += best.length ? `, carried by ${listJoin(best.map(x => VALVE_SAY[x.i]))}.` : ".";
   if (worst.length) summary += ` Biggest gaps: ${listJoin(worst.map(x => VALVE_SAY[x.i]))}.`;
 
@@ -349,11 +354,11 @@ function whyValve(rows, pick) {
         <div class="meta"><span style="color:${T.c}">${T.color}</span> · ${won ? "Won" : "Lost"}${laneDetail(p)}${p.left ? ` · <span class="leftTag">Left at ${fmtTime(p.left)}</span>` : ""}</div>
         ${rankHtml(p.badge) || `<span class="rank none">Unranked</span>`}
       </div>
-      <div class="whyScore"><b>${signed(pick.score, 2)}</b><span>${ordinal(pick.place)} of ${rows.length}</span></div>
+      <div class="whyScore"><b>${signed(pick.score, 2)}</b><span>Est. points · ${ordinal(pick.place)} of ${rows.length}</span></div>
     </div>
     <p class="summary">${esc(summary)}${valveLine ? `<br><span class="vl">${esc(valveLine)}</span>` : ""}</p>
     <div class="whyTable valve">
-      <div class="wr th"><span>Stat</span><span class="r">Value</span><span class="r">Avg ${esc(gname)}</span><span>Points</span></div>`;
+      <div class="wr th"><span>Stat</span><span class="r">Value</span><span class="r">${v.inTable ? `Avg ${esc(gname)}` : "All-hero avg"}</span><span>Points</span></div>`;
   for (const x of pts) {
     h += `<div class="wr" title="${x.i === 2 ? "More deaths than average gives negative points." : ""}">
       <span class="sn">${esc(x.label)}</span>

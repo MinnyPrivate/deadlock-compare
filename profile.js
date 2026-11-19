@@ -551,19 +551,19 @@ async function loadProfile(id, src, confirmedProfile = null, accountSaved = true
   const local = src && /^test\/[\w-]+\.json$/.test(src); // local test file: only files in this repo's test/ folder
   FX = null; META.clear(); metaNote = "";
   try {
-    let profile = null, history;
+    let profile = confirmedProfile, history, identity;
     if (local) {
       const fixture = await getJson(src);
       if (my !== loadSeq) return;
       FX = fixture;
       profile = FX.profile; history = FX.history;
     } else {
-      const [, h, prof] = await Promise.all([
+      if (!profile) identity = getSteamProfile(id).catch(() => null);
+      const [, h] = await Promise.all([
         loadHeroArt().then(() => null),
         fetchHistory(id).catch(e => { if (e.status === 404) return []; throw e; }),
-        confirmedProfile || getSteamProfile(id).catch(() => null),
       ]);
-      history = h; profile = prof;
+      history = h;
     }
     if (my !== loadSeq) return;
     const { all, allGames } = splitHistory(history);
@@ -579,6 +579,27 @@ async function loadProfile(id, src, confirmedProfile = null, accountSaved = true
     closeWith();
     if (P.withId) { recomputeGames(); loadNames([P.withId]); }
     renderProfile();
+    const active = P;
+    if (identity) void identity.then(profile => {
+      if (!profile || my !== loadSeq || P !== active) return;
+      const name = profile.personaname || active.name;
+      const avatar = steamAvatar(profile);
+      Object.assign(active, { name, profile });
+      NAMES.set(id, { name, avatar });
+      recentAdd({ id, name, avatar });
+      const heading = $main.querySelector(".head h1");
+      if (!heading) return;
+      document.title = `${name} · Postmortem`;
+      heading.textContent = name;
+      const placeholder = $main.querySelector(".head .avatar.none");
+      if (avatar && placeholder) {
+        const image = document.createElement("img");
+        image.className = "avatar";
+        image.alt = "";
+        image.src = avatar;
+        placeholder.replaceWith(image);
+      }
+    });
     loadMetaFor(matchList().slice(0, 20));
     loadMates();
     if (allGames.length) loadSeasons();

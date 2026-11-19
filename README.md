@@ -2,15 +2,15 @@
 
 Overlay and isolate Deadlock post-match graphs. Built to load inside the game through a Panorama mod (Compare button on the post-match screen), and also works in a normal browser.
 
-Open `index.html?match=<match id>`.
+Friends can open the website and select **Find a player** for Steam name lookup. Open `index.html?match=<match id>` for a specific game. Standard matches with Summary data open on Summary by default. The Windows companion is optional and currently limited to a supervised two-account pilot.
 
-- You build the view: a match opens with no hero picked and every graph opens with no line types on. Click heroes to show or hide them (Ctrl+Click shows only that hero). Your hero picks and your Markers settings carry over to the next graph; line types do not.
+- Graphs opens with no hero picked and every graph opens with no line types on. Click heroes to show or hide them (Ctrl+Click shows only that hero). Your hero picks and your Markers settings carry over to the next graph; line types do not.
 - Player-Specific graphs (Regen by Type, Damage Breakdown, Souls by Source and so on) have a legend on the right that is also the picker: every line type, grouped (From the map, From items, Built in, From abilities) and sorted by size, with each picked hero's total. Click a row to show or hide it; Only appears on the hovered row; All and Clear at the bottom. Hovering a row or a line brings it forward and dims the rest.
 - Layout by group size on those graphs: 1 or 2 heroes share one chart (color = line type, the first hero solid and the second dashed, with a key top-left); 3 or 4 heroes get one panel each on a shared scale with a synced crosshair; 5 or more get the overview (team totals over time, a ranked table with a column per line type you turned on and the lobby best in gold, and a compare tray that opens up to 4 heroes side by side). The General graphs (one line per hero) always stay one chart, with hover-to-focus.
 - With exactly 2 players on a general graph, "Difference" shows one minus the other.
 - General graphs can show Value, Per Minute, % of Team or totals for each team's roster. Standard matches also offer Lanes for totals by team and lane.
 - Teams and Lanes lines are listed in the legend and can be hidden one by one.
-- Kills and Deaths are whole numbers that step at the exact second (from `death_details`). The Deaths marker draws a skull for every kill, one row per team, with who killed whom on hover.
+- Kills and Deaths step at recorded event times when their counts match the scoreboard. When they differ, the chart shows Valve's recorded snapshots and final scoreboard totals, with a note about the event count mismatch. The Deaths marker shows recorded deaths and their attribution on hover.
 - Souls Dropped on Death is a General graph (Valve's unsecured-souls-lost counter per hero, every 3 minutes), so it compares players like any other.
 - Deaths and Items markers are available on hero graphs. Standard matches also offer Objectives markers. Settings carry across graphs and matches. Item buys show under the lines for 1 to 3 heroes. Hover to see what was bought since the last point.
 - Shift+P shows a speed check (frame rate, hover and draw times), to confirm the in-game browser keeps up.
@@ -20,7 +20,7 @@ Open `index.html?match=<match id>`.
 - The MVP tab offers Raw and Impact scores and shows Valve's recorded picks and accolades. Standard matches also offer the Valve score based on hero averages.
 - The Summary tab opens on your player when the match can identify you. Select a portrait to switch players. Hover or focus a score or percentile for its breakdown, and click a stat card to graph its recorded snapshots.
 
-Optional URL parameters: `graph=<id>` (for example `souls_lead`), `players=<slot,slot>`, `embed=1` (in-game overlay mode: ESC asks the game to close it), `scale=transform` (old scaling, in case CSS zoom misbehaves).
+Optional URL parameters include `tab=graphs`, `tab=summary`, `tab=matchups`, `tab=mvp`, `graph=<id>` (for example `souls_lead`), `players=<slot,slot>`, `embed=1` (in-game overlay mode), and `scale=transform` (older scaling fallback).
 
 The page is laid out in Deadlock's 1080p units and scaled with CSS `zoom`, which lays text out again at the real resolution so it stays sharp. Rank badges show the subrank inside the badge (I to VI), except on the team and lobby averages.
 

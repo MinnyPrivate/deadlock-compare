@@ -152,11 +152,36 @@ function sourceSeries(type) {
   const ranked = Object.keys(tot).filter(l => tot[l] > 0).sort((a, b) => tot[b] - tot[a]);
   return ranked.map(l => ({ label: l, tl: p => mtxLine(p, type, [...keys[l]]) }));
 }
-// Kills and deaths: death_details has the exact second of every death and who got the kill, so these are whole numbers that
-// step at the real time. (Valve's 3-minute snapshots would draw slopes, like 4.3 deaths.) Older matches without it use the snapshots.
-const deathTimes = p => (p.raw.death_details || []).map(d => Number(d.game_time_s) || 0).sort((a, b) => a - b);
-const killTimes = p => state.players.flatMap(q => (q.raw.death_details || []).filter(d => Number(d.killer_player_slot) === p.slot).map(d => Number(d.game_time_s) || 0)).sort((a, b) => a - b);
+// Only use event steps when the roster's recorded counts reconcile with the scoreboard for this stat.
+const deathTimes = p => deathEvents().filter(event => event.victim === p).map(event => event.t);
+const killTimes = p => deathEvents().filter(event => event.killer === p && event.victim !== p).map(event => event.t);
 const haveDeathDetails = () => state.players.length > 0 && state.players.every(p => Array.isArray(p.raw.death_details));
+function exactKda(g) {
+  if (!g.events || !haveDeathDetails()) return false;
+  if (!state.exactKda.has(g.id)) {
+    state.exactKda.set(g.id, state.players.every(p => p.raw[g.id] === g.events(p).length));
+  }
+  return state.exactKda.get(g.id);
+}
+function kdaGraphStats(p, duration) {
+  const samples = new Map();
+  for (const snapshot of Array.isArray(p.stats) ? p.stats : []) {
+    const t = snapshot.time_stamp_s;
+    if (!Number.isFinite(t) || t <= 0 || (duration > 0 && t > duration)) continue;
+    const record = { time_stamp_s: t };
+    for (const stat of ["kills", "deaths"]) {
+      const value = snapshot[stat], final = p[stat];
+      if (Number.isInteger(value) && value >= 0 && (!Number.isInteger(final) || value <= final)) record[stat] = value;
+    }
+    samples.set(t, record);
+  }
+  if (duration > 0) {
+    const end = samples.get(duration) || { time_stamp_s: duration };
+    for (const stat of ["kills", "deaths"]) if (Number.isInteger(p[stat]) && p[stat] >= 0) end[stat] = p[stat];
+    samples.set(duration, end);
+  }
+  return [...samples.values()].sort((a, b) => a.time_stamp_s - b.time_stamp_s);
+}
 function stepPts(times) {
   const pts = [[0, 0]];
   times.forEach((t, i) => { pts.push([t, i]); pts.push([t, i + 1]); });
@@ -168,19 +193,20 @@ const stepAt = (pts, t) => { let v = 0; for (const [x, y] of pts) { if (x <= t) 
 // Every kill as one event: the hero that died, who killed them (if a hero) and when.
 function deathEvents() {
   const mi = state.match;
-  if (mi._deaths) return mi._deaths;
+  if (state.deaths) return state.deaths;
   const bySlot = new Map(state.players.map(p => [p.slot, p]));
   const out = [];
-  for (const v of state.players) for (const d of v.raw.death_details || []) {
-    const t = Number(d.game_time_s);
-    if (!Number.isFinite(t) || t < 0) continue;
+  const dur = Number(mi.duration_s);
+  for (const v of state.players) for (const d of Array.isArray(v.raw.death_details) ? v.raw.death_details : []) {
+    const t = d?.game_time_s;
+    if (!Number.isFinite(t) || t < 0 || (dur > 0 && t > dur)) continue;
     const dp = d.death_pos && Number.isFinite(d.death_pos.x) ? [d.death_pos.x, d.death_pos.y] : null;
     const seconds = Number(d.death_duration_s);
     const duration = Number.isFinite(seconds) ? Math.max(0, seconds) : 0;
-    out.push({ t, duration, victim: v, killer: bySlot.get(Number(d.killer_player_slot)) || null, pos: dp, assists: [] });
+    out.push({ t, duration, victim: v, killer: bySlot.get(d.killer_player_slot) || null, pos: dp, assists: [] });
   }
   out.sort((a, b) => a.t - b.t);
-  return (mi._deaths = out);
+  return (state.deaths = out);
 }
 // Who assisted. Valve's data names the killer but not the assisters. It does have each hero's assist count at every stats
 // snapshot and every hero's position each second (match_paths), so each hero's assists between two snapshots go to the deaths
@@ -269,6 +295,11 @@ function pct(a, b) { return b ? (100 * (a || 0)) / b : null; }
 
 const params = new URLSearchParams(location.search);
 const EMBED = params.get("embed") === "1";
+function entryTab() {
+  const tab = params.get("tab");
+  if (["summary", "graphs", "mvp", "matchups"].includes(tab)) return tab;
+  return params.has("graph") || params.has("players") ? "graphs" : null;
+}
 const state = {
   match: null, players: [], events: [],
   sel: null, // the heroes you picked; null until you pick, then it stays the same on every graph
@@ -277,7 +308,7 @@ const state = {
   focus: null, folds: {}, tray: [], // hover focus key ("t3" a line type, "s5" a hero), legend groups opened, overview compare tray
   laneOf: null, laneTime: 540, laneHover: null,
   leftTeam: 0, me: null, previewSlot: null,
-  tab: "graphs", mvpPick: null, mvpMode: "valve", summaryPick: null, summaryStat: null, pendingSummary: false,
+  tab: "graphs", requestedTab: entryTab(), mvpPick: null, mvpMode: "valve", summaryPick: null, summaryStat: null,
   muStat: "dmg", muWin: "all", muPair: null,
 };
 const $ = id => document.getElementById(id);
@@ -361,10 +392,14 @@ function mouseIn(el, ev) {
 // so they never spend the hourly Steam lookups. See waitForMatch.
 let loadSeq = 0;
 let activeMatchId = null;
+let loadRequests = null;
 CompanionPreview.onChange(() => { if (activeMatchId) void loadMatch(activeMatchId); });
 async function loadMatch(id) {
   const my = ++loadSeq; // only the newest request may draw
+  loadRequests?.abort();
+  const requests = loadRequests = new AbortController();
   activeMatchId = id;
+  $("profileLookup").hidden = true;
   CompanionPreview.stop();
   clearMatch();
   clearTimeout(checkTimer); clearInterval(waitTimer);
@@ -393,7 +428,7 @@ async function loadMatch(id) {
       },
       async official() {
         try {
-          const response = await getJson(verifiedUrl);
+          const response = await getJson(verifiedUrl, requests.signal);
           if (response.ok && my === loadSeq && matchesPage(response.body?.match_info || response.body, id)) {
             show(response.body, my);
             return true;
@@ -402,7 +437,7 @@ async function loadMatch(id) {
         return false;
       },
     });
-    const r = await getJson(local ? src : paired ? verifiedUrl : officialUrl);
+    const r = await getJson(local ? src : paired ? verifiedUrl : officialUrl, requests.signal);
     if (my !== loadSeq || (state.match && state.previewSlot === null)) return;
     if (r.ok && (local || matchesPage(r.body?.match_info || r.body, id))) return show(r.body, my);
     if (!local && WAIT_STATUS.has(r.status)) return waitForMatch(id, my, r);
@@ -418,11 +453,26 @@ async function loadMatch(id) {
 function matchesPage(info, id) {
   return !!info && String(info.match_id) === id && Array.isArray(info.players) && info.players.length > 0;
 }
-async function getJson(url) {
-  const r = await fetch(url);
-  let body = null;
-  try { body = await r.json(); } catch (e) { /* error pages may not be JSON */ }
-  return { ok: r.ok, status: r.status, body };
+const MATCH_REQUEST_MS = 10_000;
+async function getJson(url, parentSignal) {
+  const request = new AbortController();
+  const cancel = () => request.abort();
+  if (parentSignal?.aborted) cancel();
+  else parentSignal?.addEventListener("abort", cancel, { once: true });
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; cancel(); }, MATCH_REQUEST_MS);
+  try {
+    const r = await fetch(url, { signal: request.signal });
+    let body = null;
+    try { body = await r.json(); } catch (e) { if (request.signal.aborted) throw e; }
+    return { ok: r.ok, status: r.status, body };
+  } catch (e) {
+    if (timedOut) throw new Error("The match server took too long to respond. Try again.");
+    throw e;
+  } finally {
+    clearTimeout(timer);
+    parentSignal?.removeEventListener("abort", cancel);
+  }
 }
 function show(data, my) {
   if (my !== loadSeq) return;
@@ -447,7 +497,7 @@ function fail(e, id, my) {
 }
 
 // The "not ready yet" screen. Checks every 10 seconds for the first 3 minutes, then every 30, and stops after 15 minutes.
-// A 429 waits as long as deadlock-api asks. Five server errors in a row (502, 503 from the salts check, 504) stop it too.
+// A 429 waits as long as deadlock-api asks. Five consecutive server errors at either polling endpoint stop it too.
 // Try Now runs one check at once (after a short cooldown, so clicking again and again doesn't hammer the API).
 const WAIT_STATUS = new Set([404, 429, 500, 502, 503, 504]);
 // Measured from real matches (PR 18): the match file usually appears 80 to 110 s after the game ends. The wait screen shows this range.
@@ -456,11 +506,11 @@ const FAST_S = 10, SLOW_S = 30, FAST_FOR_S = 180, GIVE_UP_S = 15 * 60, META_EVER
 let waitTimer = null, checkTimer = null;
 function waitForMatch(id, my, first) {
   let w = state.wait;
-  if (!w || w.id !== id) w = state.wait = { id, start: Date.now(), tries: 1, down: 0, salts: false, lastMeta: Date.now(), last: Date.now() };
-  note(w, "metadata", first);
+  if (!w || w.id !== id) w = state.wait = { id, start: Date.now(), tries: 1, failures: { salts: 0, metadata: 0 }, salts: false, lastMeta: Date.now(), last: Date.now() };
   // The first request is the only one allowed to make deadlock-api ask Steam. A 429 there is the hourly Steam lookup limit and a
   // 503 means no bot was free: neither touches the free checks we wait on, so just start waiting.
-  if (w.tries === 1 && (first.status === 429 || first.status >= 500)) { w.down = 0; w.holdUntil = 0; w.phase = "nosalts"; }
+  if (w.tries === 1 && (first.status === 429 || first.status >= 500)) w.phase = "nosalts";
+  else note(w, "metadata", first);
   plan(w, id, my);
 }
 // What one answer means for the wait. `what` is "metadata" or "salts".
@@ -474,12 +524,12 @@ function note(w, what, r) {
     return;
   }
   if (r.status >= 500) {
-    w.down++;
+    w.failures[what]++;
     w.phase = what === "metadata" && w.salts ? "valve" : "down";
     w.detail = what === "metadata" && r.status === 503 && w.salts ? "deadlock-api couldn't get the file from Valve yet (503)" : `deadlock-api answered ${r.status} to the ${what} check`;
     return;
   }
-  w.down = 0;
+  w.failures[what] = 0;
   if (what === "salts") {
     if (r.ok && b.metadata_salt && b.cluster_id) { w.salts = true; w.phase = "valve"; w.detail = "deadlock-api has the match's keys"; }
     else if (!w.salts) { w.phase = "nosalts"; w.detail = "No keys for this match on deadlock-api yet (404)"; }
@@ -492,7 +542,7 @@ function fmtPeriod(s) { return s >= 3600 && s % 3600 === 0 ? (s === 3600 ? "hour
 // Decide when the next check runs (or that we stop), then draw the countdown.
 function plan(w, id, my) {
   const now = Date.now(), age = (now - w.start) / 1000;
-  w.stopped = age >= GIVE_UP_S ? (w.salts ? "valve" : "missing") : w.down >= DOWN_GIVE_UP ? "down" : null;
+  w.stopped = age >= GIVE_UP_S ? (w.salts ? "valve" : "missing") : Math.max(...Object.values(w.failures)) >= DOWN_GIVE_UP ? "down" : null;
   const step = age < FAST_FOR_S ? FAST_S : SLOW_S;
   w.next = Math.max(now + step * 1000, w.holdUntil || 0);
   clearTimeout(checkTimer); clearInterval(waitTimer);
@@ -501,17 +551,21 @@ function plan(w, id, my) {
   if (!w.stopped) checkTimer = setTimeout(() => check(w, id, my), w.next - now);
 }
 async function check(w, id, my) {
-  if (my !== loadSeq || state.wait !== w) return;
+  if (my !== loadSeq || state.wait !== w || w.checking) return;
+  w.checking = true;
   clearTimeout(checkTimer);
   w.tries++; w.last = Date.now();
   const base = API + encodeURIComponent(id);
+  const signal = loadRequests?.signal;
+  let what = "salts";
   try {
-    const s = await getJson(base + "/salts?disable_steam=true");
+    const s = await getJson(base + "/salts?disable_steam=true", signal);
     if (my !== loadSeq || state.wait !== w) return;
     note(w, "salts", s);
-    if (s.status !== 429 && (w.salts || Date.now() - w.lastMeta >= META_EVERY_S * 1000)) {
+    if (s.status !== 429 && w.failures.salts < DOWN_GIVE_UP && (w.salts || Date.now() - w.lastMeta >= META_EVERY_S * 1000)) {
+      what = "metadata";
       w.lastMeta = Date.now();
-      const m = await getJson(base + "/metadata?disable_steam=true");
+      const m = await getJson(base + "/metadata?disable_steam=true", signal);
       if (my !== loadSeq || state.wait !== w) return;
       if (m.ok && matchesPage(m.body?.match_info || m.body, id)) return show(m.body, my);
       if (!WAIT_STATUS.has(m.status)) throw new Error("Couldn't load the match (error " + m.status + ").");
@@ -520,12 +574,14 @@ async function check(w, id, my) {
   } catch (e) {
     if (my !== loadSeq || state.wait !== w) return;
     if (!(e instanceof TypeError)) return fail(e, id, my);
-    w.down++; w.phase = "down"; w.detail = "Couldn't reach deadlock-api"; // a dropped connection: keep waiting, it may come back
+    w.failures[what]++; w.phase = "down"; w.detail = "Couldn't reach deadlock-api"; // a dropped connection: keep waiting, it may come back
+  } finally {
+    w.checking = false;
   }
   plan(w, id, my);
 }
 function drawWait(w, id, my) {
-  if (my !== loadSeq) { clearInterval(waitTimer); return; }
+  if (my !== loadSeq || state.wait !== w) return;
   if (state.previewSlot !== null) return;
   const s = $("status");
   s.classList.remove("err");
@@ -554,7 +610,7 @@ function drawWait(w, id, my) {
   s.innerHTML = `<div class="waitTitle">${title}</div><div class="waitText">${text}</div><div class="waitDetail">waited ${waited}</div>`;
   const b = el("button", "graphOptionButton retry", cool ? `Try Now (${cool})` : "Try Now");
   b.disabled = cool > 0;
-  b.onclick = () => { clearInterval(waitTimer); clearTimeout(checkTimer); check(w, id, my); };
+  b.onclick = () => { b.disabled = true; clearInterval(waitTimer); check(w, id, my); };
   s.append(b);
 }
 // Set to { name, url } once the companion app exists. Until then the long-wait message does not mention it.
@@ -592,6 +648,20 @@ function hint(k) {
   const h = new URLSearchParams(location.hash.slice(1));
   return h.has(k) ? h.get(k) : params.get(k);
 }
+let viewerAccount = null;
+function consumeViewerAccount(matchId) {
+  const url = new URL(location.href);
+  const hash = new URLSearchParams(url.hash.slice(1));
+  if (!url.searchParams.has("me") && !hash.has("me")) return;
+  const hint = hash.get("me") ?? url.searchParams.get("me");
+  const id = /^\d{1,10}$/.test(hint) ? Number(hint) : 0;
+  viewerAccount = /^\d+$/.test(matchId || "") && id > 0 && id <= 0xffffffff ? { matchId, id } : null;
+  params.delete("me");
+  if (url.searchParams.has("me")) url.searchParams.delete("me");
+  if (hash.has("me")) { hash.delete("me"); url.hash = hash.toString(); }
+  history.replaceState(history.state, "", url);
+}
+consumeViewerAccount(params.get("match"));
 // Which team sits on the left: the viewer's team when the game tells us, else Hidden King.
 function applyViewer() {
   const fr = Number(hint("friendly"));
@@ -600,7 +670,7 @@ function applyViewer() {
   const previewMe = state.previewSlot === null ? null : state.players.find(p => p.slot === state.previewSlot);
   let saved = null;
   try { saved = localStorage.getItem("pm_me"); } catch (_) { /* storage may be unavailable */ }
-  const account = Number(hint("me") || saved);
+  const account = viewerAccount?.matchId === String(state.match.match_id) ? viewerAccount.id : Number(saved);
   const accountMe = account > 0 && state.players.find(p => Number(p.raw.account_id) === account);
   const gameMe = state.players.find(p => p.heroId === meHero && (hint("friendly") == null || p.team === state.leftTeam));
   state.me = previewMe || accountMe || gameMe || null;
@@ -614,18 +684,12 @@ function summaryAvailable() {
 
 function setup(mi, picked, hadGraph) {
   state.match = mi;
+  state.deaths = null;
+  state.exactKda = new Map();
   const brawl = isStreetBrawl();
   const isPreview = state.previewSlot !== null;
   $("companionSource").hidden = !isPreview;
   document.querySelector('#tabs [data-tab="matchups"]').disabled = isPreview;
-  if (isPreview && state.tab === "matchups") state.tab = "graphs";
-  if (isPreview && state.tab === "summary") {
-    state.tab = "graphs";
-    state.pendingSummary = true;
-  } else if (!isPreview && state.pendingSummary) {
-    state.tab = "summary";
-    state.pendingSummary = false;
-  }
   closeMenu();
   if (!availableGraphs().includes(graphNow())) openGraph("souls");
   if (brawl && state.mode === "lane") state.mode = "value";
@@ -640,6 +704,7 @@ function setup(mi, picked, hadGraph) {
     left: Number(p.abandon_match_time_s) || 0,
     color: PLAYER_COLORS[i % PLAYER_COLORS.length],
     stats: scoreboardKda(p),
+    kdaGraphStats: kdaGraphStats(p, Number(mi.duration_s)),
     souls: p.net_worth || 0, mvp: p.mvp_rank || 0,
     badge: brawl ? 0 : Number(p.player_rank_data?.initial_display_rank) || 0,
     raw: p,
@@ -648,7 +713,10 @@ function setup(mi, picked, hadGraph) {
   const requested = params.get("pick");
   state.summaryPick = String(mi.match_id) === params.get("match") && /^\d+$/.test(requested || "") ? Number(requested) : null;
   state.summaryStat = null;
-  document.querySelector('[data-tab="summary"]').disabled = !summaryAvailable();
+  const canSummarize = summaryAvailable();
+  document.querySelector('[data-tab="summary"]').disabled = !canSummarize;
+  state.tab = state.requestedTab || (canSummarize ? "summary" : "graphs");
+  if ((state.tab === "summary" && !canSummarize) || (state.tab === "matchups" && isPreview)) state.tab = "graphs";
 
   const sel = picked ? picked.filter(old => state.players.some(p => p.slot === old.slot && p.heroId === old.heroId && p.team === old.team)).map(p => p.slot)
     : (params.get("players") || "").split(",").filter(x => /^\d+$/.test(x.trim())).map(Number).filter(n => state.players.some(p => p.slot === n));
@@ -927,13 +995,13 @@ function renderOptions() {
 function lineMaker(g, mode) {
   const perMin = mode === "permin";
   const lead = !g.start && (g.ratio || mode === "share" || perMin);
-  const exact = g.events && mode === "value" && haveDeathDetails();
+  const exact = mode === "value" && exactKda(g);
   const build = (p, get) => {
     if (exact) return stepPts(g.events(p));
     const pts = [];
     if (g.start) { const v0 = g.start(p); if (v0 != null) pts.push([0, v0]); }
     else pts.push([0, 0]);
-    for (const s of p.stats) {
+    for (const s of graphStats(g, p)) {
       let v = get(s);
       if (v == null) continue;
       if (perMin) { if (s.time_stamp_s < 60) continue; v = v / (s.time_stamp_s / 60); }
@@ -956,6 +1024,7 @@ function lineMaker(g, mode) {
   };
   return { build, line };
 }
+const graphStats = (g, p) => g.events ? p.kdaGraphStats : p.stats;
 // One line type for one hero, kept until the match, the graph's line types or the view changes. The legend needs every
 // type's total for every hero it lists, so this keeps hover and toggling from rebuilding lines that did not change.
 function typeLine(g, p, i) {
@@ -1025,12 +1094,12 @@ function seriesFor(g) {
 // % of Team: a hero's value over the sum of their team's values at the same snapshot.
 function shareGet(g) {
   const tot = {};
-  for (const p of state.players) for (const s of p.stats) {
+  for (const p of state.players) for (const s of graphStats(g, p)) {
     const k = p.team + ":" + s.time_stamp_s;
     tot[k] = (tot[k] || 0) + (Number(g.get(s)) || 0);
   }
   return function (s) {
-    const p = state.players.find(q => q.stats.includes(s));
+    const p = state.players.find(q => graphStats(g, q).includes(s));
     const t = p ? tot[p.team + ":" + s.time_stamp_s] : 0;
     return t ? (100 * (Number(g.get(s)) || 0)) / t : null;
   };
@@ -1038,8 +1107,8 @@ function shareGet(g) {
 const LANE_COLORS = { Yellow: "#FFD23F", Green: "#58D86A", Blue: "#5C9DFF" };
 // Teams and Lanes: heroes added together at each snapshot. Lanes pair each team's two heroes in the same lane.
 function groupLines(g, mode) {
-  const times = [...new Set(state.players.flatMap(p => p.stats.map(s => s.time_stamp_s)))].sort((a, b) => a - b);
-  const at = (p, t) => { const s = p.stats.find(x => x.time_stamp_s === t); return s ? Number(g.get(s)) || 0 : null; };
+  const times = [...new Set(state.players.flatMap(p => graphStats(g, p).map(s => s.time_stamp_s)))].sort((a, b) => a - b);
+  const at = (p, t) => { const s = graphStats(g, p).find(x => x.time_stamp_s === t); return s ? g.get(s) ?? null : null; };
   const groups = [];
   for (const team of [state.leftTeam, 1 - state.leftTeam]) {
     const T = TEAMS[team], ps = state.players.filter(p => p.team === team);
@@ -1533,9 +1602,18 @@ function renderLines(series, g) {
   box.innerHTML = "";
   const d = series.find(se => se.diff);
   const hints = [];
+  if (g.events && series.length && !exactKda(g)) {
+    hints.push(haveDeathDetails() ? "Event counts differ from the scoreboard. The chart uses snapshots and final totals." :
+      "Exact event times are incomplete. The chart uses snapshots and final totals.");
+  }
   if (g.kind === "lead") hints.push(`Above the line: ${TEAMS[state.leftTeam].color} ahead. Below: ${TEAMS[1 - state.leftTeam].color} ahead. Hero picks don't change this graph.`);
   if (d) hints.push(`Above the line: ${d.player.hero} ahead. Below: ${d.other.hero} ahead.`);
-  for (const h of hints) box.append(el("span", "lineHint", h));
+  if (hints.length) {
+    const text = hints.join(" ");
+    const note = el("span", "lineHint", text);
+    note.title = text;
+    box.append(note);
+  }
   row.hidden = !hints.length;
   document.body.classList.toggle("noLines", row.hidden);
 }
@@ -1833,12 +1911,10 @@ window.addEventListener("resize", () => { fit(); renderAll(); });
 wireDropDown();
 GraphMarkers.wireMenus();
 document.querySelectorAll("#tabs .tab").forEach(b => b.onclick = () => {
-  state.pendingSummary = false;
-  state.tab = b.dataset.tab;
+  state.requestedTab = state.tab = b.dataset.tab;
   closeMenu();
   renderAll();
 });
-if (["summary", "mvp", "matchups"].includes(params.get("tab"))) state.tab = params.get("tab");
 buildDropDown();
 if (params.get("graph") && GRAPHS.some(g => g.id === params.get("graph"))) state.graph = params.get("graph");
 // Opened from a Profile page: a Back control returns to that profile. When the profile is the page just before this one,
@@ -1858,8 +1934,18 @@ $("matchForm").onsubmit = ev => {
   ev.preventDefault();
   const id = $("matchInput").value.trim();
   if (!/^\d+$/.test(id)) return setStatus("Enter a numeric match ID.", true);
-  state.pendingSummary = false;
-  const u = new URL(location.href); u.searchParams.set("match", id); u.searchParams.delete("players"); history.replaceState(null, "", u);
+  if (viewerAccount?.matchId !== id) viewerAccount = null;
+  const u = new URL(location.href);
+  if (id !== params.get("match")) {
+    params.delete("pick");
+    u.searchParams.delete("pick");
+  }
+  params.set("match", id);
+  params.delete("players");
+  state.requestedTab = entryTab();
+  u.searchParams.set("match", id);
+  u.searchParams.delete("players");
+  history.replaceState(history.state, "", u);
   loadMatch(id);
 };
 // In game, ESC or the overlay's own Close closes it. The page can also ask Panorama to close via the title.
@@ -1869,7 +1955,10 @@ document.addEventListener("keydown", ev => {
   if (GraphMarkers.close(true)) { ev.preventDefault(); return; }
   if (EMBED && $("ddMenu").hidden) document.title = "DLC_CLOSE:" + Date.now();
 });
-window.addEventListener("hashchange", () => { if (state.match) { applyViewer(); renderAll(); } });
+window.addEventListener("hashchange", () => {
+  consumeViewerAccount(activeMatchId);
+  if (state.match) { applyViewer(); renderAll(); }
+});
 // Tell the mod the page has drawn, so it can show the panel without the browser's gray flash.
 // A hidden browser may not run animation frames, so a timer backs it up.
 // The match ID rides along so the mod can tell this page from an older one still on screen while a new match loads.
@@ -1887,5 +1976,9 @@ if (EMBED) {
 document.addEventListener("DOMContentLoaded", () => {
   const startId = params.get("match");
   if (startId && /^\d+$/.test(startId)) loadMatch(startId);
-  else { clearMatch(); setStatus(EMBED ? "No match ID was passed in." : "Enter a match ID to load it."); }
+  else {
+    clearMatch();
+    $("profileLookup").hidden = EMBED;
+    setStatus(EMBED ? "No match ID was passed in." : "Enter a match ID to load it.");
+  }
 }, { once: true });
