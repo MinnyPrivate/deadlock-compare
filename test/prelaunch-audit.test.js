@@ -330,6 +330,139 @@ async function captureProfile(folder, name) {
   await writeFile(join(folder, name), Buffer.from(data, "base64"));
 }
 
+const activeAwardSweeps = `[...document.querySelectorAll('.goldMark')]
+  .filter(mark => getComputedStyle(mark, '::before').animationName === 'award-sweep')`;
+
+async function expectGold(selector) {
+  const styles = await page(`[...document.querySelectorAll(${JSON.stringify(selector)})].map(mark => [
+    mark.classList.contains("goldMark"), getComputedStyle(mark).backgroundImage
+  ])`);
+  assert.ok(styles.length, `Fixture must render ${selector}`);
+  for (const [shared, background] of styles) {
+    assert.ok(shared, selector);
+    assert.match(background, /^linear-gradient\(135deg,/);
+  }
+}
+
+test("award gold uses one treatment across match tabs and preserves Billy and Graves", async t => {
+  const shots = process.env.PM_AWARD_SCREENSHOTS;
+  const fixture = require("./137019499.json");
+  const palette = require("./official-hero-colors.json");
+  const graves = shots ? JSON.parse(await readFile(join(process.env.PM_AUDIT_MATCHES, "137665238.json"), "utf8")) : fixture;
+  const cases = [["Billy", fixture, 4], ["Graves", graves, shots ? 4 : 6]];
+  t.after(async () => {
+    for (const [, match] of cases) routes.delete(`/v1/matches/${match.match_info.match_id}/metadata`);
+    await setViewport(1440, 900);
+    await send("Emulation.setEmulatedMedia", { features: [] });
+  });
+  if (shots) await setViewport(1920, 1080);
+  for (const [hero, data, slot] of cases) {
+    const id = data.match_info.match_id;
+    routes.set(`/v1/matches/${id}/metadata`, res => json(res, data));
+    await navigate(`/?match=${id}&tab=summary&pick=${slot}`);
+    await loaded(id);
+    await waitPage("document.querySelector('.summary-chart svg')");
+    assert.equal(await page("document.querySelector('.summary-player h2').textContent"), hero);
+    const { id: heroId, hex: official } = palette.find(entry => entry.name === hero);
+    assert.deepEqual(await page(`[heroColor(${heroId}), ${themeColor},
+      document.querySelector('#summaryView').style.getPropertyValue('--hero-accent'),
+      document.querySelector('#stage').style.getPropertyValue('--summary-underline')
+    ]`), Array(4).fill(official));
+    assert.equal(await page("document.querySelector('.summary-hero').matches('.goldMark')"), false);
+    await waitPage(`${activeAwardSweeps}.length > 0`);
+    if (hero === "Billy" || shots) {
+      for (const selector of [".summary-best-chip", ".summary-stat.is-best > b", ".summary-stat-edge"]) await expectGold(selector);
+    }
+    await expectGold(".summary-leader .badge, .summary-hero-rank .badge");
+    await expectGold(".summary-leader:first-of-type .summary-name > span");
+    if (shots) {
+      await waitPage("!document.getAnimations().some(a => a.animationName === 'summary-in')");
+      await page(`document.getAnimations().forEach(animation => {
+        if (animation.animationName === "award-sweep") { animation.pause(); animation.currentTime = 6000; }
+        if (animation.animationName === "award-star") { animation.pause(); animation.currentTime = 6440; }
+      })`);
+      await captureProfile(shots, `${hero.toLowerCase()}-after.png`);
+    }
+  }
+
+  for (const mode of ["embed=1", "ingame=1", "reduce"]) {
+    if (mode === "reduce") await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
+    await navigate(`/?match=137019499&tab=summary&pick=4&${mode}`);
+    await loaded(137019499);
+    await expectGold(".summary-best-chip");
+    assert.equal(await page("getComputedStyle(document.querySelector('.summary-best-chip'), '::before').animationName"), "none");
+    assert.equal(await page("getComputedStyle(document.querySelector('.summary-best-chip'), '::after').animationName"), "none");
+  }
+  await send("Emulation.setEmulatedMedia", { features: [] });
+  await navigate("/?match=137019499&tab=mvp");
+  await loaded(137019499);
+  await page("document.querySelector('.mvpRow[data-slot=\"4\"]').click()");
+  for (const selector of [".mvpRow .badge", ".player .badge", ".mvpRow .place > span"]) await expectGold(selector);
+  await page("document.querySelector('#mvpView [data-mode=raw]').click()");
+  await expectGold(".wr .v.best");
+  await page(`for (const p of state.players) {
+    document.querySelector('.mvpRow[data-slot="' + p.slot + '"]').click();
+    if (document.querySelector('.accRow .topTag')) break;
+  }`);
+  await expectGold(".accRow .pips .on");
+  await expectGold(".accRow .topTag");
+  await page(`document.querySelector('[data-tab=graphs]').click();
+    openGraph('souls_source'); setSel(new Set(state.players.map(p => p.slot))); renderAll();`);
+  await expectGold(".lgRow .v b");
+  await page("document.querySelector('.lgRow').click()");
+  for (const selector of [".ovRow .rk > span", ".ovRow .tot.best", ".ovRow .col.best b"]) await expectGold(selector);
+  await page("openGraph('lanes'); renderAll()");
+  await page(`for (const lane of laneList()) {
+    state.laneOf = lane;
+    renderLanes();
+    if (document.querySelector('.lvVerdict.won .tag')) break;
+  }`);
+  await expectGold(".lvVerdict.won .tag");
+  assert.deepEqual(await page("auditErrors"), []);
+});
+
+test("award gold animates at most eight visible Profile badges and responds to motion settings", async t => {
+  await setViewport(1440, 2800);
+  const history = themeHistory().slice(0, 40);
+  const metaPath = "/v1/matches/metadata";
+  routes.set(metaPath, res => json(res, history.map((row, i) => ({
+    match_id: row.match_id,
+    players: [{ account_id: 42424242, hero_id: row.hero_id, team: 0, mvp_rank: i % 4 === 0 ? 2 : 1 }]
+  }))));
+  t.after(async () => {
+    routes.delete(metaPath);
+    await setViewport(1440, 900);
+    await send("Emulation.setEmulatedMedia", { features: [] });
+  });
+  await openThemeProfile(t, history);
+  await waitPage("document.querySelectorAll('.chipMvp').length > 8");
+  await expectGold(".chipMvp");
+  const scroll = "document.querySelectorAll('.chipMvp')[10].scrollIntoView({ block: 'start' })";
+  await page(scroll);
+  await waitPage(`${activeAwardSweeps}.length === 8`);
+  const initial = await page(`${activeAwardSweeps}.map(mark => mark.closest('.match').href)`);
+  assert.equal(await page(`${activeAwardSweeps}.every(mark => {
+    const bounds = mark.getBoundingClientRect();
+    const sweep = getComputedStyle(mark, '::before');
+    return bounds.bottom > 0 && bounds.top < innerHeight && sweep.animationDuration === '7s' &&
+      getComputedStyle(mark, '::after').animationName === 'award-star';
+  })`), true);
+  await page("scrollBy(0, -800)");
+  await waitPage(`${activeAwardSweeps}.length === 8 && ${activeAwardSweeps}.some(mark => !${JSON.stringify(initial)}.includes(mark.closest('.match').href))`);
+  await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
+  await waitPage("document.querySelectorAll('.is-glinting').length === 0");
+  assert.equal(await page(`${activeAwardSweeps}.length`), 0);
+  await expectGold(".chipMvp");
+  await send("Emulation.setEmulatedMedia", { features: [] });
+  await waitPage(`${activeAwardSweeps}.length === 8`);
+
+  await navigate("/profile.html?id=42424242&embed=1");
+  await waitPage("location.search.endsWith('embed=1') && document.querySelector('.chipMvp')");
+  assert.equal(await page("document.documentElement.classList.contains('profileEmbed')"), true);
+  assert.equal(await page(`${activeAwardSweeps}.length`), 0);
+  await expectGold(".chipMvp");
+});
+
 test("the Profile main hero, backdrop and accents ease together after a mode change", async t => {
   const capture = process.env.PM_THEME_SCREENSHOTS;
   const history = capture ? JSON.parse(await readFile(process.env.PM_THEME_HISTORY, "utf8")) : themeHistory();

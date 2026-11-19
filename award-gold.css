@@ -1,0 +1,79 @@
+:root { --gold: #FFED79; }
+
+:where(.goldMark) {
+  --gold-foil: linear-gradient(135deg, var(--gold) 18%, var(--gold-highlight, #fff8cc) 43%, var(--gold-shoulder, #fff2a2) 54%, var(--gold) 72%);
+  --gold-travel: translateX(325%);
+  --gold-sweep-end: 77%;
+  --gold-phase: 0s;
+  position: relative;
+  isolation: isolate;
+}
+
+.goldMark--fill {
+  background-color: var(--gold);
+  background-image: var(--gold-foil);
+}
+
+.goldMark--ink { color: var(--gold); }
+@supports (background-clip: text) {
+  @media (forced-colors: none) {
+    .goldMark--ink {
+      background-image: var(--gold-foil);
+      background-clip: text;
+      color: transparent;
+    }
+  }
+}
+
+/* Keep the lighter Key Player and first-place marks at their existing contrast. */
+.goldMark--light {
+  --gold: #fff1cc;
+  --gold-highlight: #fffbe8;
+  --gold-shoulder: #fff3b5;
+}
+
+.goldMark--edge {
+  --gold-travel: translateY(325%);
+  --gold-sweep-end: 0%;
+  --gold-sweep-bottom: 77%;
+  --gold-star-right: -2px;
+}
+
+@media (prefers-reduced-motion: no-preference) and (forced-colors: none) {
+  :root:not(.profileEmbed) .goldMark.is-glinting::before,
+  :root:not(.profileEmbed) .goldMark.is-glinting::after {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    pointer-events: none;
+    opacity: 0;
+  }
+
+  :root:not(.profileEmbed) .goldMark.is-glinting::before {
+    inset: 0 var(--gold-sweep-end) var(--gold-sweep-bottom, 0%) 0;
+    border-radius: inherit;
+    background: linear-gradient(120deg, transparent 23%, #fffbe8 51%, transparent 77%);
+    animation: award-sweep 7s var(--gold-phase) linear infinite;
+  }
+
+  :root:not(.profileEmbed) .goldMark.is-glinting::after {
+    top: 0;
+    right: var(--gold-star-right, 1px);
+    width: 7px;
+    height: 7px;
+    background: #fffbe8;
+    clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%);
+    animation: award-star 7s var(--gold-phase) ease-in-out infinite;
+  }
+}
+
+@keyframes award-sweep {
+  0%, 76% { transform: translate(0); opacity: 0; }
+  84% { opacity: .25; }
+  94%, 100% { transform: var(--gold-travel); opacity: 0; }
+}
+
+@keyframes award-star {
+  0%, 85%, 100% { transform: scale(.55); opacity: 0; }
+  92% { transform: scale(1); opacity: .78; }
+}

@@ -1269,7 +1269,7 @@ function matchRow(m) {
   const v = mode === "street_brawl" ? null : verdict(m);
   const meta = META.get(m.match_id); // undefined: still loading, null: not available
   const me = meta ? meta.players.find(p => p.account_id === P.id) : null;
-  const mvp = me && me.mvp ? (me.mvp === 1 ? `<span class="chipMvp gold" data-tip="Valve's MVP for this match.">MVP</span>` : `<span class="chipMvp" data-tip="Valve's Key Player: ${me.mvp === 2 ? "2nd" : "3rd"} best in the lobby.">#${me.mvp}</span>`) : "";
+  const mvp = me && me.mvp ? (me.mvp === 1 ? `<span class="chipMvp goldMark goldMark--fill" data-tip="Valve's MVP for this match.">MVP</span>` : `<span class="chipMvp goldMark goldMark--ink goldMark--light" data-tip="Valve's Key Player: ${me.mvp === 2 ? "2nd" : "3rd"} best in the lobby.">#${me.mvp}</span>`) : "";
   const acc = topAccolades(me);
   const art = moodCard(m.hero_id, win);
   const teams = meta && meta.players.length >= 2 ? `<span class="players">${playersCol(meta, 0, m)}${playersCol(meta, 1, m)}</span>` : `<span class="players"></span>`;

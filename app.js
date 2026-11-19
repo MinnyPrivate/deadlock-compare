@@ -889,8 +889,8 @@ function renderTop(tab = state.tab) {
       const souls = el("div", "souls");
       if (!state.awaitingValve || Number.isFinite(p.raw.net_worth)) souls.innerHTML = fmtSouls(p.souls);
       d.append(hi, souls, el("div", "pcolor"));
-      if (p.mvp === 1) d.append(el("div", "badge", "MVP"));
-      else if (p.mvp > 1) d.append(el("div", "badge key", "KEY"));
+      if (p.mvp === 1) d.append(el("div", "badge goldMark goldMark--fill", "MVP"));
+      else if (p.mvp > 1) d.append(el("div", "badge key goldMark goldMark--fill goldMark--light", "KEY"));
       d.onclick = ev => {
         if (summary) {
           window.Summary.select(p.slot);
@@ -1748,7 +1748,7 @@ function renderLegend(g0, g) {
       const c = typeColor(g0, r.i);
       const sw = `<i class="sw" style="--c:${c}"></i>`;
       const max = Math.max(...r.vals);
-      const cells = lobby && r.best ? [`${portraitImg(r.best.p)}<b>${fmtShort(r.best.v, g)}</b>`] : r.vals.map(v => fmtShort(v, g));
+      const cells = lobby && r.best ? [`${portraitImg(r.best.p)}<b class="goldMark goldMark--ink">${fmtShort(r.best.v, g)}</b>`] : r.vals.map(v => fmtShort(v, g));
       const lo = !lobby && r.vals.length > 1 ? r.vals.map(v => v < max) : [];
       h += lgRow(r.i, "t" + r.i, r.on, sw, r.label, cells, lo, "", cols.map(c => c.w || 58));
     }
@@ -1852,10 +1852,10 @@ function renderOverview(g0, g) {
       cols.map((_, c) => `<span class="col" style="width:${colW}px">${fmtShort(rs.reduce((a, x) => a + x.vals[c], 0), g)}</span>`).join("") + `</div>`;
     for (const x of rs) {
       const inTray = state.tray.includes(x.p.slot);
-      h += `<div class="ovRow${inTray ? " inTray" : ""}" tabindex="0" role="button" data-slot="${x.p.slot}"><span class="rk">${x.rank}</span><span class="hero">${portraitImg(x.p)}<span class="hn">${esc(heroName(x.p))}</span>` +
+      h += `<div class="ovRow${inTray ? " inTray" : ""}" tabindex="0" role="button" data-slot="${x.p.slot}"><span class="rk">${x.rank === 1 ? '<span class="goldMark goldMark--ink goldMark--light">1</span>' : x.rank}</span><span class="hero">${portraitImg(x.p)}<span class="hn">${esc(heroName(x.p))}</span>` +
         `<button class="cmp">${inTray ? "In compare" : "+ Compare"}</button></span>` +
-        `<span class="tot${x.tot === totMax ? " best" : ""}">${fmtShort(x.tot, g)}</span>` +
-        x.vals.map((v, c) => `<span class="col${v && v === colMax[c] ? " best" : ""}" style="width:${colW}px"><b>${v ? fmtShort(v, g) : "–"}</b><i class="bar" style="width:${colMax[c] ? Math.round((v / colMax[c]) * 100) : 0}%;--c:${typeColor(g0, cols[c])}"></i></span>`).join("") + `</div>`;
+        `<span class="tot${x.tot === totMax ? " best goldMark goldMark--ink" : ""}">${fmtShort(x.tot, g)}</span>` +
+        x.vals.map((v, c) => `<span class="col${v && v === colMax[c] ? " best" : ""}" style="width:${colW}px"><b${v && v === colMax[c] ? ' class="goldMark goldMark--ink"' : ""}>${v ? fmtShort(v, g) : "–"}</b><i class="bar" style="width:${colMax[c] ? Math.round((v / colMax[c]) * 100) : 0}%;--c:${typeColor(g0, cols[c])}"></i></span>`).join("") + `</div>`;
     }
   }
   if (on.length > cols.length) h += `<div class="ovMore">${on.length - cols.length} more line ${on.length - cols.length === 1 ? "type is" : "types are"} on. The table shows the first ${OV_COLS}.</div>`;

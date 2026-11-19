@@ -100,9 +100,8 @@ body.standalone #stage { height: 1080px; }
 .player.sel .pcolor { opacity: 1; }
 .player .badge {
   position: absolute; right: 6px; top: 0; padding: 1px 4px; border-radius: 3px;
-  font-family: var(--oracle); font-weight: 700; font-size: 10px; letter-spacing: 0.5px; color: var(--offBlack); background: #FFED79;
+  font-family: var(--oracle); font-weight: 700; font-size: 10px; letter-spacing: 0.5px; color: var(--offBlack);
 }
-.player .badge.key { background: var(--offWhite); }
 
 /* ---------- graph type dropdown (native DropDown) ---------- */
 .mainCol { position: absolute; left: 0; right: 0; top: 190px; bottom: 0; padding: 0 0 0 0; }
@@ -419,8 +418,7 @@ body:not(.tabMu) #muView { display: none; }
 .catBar i + i { box-shadow: inset 1px 0 0 #0006; }
 .mvpRow .score { font-family: var(--oracle); font-weight: 700; font-size: 26px; text-align: right; color: #fff; }
 .mvpRow .valve { text-align: center; }
-.badge { padding: 2px 5px; border-radius: 3px; font-family: var(--oracle); font-weight: 700; font-size: 12px; letter-spacing: 0.5px; color: var(--offBlack); background: #FFED79; }
-.badge.key { background: var(--offWhite); }
+.badge { padding: 2px 5px; border-radius: 3px; font-family: var(--oracle); font-weight: 700; font-size: 12px; letter-spacing: 0.5px; color: var(--offBlack); }
 
 .mvpWhy { min-height: 0; display: flex; flex-direction: column; background: rgba(16,19,13,0.72); border-radius: 4px; border-top: 4px solid var(--tc); padding: 18px 22px 14px; }
 .whyHead { display: flex; align-items: center; gap: 18px; }
@@ -439,7 +437,6 @@ body:not(.tabMu) #muView { display: none; }
 .wr .r { text-align: right; }
 .wr .sn { display: flex; align-items: center; gap: 8px; white-space: nowrap; overflow: hidden; }
 .wr .v { font-family: var(--oracle); font-weight: 700; font-size: 17px; }
-.wr .v.best { color: #FFED79; }
 .wr .lb { opacity: 0.7; display: flex; align-items: center; justify-content: flex-end; }
 .wr .pb { display: flex; align-items: center; gap: 8px; }
 .wr .track { height: 8px; background: rgba(255,239,215,0.08); border-radius: 2px; overflow: hidden; }
@@ -583,12 +580,12 @@ button.muRow:hover { background: rgba(255,239,215,0.06); }
 .accSub { text-transform: none; letter-spacing: 0; font-weight: 400; font-size: 13px; opacity: 0.7; }
 .accRow { display: grid; grid-template-columns: 46px 210px 1fr 150px; align-items: center; column-gap: 10px; height: 32px; border-top: 1px solid rgba(255,239,215,0.06); font-size: 15px; }
 .accRow .pips { display: flex; gap: 3px; }
-.accRow .pips i { width: 10px; height: 10px; transform: rotate(45deg) scale(0.8); background: rgba(255,239,215,0.15); }
-.accRow .pips i.on { background: #FFED79; }
+.accRow .pips i { width: 10px; height: 10px; transform: rotate(45deg) scale(0.8); }
+.accRow .pips i:not(.on) { background: rgba(255,239,215,0.15); }
 .accRow .an { font-family: var(--oracle); font-weight: 700; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #fff; }
 .accRow .at { opacity: 0.8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .accRow .ab { text-align: right; opacity: 0.7; display: flex; align-items: center; justify-content: flex-end; font-size: 14px; }
-.topTag { padding: 1px 6px; border-radius: 3px; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: var(--offBlack); background: #FFED79; }
+.topTag { padding: 1px 6px; border-radius: 3px; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: var(--offBlack); }
 
 /* ---------- item purchases on the Power graphs ---------- */
 .graphOption .graphOptionButton[hidden] + .graphOptionButton { border-left: 1px solid rgba(255,239,215,0.53); border-radius: 3px 0 0 3px; }
@@ -671,7 +668,7 @@ body.laneMode .laneView {
 .lvVerdict .face img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 0; }
 .lvVerdict .tag { display: inline-block; padding: 1px 7px; border-radius: 3px; font-size: 12px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; }
 .lvVerdict.threw .tag { background: #ff6a5a; color: #10130D; }
-.lvVerdict.won .tag { background: #FFED79; color: #10130D; }
+.lvVerdict.won .tag { color: #10130D; }
 .lvVerdict .who { font-family: var(--oracle); font-weight: 700; font-size: 22px; margin-top: 2px; }
 .lvVerdict .why { font-size: 14px; opacity: 0.75; }
 .lvLead { width: 100%; height: auto; margin-top: 2px; background: rgba(0,0,0,0.25); border-radius: 4px; }
@@ -813,7 +810,7 @@ body.laneMode .laneView {
 .lgRow .v.lo { color: rgba(255,239,215,0.62); }
 .lgRow:not(.on) .v { color: rgba(255,239,215,0.62); }
 .lgRow .v img { width: 20px; height: 20px; border-radius: 50%; background: var(--coin); object-fit: cover; object-position: 50% 28%; }
-.lgRow .v b { flex: none; white-space: nowrap; font-weight: 600; color: #FFED79; }
+.lgRow .v b { flex: none; white-space: nowrap; font-weight: 600; }
 .lgRow .v img { flex: none; }
 .lgRow .only { display: none; margin-right: 6px; height: 20px; padding: 0 7px; border: 0; border-radius: 3px; background: rgba(255,239,215,0.16); color: var(--offWhite);
   font: 700 11px var(--sans); letter-spacing: 0.05em; text-transform: uppercase; cursor: pointer; }
@@ -861,7 +858,6 @@ body.lobbyView .overview { display: flex; }
 .ovRow .col { height: 30px; line-height: 26px; }
 .ovRow .col b { font-weight: 600; }
 .ovRow .col .bar { position: absolute; right: 0; bottom: 4px; height: 3px; border-radius: 2px; background: var(--c); opacity: 0.7; max-width: calc(100% - 16px); }
-.ovRow .best, .ovRow .best b { color: #FFED79; }
 .ovMore { padding: 8px 24px 2px; font-size: 14px; color: rgba(255,239,215,0.7); }
 .ovTray { flex: none; display: flex; align-items: center; gap: 10px; height: 46px; padding: 0 14px; background: rgba(16,19,13,0.62); border-radius: 4px; }
 .ovTray .hint { font-size: 15px; color: rgba(255,239,215,0.7); }

@@ -153,12 +153,12 @@ window.renderMvp = function renderMvp() {
     const p = r.p, T = TEAMS[p.team];
     const v = valveLabel(p);
     h += `<button class="mvpRow${p.slot === state.mvpPick ? " on" : ""}" data-slot="${p.slot}" style="--tc:${T.c}">
-      <span class="place">${r.place}</span>
+      <span class="place">${r.place === 1 ? '<span class="goldMark goldMark--ink goldMark--light">1</span>' : r.place}</span>
       ${cardFace(p, "row")}
       <span class="who"><span class="hn">${esc(heroName(p))}${p.left ? ` <span class="leftTag" title="Left the match at ${fmtTime(p.left)}">LEFT</span>` : ""}</span>${brawl ? "" : rankHtml(p.badge) || `<span class="rank none">Unranked</span>`}</span>
       ${valve ? divBar(r.score, top, "") : catBar(r, top)}
       <span class="score ${valve ? dvClass(r.score, 1) : ""}"${valve ? ` title="Estimated points. ${dvWord(r.score)} for the hero."` : ""}>${valve ? `${dv(r.score, 1)} <small>est.</small>` : Math.round(r.score)}</span>
-      <span class="valve">${v ? `<span class="badge${p.mvp > 1 ? " key" : ""}" title="Valve's recorded ${p.mvp === 1 ? "MVP" : "Key Player"}">${p.mvp === 1 ? "MVP" : "KEY"}</span>` : ""}</span>
+      <span class="valve">${v ? `<span class="badge goldMark goldMark--fill${p.mvp > 1 ? " key goldMark--light" : ""}" title="Valve's recorded ${p.mvp === 1 ? "MVP" : "Key Player"}">${p.mvp === 1 ? "MVP" : "KEY"}</span>` : ""}</span>
     </button>`;
   }
   h += `</div>`;
@@ -207,10 +207,10 @@ function accoladesHtml(p) {
     const txt = (x.v === 1 ? x.def[1] : x.def[2]).replace("{v}", fmtStat(x.v));
     const top = x.best && x.best.p.slot === p.slot;
     h += `<div class="accRow" title="Valve's tier ${x.tier} of 3">
-      <span class="pips">${[1, 2, 3].map(i => `<i class="${i <= x.tier ? "on" : ""}"></i>`).join("")}</span>
+      <span class="pips">${[1, 2, 3].map(i => `<i class="${i <= x.tier ? "on goldMark goldMark--fill" : ""}"></i>`).join("")}</span>
       <span class="an">${esc(x.def[0])}</span>
       <span class="at">${esc(txt)}</span>
-      <span class="ab">${top ? `<span class="topTag">Lobby best</span>` : `Best ${fmtStat(x.best.v)}${portrait(x.best.p, "mini")}`}</span>
+      <span class="ab">${top ? `<span class="topTag goldMark goldMark--fill">Lobby best</span>` : `Best ${fmtStat(x.best.v)}${portrait(x.best.p, "mini")}`}</span>
     </div>`;
   }
   return `<div class="acc">${h}</div>`;
@@ -257,7 +257,7 @@ function whyScaled(rows, pick, mode) {
     const isBest = x.on && x.v === x.bestV;
     h += `<div class="wr${x.on ? "" : " off"}" title="${x.on ? `Weight ${x.def.w}. Worth up to ${x.maxPts.toFixed(1)} points.` : "Nobody in this match had any, so it doesn't count."}">
       <span class="sn"><b style="background:${c}"></b>${esc(x.def.label)}</span>
-      <span class="r v${isBest ? " best" : ""}">${fmtStat(x.v)}</span>
+      <span class="r v${isBest ? " best goldMark goldMark--ink" : ""}">${fmtStat(x.v)}</span>
       <span class="r lb">${x.on ? `${fmtStat(x.bestV)}${portrait(x.best, "mini")}` : "–"}</span>
       <span class="pb"><span class="track" style="width:${(x.maxPts / maxOf(pick.parts)) * 100}%"><i style="width:${x.maxPts ? (x.pts / x.maxPts) * 100 : 0}%;background:${c}"></i></span><em>${x.on ? x.pts.toFixed(1) : ""}</em></span>
     </div>`;

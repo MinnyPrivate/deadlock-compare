@@ -24,8 +24,9 @@ window.Summary = (() => {
   const label = (word, tip) => `<span class="summary-name" title="${esc(tip)}">${esc(word)}</span>`;
   const explain = text => `tabindex="0" data-summary-tip="${esc(text)}"`;
   const portraitOf = (p, cls = "") => `<span class="summary-portrait ${cls}" style="--team-coin:${TEAMS[p.team].coin}"><img src="${p.img}" alt=""></span>`;
-  const valveBadge = p => p.mvp ? `<span class="badge${p.mvp > 1 ? " key" : ""}">${p.mvp === 1 ? "MVP" : "KEY"}</span>` : "";
-  const lobbyBest = '<span class="summary-best-chip">Lobby best</span>';
+  const valveBadge = p => p.mvp ? `<span class="badge goldMark goldMark--fill${p.mvp > 1 ? " key goldMark--light" : ""}">${p.mvp === 1 ? "MVP" : "KEY"}</span>` : "";
+  const lobbyBest = '<span class="summary-best-chip goldMark goldMark--fill">Lobby best</span>';
+  const firstPlaceClass = "goldMark goldMark--ink goldMark--light";
   const rowOf = p => rows.find(row => row.p === p);
   const actualAverage = p => window.HERO_TABLE.heroes[p.heroId];
 
@@ -200,7 +201,7 @@ window.Summary = (() => {
       <div class="summary-team-tags">${teamTags()}</div>
       <div class="summary-leaders"><span class="summary-label">MVP</span>
         ${rows.slice(0, 3).map(r => `<button type="button" class="summary-leader" data-summary-slot="${r.p.slot}" data-summary-score="${r.p.slot}" aria-label="${esc(fullName(r.p))}, ${ordinal(r.place)}, ${r.score.toFixed(1)} points">
-          ${portraitOf(r.p)}<span>${label(`${r.place}. ${name(r.p)}`, fullName(r.p))}<small>${r.score.toFixed(1)} pts ${valveBadge(r.p)}</small></span></button>`).join("")}
+          ${portraitOf(r.p)}<span><span class="summary-name" title="${esc(fullName(r.p))}">${r.place === 1 ? `<span class="${firstPlaceClass}">1.</span>` : `${r.place}.`} ${esc(name(r.p))}</span><small>${r.score.toFixed(1)} pts ${valveBadge(r.p)}</small></span></button>`).join("")}
         ${viewer?.place > 3 ? `<span class="summary-your-place" tabindex="0" data-summary-score="${viewer.p.slot}">You: ${ordinal(viewer.place)}</span>` : ""}
       </div></header>`;
   }
@@ -328,7 +329,7 @@ window.Summary = (() => {
           ${showHero ? `<div class="summary-hero-name">${portraitOf(p)}${esc(p.hero)}</div>` : ""}
           <div class="summary-meta"><span>${team.name}</span> · ${LANES_BY_COLOR[p.lane] ? LANES_BY_COLOR[p.lane] + " lane" : "No lane"} · ${fmtTime(match.duration_s)}</div>
           <div class="summary-hero-rank">${rankHtml(p.badge) || (state.awaitingValve ? "" : '<span class="rank none">Unranked</span>')}${valveBadge(p)}</div>
-          ${r ? `<div class="summary-place" tabindex="0" data-summary-focus="place" data-summary-score="${p.slot}"><b>${ordinal(r.place)}</b><span>of ${rows.length} · ${r.score.toFixed(1)} pts</span></div>${gap(r)}` : ""}
+          ${r ? `<div class="summary-place" tabindex="0" data-summary-focus="place" data-summary-score="${p.slot}"><b${r.place === 1 ? ` class="${firstPlaceClass}"` : ""}>${ordinal(r.place)}</b><span>of ${rows.length} · ${r.score.toFixed(1)} pts</span></div>${gap(r)}` : ""}
         </div>
       </div>
       <div class="summary-kda" aria-label="Kills, deaths, assists and souls"><b>${kda}</b>${Number.isFinite(souls) ? `<span>${fmtStat(souls)} souls</span>` : ""}</div>
@@ -353,11 +354,13 @@ window.Summary = (() => {
     const cards = stats.map(stat => {
       const [word, tone] = stat.bounds ? bucket(stat.bounds) : [];
       const why = [stat.bounds && proof(p, stat), rankingWhy(stat)].filter(Boolean).join(" ");
-      return `<button type="button" class="summary-stat summary-panel${stat.place === 1 ? " is-best" : ""}"
+      const best = stat.place === 1;
+      return `<button type="button" class="summary-stat summary-panel${best ? " is-best" : ""}"
         data-summary-stat="${stat.key}" data-summary-focus="${stat.key}" data-summary-tip="${esc(why)}">
-        <span class="summary-label">${stat.label}</span><b>${fmtStat(stat.value)}</b>
+        ${best ? '<span class="summary-stat-edge goldMark goldMark--fill goldMark--edge" aria-hidden="true"></span>' : ""}
+        <span class="summary-label">${stat.label}</span><b${best ? ' class="goldMark goldMark--ink"' : ""}>${fmtStat(stat.value)}</b>
         ${word ? `<span class="summary-bucket summary-${tone}">${cue[tone]} ${word}</span>` : ""}
-        <span class="summary-stat-place">${stat.place === 1 ? lobbyBest : `${ordinal(stat.place)} of ${stat.size}`}</span></button>`;
+        <span class="summary-stat-place">${best ? lobbyBest : `${ordinal(stat.place)} of ${stat.size}`}</span></button>`;
     }).join("");
     return `<div class="summary-stat-grid" aria-label="Match stats">${cards}</div>`;
   }

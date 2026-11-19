@@ -151,7 +151,7 @@ function verdictHtml(lane, sides, t) {
   };
   const card = (ps, tag, cls, why, tip) => `<div class="lvVerdict ${cls}" style="--tc:${TEAMS[ps[0].team].c}"${tip ? ` title="${esc(tip)}"` : ""}>` +
     ps.map(p => `<span class="face">${cardImg(p)}</span>`).join("") +
-    `<div><div class="tag">${tag}</div><div class="who">${esc(ps.map(heroName).join(" and "))}</div><div class="why">${why}</div></div></div>`;
+    `<div><div class="tag${cls === "won" ? " goldMark goldMark--fill" : ""}">${tag}</div><div class="who">${esc(ps.map(heroName).join(" and "))}</div><div class="why">${why}</div></div></div>`;
   let h = `<h3>Lane verdict</h3>`;
   if (gap < 0.10) return h + `<div class="lvEven">Even lane: the two sides were within ${Math.max(1, Math.round(gap * 100))}% on souls.</div>`;
   const badly = gap >= 0.25;

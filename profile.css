@@ -21,7 +21,6 @@
   --team2: #4D75C3;
   --team1Bright: #FBDCA0;
   --team2Bright: #BDCBFF;
-  --gold: #FFED79;
   --good: #58D86A;
   --bad: #E8604C;
   --err: #ff8a7a;
@@ -380,7 +379,7 @@ button.hRow.sel { background: rgba(255,239,215,0.12); box-shadow: inset 3px 0 0 
 .acc { color: rgba(255,239,215,0.85); border-color: transparent; background: rgba(255,239,215,0.08); }
 .acc.accMore { padding: 1px 6px; flex: none; }
 .chipMvp { color: var(--offWhite); border-color: rgba(255,239,215,0.4); font-family: var(--oracle); letter-spacing: 0.5px; }
-.chipMvp.gold { color: #1a1406; background: var(--gold); border-color: var(--gold); }
+.chipMvp.goldMark--fill { color: #1a1406; border-color: var(--gold); }
 /* the final build like the game's: 2 rows of 6, each tile edged in its slot color */
 .items { display: grid !important; grid-template-columns: repeat(6, 20px); grid-auto-rows: 20px; gap: 3px; flex-direction: unset !important; }
 .items i { display: block; border-radius: 3px; background: rgba(255,239,215,0.06); }
