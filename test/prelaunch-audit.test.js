@@ -285,6 +285,130 @@ test("all 44 heroes use their official Panorama colors and only unknown IDs use 
   assert.deepEqual(await page("[0, 9999, 'constructor'].map(heroColor)"), Array(3).fill("#EB6A6A"));
 });
 
+function themeHistory() {
+  const row = profile.history.find(m => m.game_mode === 1);
+  return Array.from({ length: 62 }, (_, i) => {
+    const kelvin = i > 0 && i < 30;
+    const brawl = i >= 60;
+    return { ...row, match_id: 140000000 - i, start_time: row.start_time - i * 3600,
+      hero_id: brawl ? 67 : kelvin ? 12 : 76, game_mode: brawl ? 4 : 1,
+      match_mode: i === 1 ? 8 : kelvin ? 4 : 1 };
+  });
+}
+
+async function openThemeProfile(t, history) {
+  const id = 42424242;
+  const mate = { mate_id: 98765432, matches_played: 2, wins: 1, matches: [140000000, 139999999] };
+  const fixtures = new Map([
+    [`/v1/players/${id}/match-history`, history],
+    [`/v1/players/${id}/mate-stats`, [mate]],
+    ["/v1/players/steam", [{ account_id: id, personaname: "Audit Profile" }]],
+  ]);
+  for (const [path, data] of fixtures) routes.set(path, res => json(res, data));
+  t.after(async () => {
+    for (const path of fixtures.keys()) routes.delete(path);
+    await page(`for (const store of [localStorage, sessionStorage]) { store.removeItem("pm_mode"); store.removeItem("pm_with") }`);
+  });
+  await navigate(`/profile.html?id=${id}`);
+  await waitPage(`document.querySelector(".head h1")?.textContent === "Audit Profile" && P.mates`);
+}
+
+const themeColor = `getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()`;
+const mainHeroTitle = `document.querySelector(".mainHero h2")?.textContent`;
+const themeTransition = `document.documentElement.getAnimations().find(a => a.transitionProperty === "--accent")`;
+const clickMode = mode => page(`document.querySelector('[data-mode="${mode}"]').click()`);
+
+test("the Profile main hero, backdrop and accents ease together after a mode change", async t => {
+  const capture = process.env.PM_THEME_SCREENSHOTS;
+  const history = capture ? JSON.parse(await readFile(process.env.PM_THEME_HISTORY, "utf8")) : themeHistory();
+  const setViewport = (width, height) => send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
+  if (capture) {
+    await mkdir(capture, { recursive: true });
+    await setViewport(1920, 1080);
+    t.after(() => setViewport(1440, 900));
+  }
+  async function screenshot(name) {
+    if (!capture) return;
+    await page("document.fonts.ready.then(() => true)");
+    await waitPage(`getComputedStyle(document.getElementById("backdrop")).opacity === "1"`);
+    const { data } = await send("Page.captureScreenshot", { format: "png" });
+    await writeFile(join(capture, name), Buffer.from(data, "base64"));
+  }
+  await openThemeProfile(t, history);
+  const graves = "rgb(217, 243, 52)", kelvin = "rgb(116, 171, 188)";
+  await waitPage(`${themeColor} === "${graves}"`);
+  assert.equal(await page(mainHeroTitle), "Graves");
+  await screenshot("before-all-graves.png");
+
+  const result = await page(`(() => {
+    const nodes = [".head", "#side", "#matches", "#backdrop"];
+    const originals = nodes.map(s => document.querySelector(s));
+    const read = () => ({
+      accent: ${themeColor},
+      ring: getComputedStyle(document.querySelector(".backdrop i")).backgroundColor,
+      wash: getComputedStyle(document.querySelector(".backdrop"), "::before").backgroundImage,
+      chip: getComputedStyle(document.querySelector(".modeSeg .on")).boxShadow,
+      title: getComputedStyle(document.querySelector(".mainHero h2")).color
+    });
+    const before = read();
+    document.querySelector("[data-mode=ranked]").click();
+    getComputedStyle(document.documentElement).getPropertyValue("--accent");
+    const transition = ${themeTransition};
+    transition.pause();
+    transition.currentTime = 200;
+    const middle = read();
+    transition.finish();
+    return { before, middle, after: read(), duration: transition.effect.getTiming().duration,
+      hero: ${mainHeroTitle}, stable: nodes.every((s, i) => document.querySelector(s) === originals[i]) };
+  })()`);
+  assert.equal(result.hero, "Kelvin");
+  assert.equal(result.duration, 400);
+  assert.equal(result.stable, true);
+  assert.equal(result.before.accent, graves);
+  assert.equal(result.after.accent, kelvin);
+  assert.notEqual(result.middle.accent, graves);
+  assert.notEqual(result.middle.accent, kelvin);
+  assert.notEqual(result.middle.wash, result.before.wash);
+  assert.notEqual(result.middle.wash, result.after.wash);
+  for (const state of [result.before, result.middle, result.after]) {
+    assert.equal(state.ring, state.accent);
+    assert.equal(state.title, state.accent);
+    assert.ok(state.chip.includes(state.accent), state.chip);
+  }
+  await screenshot("after-ranked-kelvin.png");
+  assert.deepEqual(await page("auditErrors"), []);
+});
+
+test("the Profile swaps instantly with reduced motion and retains its last color on empty filters", async t => {
+  await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
+  t.after(() => send("Emulation.setEmulatedMedia", { features: [] }));
+  await openThemeProfile(t, themeHistory());
+  const graves = "rgb(217, 243, 52)", kelvin = "rgb(116, 171, 188)", paige = "rgb(37, 143, 99)";
+  const state = () => page(`[${mainHeroTitle}, ${themeColor}, Boolean(${themeTransition})]`);
+  assert.deepEqual(await state(), ["Graves", graves, false]);
+  assert.deepEqual(await page(`document.querySelector("[data-mode=ranked]").click();
+    [${mainHeroTitle}, ${themeColor}, Boolean(${themeTransition})]`), ["Kelvin", kelvin, false]);
+  await clickMode("unranked");
+  assert.deepEqual(await state(), ["Graves", graves, false]);
+  await clickMode("street_brawl");
+  assert.deepEqual(await state(), ["Paige", paige, false]);
+  await clickMode("all");
+  await page(`document.querySelector("[data-range='50']").click()`);
+  assert.deepEqual(await state(), ["Kelvin", kelvin, false]);
+  await page(`document.querySelector("[data-hero='76']").click()`);
+  assert.deepEqual(await state(), ["Graves", graves, false]);
+  await page(`document.querySelector("#clearHero").click()`);
+  assert.deepEqual(await state(), ["Kelvin", kelvin, false]);
+  await page(`document.querySelector("[data-range='all']").click()`);
+  await page(`document.querySelector("#withBtn").click(); document.querySelector("[data-pick='98765432']").click()`);
+  assert.deepEqual(await state(), ["Kelvin", kelvin, false], "the lower hero ID wins a tie even if its game is older");
+  await clickMode("street_brawl");
+  assert.deepEqual(await state(), [null, kelvin, false]);
+  await page(`document.querySelector("#clearWith").click()`);
+  assert.deepEqual(await state(), ["Paige", paige, false]);
+  assert.deepEqual(await page("auditErrors"), []);
+});
+
 test("official colors reach Summary, graph strokes, readout swatches and portrait chips", async () => {
   const players = match.match_info.players.slice();
   players[0] = { ...players[0], hero_id: 76 };
