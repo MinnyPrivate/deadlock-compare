@@ -29,9 +29,10 @@ window.Summary = (() => {
   const who = q => `<span class="hl-who"><b class="summary-name" title="${esc(fullName(q))}">${esc(name(q))}</b>${name(q) !== q.hero ? `<small>${esc(q.hero)}</small>` : ""}</span>`;
   const motion = () => !matchMedia("(prefers-reduced-motion: reduce)").matches;
   const isMe = p => p === state.me;
-  const You = p => isMe(p) ? "You" : name(p);
-  const you = p => isMe(p) ? "you" : name(p);
-  const your = p => isMe(p) ? "your" : `${name(p)}'s`;
+  // These go into HTML strings, so other players' names are escaped here.
+  const You = p => isMe(p) ? "You" : esc(name(p));
+  const you = p => isMe(p) ? "you" : esc(name(p));
+  const your = p => isMe(p) ? "your" : `${esc(name(p))}'s`;
   const short = () => match.duration_s < SHORT_GAME_S;
   const link = (go, text) => `<button type="button" class="hl-link" data-hl-go="${go}">${text}<i aria-hidden="true">›</i></button>`;
 
@@ -446,9 +447,9 @@ window.Summary = (() => {
       sub = `${best.length} kills in ${Math.round(best[best.length - 1].t - best[0].t)} s at ${fmtTime(best[0].t)}.`;
       focus = best; tone = "good"; interest = 30 + best.length * 15;
     } else if (first?.killer === p) {
-      word = "First blood"; sub = `Opened the game on ${name(first.victim)} at ${fmtTime(first.t)}.`; focus = [first]; tone = "good"; interest = 40;
+      word = "First blood"; sub = `Opened the game on ${esc(name(first.victim))} at ${fmtTime(first.t)}.`; focus = [first]; tone = "good"; interest = 40;
     } else if (first?.victim === p) {
-      word = "First to fall"; sub = `${name(first.killer)} got ${you(p)} at ${fmtTime(first.t)}.`; focus = [first]; tone = "bad"; interest = 30;
+      word = "First to fall"; sub = `${esc(name(first.killer))} got ${you(p)} at ${fmtTime(first.t)}.`; focus = [first]; tone = "bad"; interest = 30;
     } else {
       word = "Longest life"; sub = `${fmtTime(longest.to - longest.from)} without dying, from ${fmtTime(longest.from)} to ${fmtTime(longest.to)}.`; interest = 15;
     }
