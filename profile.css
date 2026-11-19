@@ -446,6 +446,7 @@ a.pl:hover { color: var(--offWhite); text-decoration: underline; }
 .upOpt p { margin: 0; font-size: 13px; color: var(--dim); }
 .upOpt code { font-size: 12px; overflow-wrap: anywhere; color: var(--offWhite); }
 .upOpt .btn { flex: none; height: 34px; padding: 0 14px; }
+.upOpt a.btn { display: inline-flex; align-items: center; justify-content: center; }
 .upStatus { min-height: 20px; margin: 4px 2px 10px; font-size: 14px; }
 .upStatus:empty { display: none; }
 .upStatus .btn { height: 30px; padding: 0 12px; margin: 0 8px; }
