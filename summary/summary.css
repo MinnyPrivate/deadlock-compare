@@ -306,6 +306,16 @@ body:not(.standalone) #summaryView, body:not(.standalone) #summaryView * { curso
 }
 .hl-place.is-gold .hl-you-pin { background: var(--gold); }
 
+.hl-sheen {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, rgba(255, 237, 121, .16), transparent);
+  transform: translateX(-100%) skewX(-18deg);
+  pointer-events: none;
+}
+body:not(.standalone) .hl-sheen { display: none; }
+
 /* Stat sweep: every stat against other games on this hero. */
 .hl-sweep { display: flex; flex-direction: column; height: 100%; }
 .hl-sweep-scale, .hl-sweep-row { display: grid; grid-template-columns: 128px minmax(0, 1fr) 104px; align-items: center; gap: 12px; }
@@ -353,36 +363,44 @@ body:not(.standalone) #summaryView, body:not(.standalone) #summaryView * { curso
   background: var(--offWhite);
   box-shadow: 0 0 0 3px #181716, 0 0 14px var(--offWhite);
 }
+.hl-mark-label {
+  position: absolute;
+  transform: translate(-50%, calc(-100% - 12px));
+  padding: 3px 8px 4px;
+  border-radius: 4px;
+  background: rgba(10, 10, 9, .85);
+  box-shadow: 0 0 0 1px rgba(255, 239, 215, .2);
+  font: 600 15px/1 var(--oracle);
+  white-space: nowrap;
+}
+.hl-mark-label.below { transform: translate(-50%, 12px); }
+.hl-mark-label.left.below { transform: translate(calc(-100% - 12px), 8px); }
+.hl-mark-label.left { transform: translate(calc(-100% - 12px), calc(-100% - 4px)); }
 .hl-story-team { position: absolute; left: 0; color: color-mix(in srgb, var(--tc) 70%, var(--offWhite)); font: 700 11px/1 var(--block); letter-spacing: .08em; text-transform: uppercase; }
 .hl-story-team.up { top: 0; }
 .hl-story-team.down { bottom: 0; }
 
 /* Rival: one enemy, the score between you, and damage both ways. */
 .hl-duel { display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: center; gap: 18px; }
-.hl-duel .hl-coin.big { --size: 88px; box-shadow: inset 0 0 0 3px var(--tc), 0 6px 20px #000b; }
+.hl-duel .hl-coin.big { --size: 108px; box-shadow: inset 0 0 0 3px var(--tc), 0 6px 20px #000b; }
 .hl-duel-score { display: flex; flex-direction: column; }
-.hl-duel-score b { font: 600 50px/1 var(--oracle); white-space: nowrap; }
+.hl-duel-score b { font: 600 62px/1 var(--oracle); white-space: nowrap; }
 .hl-duel-score b i { margin: 0 3px; color: var(--faint); font-style: normal; }
 .hl-duel-score small { margin-top: 5px; color: var(--faint); font: 700 11px/1 var(--block); letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
 .hl-duel-bars { display: grid; grid-template-columns: minmax(0, 76px) minmax(0, 1fr) auto; align-items: center; gap: 6px 10px; font-size: 14px; }
 .hl-duel-bars span { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hl-duel-bars i { display: block; width: var(--w); height: 10px; border-radius: 5px; background: var(--tc); transform-origin: left; }
+.hl-duel-bars i { display: block; width: var(--w); height: 12px; border-radius: 6px; background: var(--tc); transform-origin: left; }
 .hl-duel-bars b { font: 600 16px/1 var(--oracle); }
 .hl-duel-bars small { grid-column: 1 / -1; color: var(--faint); font-size: 12px; }
-.hl-split { display: flex; gap: 4px; height: 52px; }
-.hl-split-seg { display: flex; align-items: center; justify-content: center; width: var(--w); min-width: 6px; border-radius: 4px; background: color-mix(in srgb, var(--tc) 45%, #181716); cursor: help; overflow: hidden; }
-.hl-split-seg:first-child { background: var(--tc); }
-.hl-split-seg .hl-coin { --size: 34px; }
-
 /* Lane: a tug of war on team souls at 9:00. */
 .hl-tug { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 14px; }
 .hl-tug-side { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
 .hl-tug-side.right { align-items: flex-end; }
 .hl-tug-coins { display: flex; }
-.hl-tug-coins .hl-coin { --size: 38px; }
+.hl-tug-coins .hl-coin { --size: 54px; }
 .hl-tug-coins .hl-coin + .hl-coin { margin-left: -8px; }
-.hl-tug-side b { font: 600 22px/1 var(--oracle); }
-.hl-tug-bar { position: relative; height: 14px; border-radius: 7px; background: var(--theirs); overflow: hidden; }
+.hl-tug-side b { font: 600 30px/1 var(--oracle); }
+.hl-tug-bar { position: relative; height: 22px; border-radius: 11px; background: var(--theirs); overflow: hidden; }
 .hl-tug-bar i { position: absolute; inset: 0 auto 0 0; width: var(--share); background: var(--mine); transform-origin: left; box-shadow: 2px 0 0 #181716; }
 .hl-tug-mid { position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--offWhite); opacity: .75; }
 .hl-lane-word[data-lane="yellow"] { color: #f2c94c; }
@@ -400,6 +418,7 @@ body:not(.standalone) #summaryView, body:not(.standalone) #summaryView * { curso
 .hl-tick.is-focus { color: var(--gold); }
 .hl-tick.is-focus line { opacity: 1; }
 .hl-tick.is-focus circle { stroke: #181716; stroke-width: 2; }
+.hl-focus-label { fill: var(--gold) !important; font: 600 14px var(--oracle) !important; letter-spacing: 0 !important; }
 .hl-life { fill: var(--gold); opacity: .85; }
 .hl-moments-key { display: flex; align-items: center; gap: 14px; color: var(--faint); font: 700 11px/1 var(--block); letter-spacing: .08em; text-transform: uppercase; }
 .hl-moments-key i { display: inline-block; width: 8px; height: 8px; margin-right: -8px; border-radius: 50%; }
@@ -409,13 +428,21 @@ body:not(.standalone) #summaryView, body:not(.standalone) #summaryView * { curso
 .hl-note { color: #FFD23F; font-size: 13px; cursor: help; }
 
 /* Lobby bests and soul sources. */
-.hl-best-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; padding: 0; list-style: none; }
+.hl-best-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; padding: 0; list-style: none; }
 .hl-best-list li { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 10px 12px 11px; border-radius: 6px; background: linear-gradient(rgba(255, 237, 121, .09), rgba(255, 237, 121, .02)); box-shadow: inset 0 0 0 1px rgba(255, 237, 121, .16); }
 .hl-best-list span { overflow: hidden; color: rgba(255, 239, 215, .78); font: 700 12px/1.1 var(--block); letter-spacing: .06em; text-transform: uppercase; text-overflow: ellipsis; white-space: nowrap; }
-.hl-best-list b { color: var(--gold); font: 600 30px/1 var(--oracle); }
-.hl-stack { display: flex; gap: 3px; height: 54px; }
-.hl-stack span { display: flex; align-items: flex-end; width: var(--w); min-width: 4px; padding: 6px; overflow: hidden; border-radius: 4px; background: rgba(255, 239, 215, calc(var(--o) * .24)); box-shadow: inset 0 3px color-mix(in srgb, var(--hero-accent) 80%, transparent); cursor: help; }
-.hl-stack small { overflow: hidden; color: rgba(255, 239, 215, .85); font-size: 12px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.hl-best-list b { color: var(--gold); font: 600 44px/1 var(--oracle); }
+.hl-best-list li { padding: 16px 16px 18px !important; gap: 10px !important; }
+.hl-cols { display: flex; align-items: flex-end; gap: 10px; height: 124px; }
+body:not(.standalone) .hl-cols { height: 112px; }
+.hl-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 5px; height: 100%; min-width: 0; cursor: help; }
+.hl-col b { color: var(--dim); font: 600 15px/1 var(--oracle); }
+.hl-col.is-top b { color: var(--offWhite); font-size: 18px; }
+.hl-col i { display: block; width: 100%; max-width: 46px; height: var(--h); min-height: 3px; border-radius: 4px 4px 1px 1px; background: color-mix(in srgb, var(--c) 45%, #181716); transform-origin: bottom; }
+.hl-col.is-top i { background: var(--c); box-shadow: 0 0 18px color-mix(in srgb, var(--c) 40%, transparent); }
+.hl-col .hl-coin { --size: 32px; }
+.hl-col small { max-width: 100%; overflow: hidden; color: var(--dim); font-size: 12px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.hl-col.is-top small { color: var(--offWhite); }
 
 /* Waiting for Valve: the column plus the raw numbers. */
 .hl-waiting { align-self: start; padding: 24px 28px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
@@ -499,3 +526,11 @@ body:not(.standalone) #summaryView, body:not(.standalone) #summaryView * { curso
 .share-privacy { margin: 12px 0 0; color: rgba(255, 239, 215, .5); font-size: 13px; }
 #shareDialog button:focus-visible { outline: 2px solid var(--offWhite); outline-offset: 3px; }
 @media (prefers-reduced-motion: reduce) { .share-panel { animation: none; } }
+
+/* The in-game panel is 84 units shorter: tighten the type a step so every card keeps its whole visual. */
+body:not(.standalone) .hl-big.hl-word { font-size: 40px; }
+body:not(.standalone) .hl-card { padding-top: 14px; padding-bottom: 14px; }
+body:not(.standalone) .hl-body { min-height: 38px; margin-top: 4px; }
+body:not(.standalone) .hl-grid { grid-template-rows: .76fr 1fr 1fr; }
+body:not(.standalone) .hl-strip { height: 164px; }
+body:not(.standalone) .hl-story { min-height: 64px; }

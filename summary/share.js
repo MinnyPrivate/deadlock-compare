@@ -176,26 +176,26 @@ window.ShareCard = (() => {
     }
 
     const lines = d.lines.length ? d.lines : [{ label: "Match", big: d.won ? "Victory" : "Defeat", sub: d.duration, tone: "" }];
-    const top = 300, gap = 22, colW = (R - L - gap * (lines.length - 1)) / lines.length;
+    const top = 294, gap = 22, colW = (R - L - gap * (lines.length - 1)) / lines.length;
     lines.forEach((line, i) => {
       const cx = L + i * (colW + gap);
       ctx.fillStyle = "rgba(24,23,22,.82)";
-      roundRect(ctx, cx, top, colW, 196, 10);
+      roundRect(ctx, cx, top, colW, 224, 10);
       ctx.fill();
       ctx.strokeStyle = line.tone === "gold" ? "rgba(255,237,121,.35)" : "rgba(255,239,215,.1)";
       ctx.lineWidth = 1;
       ctx.stroke();
-      if (line.tone === "bad") { ctx.fillStyle = "#B84A3C"; ctx.fillRect(cx, top + 10, 3, 176); }
+      if (line.tone === "bad") { ctx.fillStyle = "#B84A3C"; ctx.fillRect(cx, top + 12, 3, 200); }
       ctx.font = "700 14px Pulp";
       ctx.fillStyle = TONE[line.tone] || DIM;
-      ctx.fillText(wrap(ctx, line.label.toUpperCase(), colW - 40, 1)[0], cx + 20, top + 34);
+      ctx.fillText(wrap(ctx, line.label.toUpperCase(), colW - 40, 1)[0], cx + 22, top + 42);
       const size = fit(ctx, line.big, colW - 40, "600 {s}px Oracle", 46, 26);
       ctx.font = `600 ${size}px Oracle`;
       ctx.fillStyle = line.tone === "gold" ? "#FFED79" : line.tone === "good" ? "#7FE38C" : CREAM;
-      ctx.fillText(line.big, cx + 20, top + 92);
+      ctx.fillText(line.big, cx + 22, top + 106);
       ctx.font = "600 18px Radiance";
       ctx.fillStyle = "rgba(255,239,215,.78)";
-      wrap(ctx, line.sub || "", colW - 40, 3).forEach((text, j) => ctx.fillText(text, cx + 20, top + 128 + j * 25));
+      wrap(ctx, line.sub || "", colW - 40, 3).forEach((text, j) => ctx.fillText(text, cx + 22, top + 146 + j * 25));
     });
 
     // Footer: the site's name and the fan-project notice.

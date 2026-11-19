@@ -202,6 +202,13 @@ window.Summary = (() => {
       .sort((a, b) => b.out - a.out);
   }
 
+  // A small column chart: one bar per item, tallest first, its value on top and a coin or label under it.
+  function columns(items) {
+    const max = Math.max(1, ...items.map(item => item.value));
+    return `<div class="hl-cols">${items.map(item => `<div class="hl-col${item.top ? " is-top" : ""}" ${explain(item.tip)}>
+      <b>${fmtStat(item.value)}</b><i style="--h:${Math.max(3, item.value / max * 100).toFixed(1)}%;--c:${item.color}"></i>${item.foot}</div>`).join("")}</div>`;
+  }
+
   // ---------- cards ----------
   // Each builder returns { id, area, kicker, big, sub, visual, more, go, tone, interest, share }, or null when it has nothing to say.
   function placeCard(p) {
@@ -236,7 +243,7 @@ window.Summary = (() => {
       kicker,
       big: `<b class="hl-big" data-count="${r.place}" data-from="${n}" data-fmt="ord">${ordinal(r.place)}</b><span class="hl-of">of ${n}</span>`,
       sub: `${esc(gapText)}${teamBest && r.place > 1 ? ` · best on ${TEAMS[p.team].name}` : ""}`,
-      visual: strip,
+      visual: strip + (r.place === 1 ? '<i class="hl-sheen" aria-hidden="true"></i>' : ""),
       more: `<span>Biggest boost <b class="summary-up">${esc(boost.label)} ${signed(boost.v, 1)}</b></span><span>Biggest drag <b class="${drag.v < 0 ? "summary-down" : ""}">${esc(drag.label)} ${signed(drag.v, 1)}</b></span>`,
       interest: r.place === 1 ? 100 : r.place <= 3 ? 60 : bottom ? 45 : 20,
       share: { label: kicker, big: `${ordinal(r.place)} of ${n}`, sub: gapText, tone: r.place === 1 ? "gold" : bottom ? "bad" : "" },
@@ -269,7 +276,7 @@ window.Summary = (() => {
       visual: `<div class="hl-sweep"><div class="hl-sweep-scale"><span>${vsHero ? "Bottom" : "Last"}</span><span>${vsHero ? "Top" : "1st"}</span></div>${lines}</div>`,
       more: low ? "<span>No stat above typical</span>" : worstTone === "down" ? `<span>Weakest <b class="summary-down">${esc(worst.short || worst.label)} · ${esc(worstWord)}</b></span>` : "<span>No stat below typical</span>",
       interest: flat ? 5 : best.percentile ? Math.abs(best.percentile.pct - 50) : 10,
-      share: flat || low ? null : { label: vsHero ? `Vs other ${p.hero} games` : "Vs the lobby", big: bestWord, sub: `in ${bestName}${per}`, tone: "good" },
+      share: flat || low ? null : { label: vsHero ? `Vs ${p.hero} games` : "Vs the lobby", big: bestWord, sub: `in ${bestName}${per}`, tone: "good" },
     };
   }
 
@@ -283,6 +290,10 @@ window.Summary = (() => {
       if (s && sign && s !== sign) changes++;
       if (s) sign = s;
     }
+    // Share of the match this team spent ahead, weighted by the time between snapshots.
+    let aheadTime = 0;
+    for (let i = 1; i < series.length; i++) if (series[i].lead > 0) aheadTime += series[i].t - series[i - 1].t;
+    const ahead = aheadTime / Math.max(1, series[series.length - 1].t);
     const trailedLate = series.some(pt => pt.t > 300 && (won ? pt.lead < 0 : pt.lead > 0));
     const final = series[series.length - 1].lead;
     let word, sub, tone = "", mark;
@@ -291,8 +302,9 @@ window.Summary = (() => {
     else if (won && !trailedLate && high.lead >= 15000) { word = "Stomp"; sub = `Never trailed after 5:00. Up ${fmtStat(high.lead)} at the peak.`; mark = high; tone = "good"; }
     else if (!won && !trailedLate && low.lead <= -15000) { word = "Steamrolled"; sub = `Never led after 5:00. Down ${fmtStat(-low.lead)} at the worst.`; mark = low; tone = "bad"; }
     else if (changes >= 3) { word = "Back and forth"; sub = `The soul lead changed hands ${changes} times. ${won ? "Won" : "Lost"} in ${fmtTime(dur)}.`; mark = won ? high : low; }
-    else if (won) { word = "Held the lead"; sub = `Ahead most of the game. Won in ${fmtTime(dur)}.`; mark = high; }
-    else { word = "Chased all game"; sub = `Behind most of the game. Lost in ${fmtTime(dur)}.`; mark = low; tone = "bad"; }
+    else if (won && ahead >= 0.6) { word = "Held the lead"; sub = `Ahead for ${Math.round(ahead * 100)}% of the game. Won in ${fmtTime(dur)}.`; mark = high; }
+    else if (!won && ahead <= 0.4) { word = "Chased all game"; sub = `Behind for ${Math.round((1 - ahead) * 100)}% of the game. Lost in ${fmtTime(dur)}.`; mark = low; tone = "bad"; }
+    else { word = "Close one"; sub = `Neither team pulled clear. ${won ? "Won" : "Lost"} in ${fmtTime(dur)}.`; mark = won ? high : low; }
     const W = 440, H = 120, mid = H / 2;
     const scale = Math.max(2000, ...series.map(pt => Math.abs(pt.lead)));
     const x = t => (t / dur * W).toFixed(1), y = v => (mid - v / scale * (mid - 8)).toFixed(1);
@@ -307,7 +319,10 @@ window.Summary = (() => {
       <g class="hl-area"><path d="${area}" fill="${mine}" fill-opacity=".42" clip-path="url(#${id}u)"/><path d="${area}" fill="${theirs}" fill-opacity=".42" clip-path="url(#${id}d)"/></g>
       <line class="hl-zero" x1="0" x2="${W}" y1="${mid}" y2="${mid}"/>
       <path class="hl-story-line" d="${line}" pathLength="1"/>${bosses}</svg>`;
-    const dot = `<i class="hl-mark" style="left:${(mark.t / dur * 100).toFixed(2)}%;top:${(y(mark.lead) / H * 100).toFixed(2)}%"></i>`;
+    const markX = mark.t / dur * 100, markY = y(mark.lead) / H * 100;
+    const markText = `${mark.lead >= 0 ? "+" : "−"}${fmtStat(Math.abs(mark.lead))} at ${fmtTime(mark.t)}`;
+    const dot = `<i class="hl-mark" style="left:${markX.toFixed(2)}%;top:${markY.toFixed(2)}%"></i>
+      <span class="hl-mark-label${markY < 40 ? " below" : ""}${markX > 78 ? " left" : ""}" style="left:${markX.toFixed(2)}%;top:${markY.toFixed(2)}%">${markText}</span>`;
     const labels = `<span class="hl-story-team up" style="--tc:${mine}">${esc(TEAMS[p.team].name)} ahead</span><span class="hl-story-team down" style="--tc:${theirs}">${esc(TEAMS[1 - p.team].name)} ahead</span>`;
     return {
       id: "story", area: "story", go: link("souls_lead", "Graphs"), tone: tone === "bad" ? "bad" : "",
@@ -331,7 +346,7 @@ window.Summary = (() => {
       const bars = d ? `<div class="hl-duel-bars">
           <span>${isMe(p) ? "You" : esc(name(p))}</span><i style="--w:${(d.out / max * 100).toFixed(1)}%;--tc:${TEAMS[p.team].c}"></i><b>${fmtStat(d.out)}</b>
           <span>${esc(name(q))}</span><i style="--w:${(d.in / max * 100).toFixed(1)}%;--tc:${TEAMS[q.team].c}"></i><b>${fmtStat(d.in)}</b>
-          <small>Hero damage to each other</small></div>` : "";
+          <small>Damage to each other</small></div>` : "";
       return {
         id: "rival", area: "rival", go: link("matchups", "Matchups"), tone, rival: q,
         kicker: label, big: `<span class="hl-rival-name">${who(q)}</span>`, sub,
@@ -367,7 +382,7 @@ window.Summary = (() => {
       return {
         id: "rival", area: "rival", go: link("matchups", "Matchups"), tone: "", rival: top.q, kicker: "Focus target",
         big: `<span class="hl-rival-name">${who(top.q)}</span>`, sub: `Took ${share}% of ${your(p)} hero damage.`,
-        visual: `<div class="hl-split">${damage.map(e => `<span class="hl-split-seg" style="--w:${(e.out / Math.max(1, all) * 100).toFixed(2)}%;--tc:${TEAMS[e.q.team].c}" ${explain(`${fmtStat(e.out)} hero damage to ${name(e.q)}.`)}>${e.out / Math.max(1, all) >= 0.09 ? coin(e.q) : ""}</span>`).join("")}</div>`,
+        visual: columns(damage.map((e, i) => ({ value: e.out, color: TEAMS[e.q.team].c, top: i === 0, foot: coin(e.q), tip: `${fmtStat(e.out)} hero damage to ${name(e.q)}.` }))),
         more: `<span>No one killed ${you(p)} twice. ${killers} different killers.</span>`, interest: 20, share: null,
       };
     }
@@ -437,13 +452,14 @@ window.Summary = (() => {
     } else {
       word = "Longest life"; sub = `${fmtTime(longest.to - longest.from)} without dying, from ${fmtTime(longest.from)} to ${fmtTime(longest.to)}.`; interest = 15;
     }
-    const W = 440, H = 100, mid = 46, x = t => (t / dur * W).toFixed(1);
-    const tick = (e, up) => `<g class="hl-tick ${up ? "kill" : "death"}${focus.includes(e) ? " is-focus" : ""}" transform="translate(${x(e.t)},${mid})"><line y1="${up ? -4 : 4}" y2="${up ? -24 : 24}"/><circle cy="${up ? -28 : 28}" r="${focus.includes(e) ? 6 : 4}"/></g>`;
+    const W = 440, H = 122, mid = 57, x = t => (t / dur * W).toFixed(1);
+    const tick = (e, up) => `<g class="hl-tick ${up ? "kill" : "death"}${focus.includes(e) ? " is-focus" : ""}" transform="translate(${x(e.t)},${mid})"><line y1="${up ? -4 : 4}" y2="${up ? -32 : 32}"/><circle cy="${up ? -37 : 37}" r="${focus.includes(e) ? 7 : 5}"/></g>`;
+    const focusLabel = focus.length ? `<text class="hl-focus-label" x="${Math.min(W - 24, Math.max(24, Number(x(focus[0].t))))}" y="${focus[0].victim === p ? mid + 57 : mid - 48}">${fmtTime(focus[0].t)}</text>` : "";
     const life = word === "Longest life" ? `<rect class="hl-life" x="${x(longest.from)}" y="${mid - 3}" width="${((longest.to - longest.from) / dur * W).toFixed(1)}" height="6" rx="3"/>` : "";
-    const bosses = (match.mid_boss || []).filter(b => b.destroyed_time_s).map(b => `<path class="hl-boss" d="M${x(b.destroyed_time_s)},${mid - 6}l6,6l-6,6l-6,-6Z"/>`).join("");
+    const bosses = (match.mid_boss || []).filter(b => b.destroyed_time_s).map(b => `<path class="hl-boss" d="M${x(b.destroyed_time_s)},${mid - 7}l7,7l-7,7l-7,-7Z"/>`).join("");
     const marks = Array.from({ length: Math.floor((dur - 60) / 600) }, (_, i) => `<text x="${x((i + 1) * 600)}" y="${H - 2}">${(i + 1) * 10}:00</text>`).join("");
     const svg = `<svg class="hl-moments-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${kills.length} kills above the line and ${died.length} deaths below it, across the match">
-      <line class="hl-zero" x1="0" x2="${W}" y1="${mid}" y2="${mid}"/>${life}${died.map(e => tick(e, false)).join("")}${kills.map(e => tick(e, true)).join("")}${bosses}${marks}</svg>`;
+      <line class="hl-zero" x1="0" x2="${W}" y1="${mid}" y2="${mid}"/>${life}${died.map(e => tick(e, false)).join("")}${kills.map(e => tick(e, true)).join("")}${bosses}${focusLabel}${marks}</svg>`;
     const mismatch = kills.length !== (p.raw.kills || 0) || died.length !== (p.raw.deaths || 0);
     return {
       id: "moments", area: "moments", go: link("kills", "Graphs"), tone: tone === "bad" ? "bad" : "",
@@ -461,7 +477,7 @@ window.Summary = (() => {
     const LIST = [
       ["Kills", q => q.raw.kills || 0], ["Assists", q => q.raw.assists || 0], ["Fewest deaths", q => -(q.raw.deaths || 0)],
       ["Hero damage", q => snap(q).player_damage || 0], ["Objective damage", q => snap(q).boss_damage || 0],
-      ["Souls", q => q.souls || 0], ["Ally healing", q => (snap(q).teammate_healing || 0) + (snap(q).teammate_barriering || 0)],
+      ["Souls", q => q.souls || 0], ["Ally heal + barrier", q => (snap(q).teammate_healing || 0) + (snap(q).teammate_barriering || 0)],
       ["Last hits", q => q.raw.last_hits || 0], ["Denies", q => q.raw.denies || 0],
       ["Damage taken", q => (snap(q).player_damage_taken || 0) + (snap(q).damage_mitigated || 0)],
     ];
@@ -495,7 +511,7 @@ window.Summary = (() => {
       kicker: "Where the souls came from",
       big: `<b class="hl-big hl-word">${esc(sources[0]?.[0] || "Souls")}</b>`,
       sub: `${Math.round((sources[0]?.[1] || 0) / total * 100)}% of ${your(p)} souls. ${ordinal(place)} richest in the lobby.`,
-      visual: `<div class="hl-stack">${sources.map(([label, v], i) => `<span style="--w:${(v / total * 100).toFixed(2)}%;--o:${(1 - i * 0.17).toFixed(2)}" ${explain(`${label}: ${fmtStat(v)} souls.`)}><small>${esc(label)}</small></span>`).join("")}</div>`,
+      visual: columns(sources.map(([label, v], i) => ({ value: v, color: "var(--hero-accent)", top: i === 0, foot: `<small>${esc(label)}</small>`, tip: `${label}: ${fmtStat(v)} souls.` }))),
       more: `<span>Dropped on death <b>${fmtStat(s.gold_death_loss || 0)}</b></span>`, interest: 5, share: null,
     };
   }
@@ -622,12 +638,15 @@ window.Summary = (() => {
       { duration: 320, easing: ease, ...at(320 + i * 40) }));
     view.querySelectorAll(".hl-sweep-dot").forEach((dot, i) => dot.animate([{ left: "50%", opacity: 0 }, { left: dot.style.getPropertyValue("--x"), opacity: 1 }],
       { duration: 700, easing: ease, ...at(420 + i * 60) }));
+    view.querySelectorAll(".hl-sheen").forEach(el => el.animate([{ transform: "translateX(-100%) skewX(-18deg)", opacity: 1 }, { transform: "translateX(260%) skewX(-18deg)", opacity: 1 }],
+      { duration: 1100, easing: "ease-in-out", fill: "both", ...at(700) }));
     view.querySelectorAll(".hl-story-line").forEach(line => line.animate([{ strokeDashoffset: 1 }, { strokeDashoffset: 0 }], { duration: 1000, easing: "ease-out", ...at(460) }));
     view.querySelectorAll(".hl-area, .hl-mark").forEach(el => el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 500, ...at(900) }));
     view.querySelectorAll(".hl-tick").forEach((tick, i) => tick.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, ...at(560 + i * 22) }));
     view.querySelectorAll(".hl-tug").forEach(tug => tug.querySelector(".hl-tug-bar i").animate([{ width: "50%" }, { width: tug.style.getPropertyValue("--share") }], { duration: 900, easing: ease, ...at(560) }));
+    view.querySelectorAll(".hl-col i").forEach((bar, i) => bar.animate([{ transform: "scaleY(0)" }, { transform: "scaleY(1)" }], { duration: 600, easing: ease, ...at(520 + i * 50) }));
     view.querySelectorAll(".hl-duel-bars i").forEach(bar => bar.animate([{ transform: "scaleX(0)" }, { transform: "scaleX(1)" }], { duration: 700, easing: ease, ...at(560) }));
-    view.querySelectorAll(".hl-best-list li, .hl-split-seg, .hl-stack span").forEach((el, i) => el.animate([{ opacity: 0, transform: "translateY(6px)" }, { opacity: 1, transform: "none" }],
+    view.querySelectorAll(".hl-best-list li").forEach((el, i) => el.animate([{ opacity: 0, transform: "translateY(6px)" }, { opacity: 1, transform: "none" }],
       { duration: 260, easing: ease, ...at(600 + i * 55) }));
     view.querySelectorAll("[data-count]").forEach(el => {
       const to = Number(el.dataset.count), from = Number(el.dataset.from || 0), ord = el.dataset.fmt === "ord";
