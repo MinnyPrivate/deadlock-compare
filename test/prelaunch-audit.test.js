@@ -259,6 +259,56 @@ test("Time of day shares a profile-wide color scale across hours and sample size
   await waitPage("document.querySelector('.clockLegend')?.textContent.includes('vs your 50%')");
 });
 
+test("all 44 heroes use their official Panorama colors and only unknown IDs use coral", async () => {
+  const expected = require("./official-hero-colors.json");
+  assert.equal(expected.length, 44);
+  assert.equal(new Set(expected.map(hero => hero.id)).size, 44);
+  await navigate("/profile.html");
+  await waitPage("typeof heroColor === 'function'");
+  const palette = await page(`${JSON.stringify(expected.map(hero => hero.id))}.map(id => ({
+    id, name: HERO_NAMES[id], hex: heroColor(id)
+  }))`);
+  assert.deepEqual(palette, expected);
+  assert.ok(palette.every(hero => hero.hex !== "#EB6A6A"));
+  assert.deepEqual(await page("[0, 9999, 'constructor'].map(heroColor)"), Array(3).fill("#EB6A6A"));
+});
+
+test("official colors reach Summary, graph strokes, readout swatches and portrait chips", async () => {
+  const players = match.match_info.players.slice();
+  players[0] = { ...players[0], hero_id: 76 };
+  players[1] = { ...players[1], hero_id: 16 };
+  routes.set(`/v1/matches/${standardId}/metadata`, res => json(res, { match_info: { ...match.match_info, players } }));
+  const [lightSlot, darkSlot] = players.map(p => p.player_slot);
+  const url = `/?match=${standardId}`;
+  await navigate(`${url}&tab=summary&pick=${lightSlot}`);
+  await loaded(standardId);
+  await waitPage("document.querySelector('.summary-chart svg')");
+  assert.deepEqual(await page(`[
+    document.documentElement.style.getPropertyValue("--accent"),
+    document.querySelector("#summaryView").style.getPropertyValue("--hero-accent"),
+    document.querySelector("#stage").style.getPropertyValue("--summary-underline")
+  ]`), Array(3).fill("#D9F334"));
+
+  await navigate(`${url}&graph=souls&players=${lightSlot},${darkSlot}`);
+  await loaded(standardId);
+  assert.deepEqual(await page(`[...document.querySelectorAll("#chartLines path[stroke-width='2.6']")]
+    .map(node => node.getAttribute("stroke")).sort()`), ["#572798", "#D9F334"]);
+  assert.deepEqual(await page(`[...document.querySelectorAll(".player.sel")]
+    .map(node => node.style.getPropertyValue("--pc")).sort()`), ["#572798", "#D9F334"]);
+  const point = await page(`(() => {
+    const bounds = document.querySelector("#graphCtn").getBoundingClientRect();
+    return { x: bounds.x + bounds.width * 0.6, y: bounds.y + bounds.height * 0.5 };
+  })()`);
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", ...point });
+  await waitPage("document.querySelectorAll('#tooltip .heroRows .hr').length === 2");
+  assert.deepEqual(await page(`[...document.querySelectorAll("#tooltip .heroRows .hr")]
+    .map(node => node.style.getPropertyValue("--pc")).sort()`), ["#572798", "#D9F334"]);
+  await page("document.querySelector('[data-tab=matchups]').click()");
+  await waitPage("document.querySelectorAll('.muCell').length === 36");
+  assert.ok(await page("[...document.querySelectorAll('.muCell')].every(cell => Number(cell.style.getPropertyValue('--heat')) > 0)"));
+  assert.deepEqual(await page("auditErrors"), []);
+});
+
 test("U2 and P1: Summary opens on the viewer and cleans the hint while preserving other parameters", async () => {
   await navigate(`${localMatch}&me=81646827&unrelated=keep#friendly=1`);
   await loaded(standardId);

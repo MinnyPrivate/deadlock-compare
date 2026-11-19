@@ -474,29 +474,17 @@ window.Summary = (() => {
         `<button class="graphOptionButton" type="button" data-summary-graph-stat="${s.key}">${s.short || s.label}</button>`).join("")}</div>`;
   }
 
-  function accentFor(p) {
-    const neutral = "#ac9e8b";
-    const color = HeroBackdrop.localAccent(p.heroId);
-    if (!/^#[0-9a-f]{6}$/i.test(color)) return neutral;
-    const [r, g, b] = color.slice(1).match(/../g).map(hex => parseInt(hex, 16));
-    const max = Math.max(r, g, b), delta = max - Math.min(r, g, b);
-    if (delta < 8) return neutral;
-    const hue = ((max === r ? (g - b) / delta : max === g ? 2 + (b - r) / delta : 4 + (r - g) / delta) * 60 + 360) % 360;
-    // Gold (#FFED79) has a hue of about 52 degrees.
-    return Math.abs(hue - 52) <= 20 ? neutral : color;
-  }
-
   function render(preserveFocus = false) {
     prepareMatch();
     const p = selected(), stats = statsFor(p), lane = rows.length ? laneInfo(p) : null;
     const focus = preserveFocus && view.contains(document.activeElement) && document.activeElement.dataset.summaryFocus;
     hideTip();
-    const accent = accentFor(p);
+    const accent = heroColor(p.heroId);
     view.style.setProperty("--hero-accent", accent);
     $("stage").style.setProperty("--summary-underline", accent);
     const backdropKey = p.heroId + "/" + (art[p.heroId]?.bg || "");
     if (!EMBED && renderedBackdrop !== backdropKey) {
-      HeroBackdrop.apply(p.heroId, art[p.heroId], accent);
+      HeroBackdrop.apply(p.heroId, art[p.heroId]);
       renderedBackdrop = backdropKey;
     }
     if (enteredMatch !== match) {
