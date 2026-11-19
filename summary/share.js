@@ -127,7 +127,16 @@ window.ShareCard = (() => {
 
     // Right side: result, KDA, then the three highlights.
     const L = 510, R = W - 56;
-    if (icon) { ctx.filter = "brightness(1.7)"; ctx.drawImage(icon, L, 52, 46, 46); ctx.filter = "none"; }
+    if (icon) { // the team crest as a cream silhouette, since Hidden King's is near black
+      const tint = document.createElement("canvas");
+      tint.width = tint.height = 46 * SCALE;
+      const t = tint.getContext("2d");
+      t.drawImage(icon, 0, 0, tint.width, tint.height);
+      t.globalCompositeOperation = "source-in";
+      t.fillStyle = CREAM;
+      t.fillRect(0, 0, tint.width, tint.height);
+      ctx.drawImage(tint, L, 52, 46, 46);
+    }
     ctx.save();
     ctx.translate(L + 62, 96);
     ctx.rotate(-3 * Math.PI / 180);
