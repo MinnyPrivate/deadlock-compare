@@ -289,7 +289,8 @@ const GROUP_SUB = { [PS]: "Every line type for the heroes you pick" };
 function pct(a, b) { return b ? (100 * (a || 0)) / b : null; }
 
 const params = new URLSearchParams(location.search);
-const EMBED = params.get("embed") === "1";
+const EMBED = PostmortemEmbed.enabled;
+PostmortemEmbed.startMatchHeartbeat(params.get("match"));
 function entryTab() {
   const tab = params.get("tab");
   if (["summary", "graphs", "mvp", "matchups"].includes(tab)) return tab;
@@ -702,6 +703,13 @@ function applyViewer() {
   const confirmedMe = known && state.players.find(p => samePlayer(p, known));
   state.me = previewMe || accountMe || gameMe || confirmedMe || null;
   if (state.me) state.leftTeam = state.me.team;
+}
+
+function matchPlayerProfile(p, name) {
+  const id = PlayerLinks.accountId(p.raw.account_id);
+  if (id === null) return esc(name);
+  const href = PlayerLinks.profileHref(id, { fromMatch: state.match.match_id });
+  return `<a class="matchPlayerProfile" href="${esc(href)}" data-player-id="${id}" title="${esc(name + "\n" + PlayerLinks.hint)}">${esc(name)}</a>`;
 }
 
 function hasSummaryStats() {
@@ -1964,17 +1972,30 @@ buildDropDown();
 if (params.get("graph") && GRAPHS.some(g => g.id === params.get("graph"))) state.graph = params.get("graph");
 // Opened from a Profile page: a Back control returns to that profile. When the profile is the page just before this one,
 // it uses the browser's own back, so the profile comes back exactly as it was (scroll, filters).
-if (!EMBED && params.get("from") === "profile") {
-  const back = $("backLink"), pid = (params.get("pid") || "").replace(/\D/g, "");
-  back.href = pid ? "profile.html?id=" + pid : "profile.html";
+const fromProfileId = params.get("from") === "profile" ? PlayerLinks.accountId(params.get("pid")) : null;
+if (params.get("from") === "profile") {
+  const back = $("backLink");
+  back.href = PlayerLinks.profileHref(fromProfileId);
+  if (fromProfileId !== null) back.dataset.playerId = fromProfileId;
   back.hidden = false;
   document.body.classList.add("hasBack");
-  back.addEventListener("click", ev => {
-    let prev = null;
-    try { prev = document.referrer ? new URL(document.referrer) : null; } catch (e) { /* no referrer */ }
-    if (prev && prev.origin === location.origin && /profile\.html$|\/$/.test(prev.pathname) && history.length > 1) { ev.preventDefault(); history.back(); }
+  back.addEventListener("click", event => {
+    if (event.button || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || !document.referrer || history.length < 2) return;
+    const previous = new URL(document.referrer);
+    if (previous.origin === location.origin && /\/profile\.html$/.test(previous.pathname)) {
+      event.preventDefault();
+      history.back();
+    }
   });
 }
+PlayerLinks.bind({
+  filterProfileId() {
+    const viewer = PlayerLinks.accountId(state.me?.raw.account_id);
+    if (viewer !== null) return viewer;
+    try { return PlayerLinks.accountId(localStorage.getItem("pm_me")) ?? fromProfileId; }
+    catch (_) { return fromProfileId; }
+  },
+});
 $("matchForm").onsubmit = ev => {
   ev.preventDefault();
   const id = $("matchInput").value.trim();
@@ -2004,19 +2025,6 @@ window.addEventListener("hashchange", () => {
   consumeViewerAccount(activeMatchId);
   if (state.match) { applyViewer(); renderAll(); }
 });
-// Tell the mod the page has drawn, so it can show the panel without the browser's gray flash.
-// A hidden browser may not run animation frames, so a timer backs it up.
-// The match ID rides along so the mod can tell this page from an older one still on screen while a new match loads.
-// After that, a heartbeat every 2 seconds: if the browser ever swaps the page for its error screen (the blue "-105" one),
-// the heartbeat stops and the mod hides the browser, shows its own "Loading" text and loads the page again.
-if (EMBED) {
-  let told = false;
-  const mid = /^\d+$/.test(params.get("match") || "") ? params.get("match") : "0";
-  const ready = () => { if (!told) { told = true; document.title = "DLC_READY:" + mid + ":" + Date.now(); } };
-  requestAnimationFrame(() => requestAnimationFrame(ready));
-  setTimeout(ready, 400);
-  setInterval(() => { if (told) document.title = "DLC_ALIVE:" + mid + ":" + Date.now(); }, 2000);
-}
 // The match can arrive from disk before the tab scripts below app.js have run.
 document.addEventListener("DOMContentLoaded", () => {
   const startId = params.get("match");

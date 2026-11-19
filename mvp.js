@@ -241,7 +241,7 @@ function whyScaled(rows, pick, mode) {
     <div class="whyHead">
       ${cardFace(p, "lg")}
       <div class="whyName">
-        <div class="hn">${esc(heroName(p))}</div>
+        <div class="hn">${matchPlayerProfile(p, heroName(p))}</div>
         <div class="meta"><span style="color:${T.c}">${T.color}</span> · ${won ? "Won" : "Lost"}${laneDetail(p)}${p.left ? ` · <span class="leftTag">Left at ${fmtTime(p.left)}</span>` : ""}</div>
         ${isStreetBrawl() ? "" : rankHtml(p.badge) || `<span class="rank none">Unranked</span>`}
       </div>
@@ -350,7 +350,7 @@ function whyValve(rows, pick) {
     <div class="whyHead">
       ${cardFace(p, "lg")}
       <div class="whyName">
-        <div class="hn">${esc(heroName(p))}</div>
+        <div class="hn">${matchPlayerProfile(p, heroName(p))}</div>
         <div class="meta"><span style="color:${T.c}">${T.color}</span> · ${won ? "Won" : "Lost"}${laneDetail(p)}${p.left ? ` · <span class="leftTag">Left at ${fmtTime(p.left)}</span>` : ""}</div>
         ${rankHtml(p.badge) || `<span class="rank none">Unranked</span>`}
       </div>

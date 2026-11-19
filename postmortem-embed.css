@@ -1,0 +1,17 @@
+/* Ordinary player and match links use the hand on the website. */
+a[data-player-id], .match, .match .mLink { cursor: pointer; }
+
+/* Click rules shared by both in-game pages. The native panel uses a plain arrow everywhere. */
+.pmEmbed, .pmEmbed *, .pmEmbed *::before, .pmEmbed *::after { cursor: default !important; }
+
+.pmEmbed :is(a[href], button:enabled, summary, [role="button"], input:enabled, select:enabled,
+  label, .dropDown, .lgRow, .match) {
+  transition: none;
+  animation: none;
+}
+.pmEmbed :is(a[href]:not(.mLink), button:enabled, summary, [role="button"], input:enabled, select:enabled,
+  label, .dropDown, .lgRow, .match):hover:not(:focus-visible) {
+  outline: 1px solid var(--accent, var(--offWhite));
+  outline-offset: -1px;
+}
+.pmEmbed :is(.match, .sq, .teamScore, .player):hover { filter: none; }

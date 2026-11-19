@@ -6,19 +6,17 @@
 
 const API = "https://api.deadlock-api.com/v1/";
 const STEAM64_BASE = 76561197960265728n;
-const MAX_ACCOUNT_ID = 4294967295;
+const { accountId, profileHref, hint: playerClickTip } = PlayerLinks;
 const $main = document.getElementById("main");
 const $tip = document.getElementById("tip");
 const $q = document.getElementById("q");
 
 const hideout = (() => {
-  const params = new URL(location.href).searchParams;
-  if (params.get("embed") !== "1" && params.get("ingame") !== "1") return null;
+  if (!PostmortemEmbed.enabled) return null;
   document.documentElement.classList.add("profileEmbed");
 
   // Panorama receives title updates. Space them out and send only fixed names and counters.
-  const seq = params.get("dlh");
-  const canSignal = /^\d{1,10}$/.test(seq || "");
+  const seq = PostmortemEmbed.hideout;
   const queue = [], sent = new Set();
   let count = 0, pending = false;
   function flush() {
@@ -27,7 +25,7 @@ const hideout = (() => {
     setTimeout(flush, 80);
   }
   function signal(name) {
-    if (!canSignal || sent.has(name)) return;
+    if (!seq || sent.has(name)) return;
     sent.add(name);
     if (name === "escape") queue.unshift(name); else queue.push(name);
     if (pending) return;
@@ -54,18 +52,19 @@ const hideout = (() => {
     if (e.target.id === "accountInput") signal("type-account");
   }, true);
   document.addEventListener("keydown", e => {
-    if (!canSignal || e.key !== "Escape" || e.repeat) return;
+    if (e.key !== "Escape" || e.repeat) return;
+    if (PostmortemEmbed.panelMatch && !document.querySelector("dialog[open], .withPop:not([hidden])")) {
+      e.preventDefault();
+      document.title = "DLC_CLOSE:" + Date.now();
+    }
+    if (!seq) return;
     e.preventDefault();
     signal("escape");
   }, true);
-  return {
-    signal,
-    preserve(url) {
-      url.searchParams.set("embed", "1");
-      if (canSignal) url.searchParams.set("dlh", seq);
-    },
-  };
+  return { signal };
 })();
+PostmortemEmbed.startMatchHeartbeat();
+function setProfileTitle(title) { if (!PostmortemEmbed.panelMatch) document.title = title; }
 
 // ---------- small helpers ----------
 const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -82,7 +81,7 @@ const heroImg = id => (HERO_ART[id] && HERO_ART[id].mini)
 const moodCard = (id, win) => (HERO_ART[id] && HERO_ART[id][win ? "gloat" : "crit"]) || heroCard(id);
 const heroCard = id => (HERO_ART[id] && HERO_ART[id].card) || ((window.HERO_CARDS || []).includes(Number(id)) ? `assets/cards/${Number(id)}.webp` : `assets/heroes/${Number(id) || 0}.png`);
 // A match opens on index.html. from=profile and pid let that page show "Back to profile" for this player.
-const matchHref = id => `index.html?match=${id}&from=profile${P && P.id ? "&pid=" + P.id : ""}`;
+const matchHref = id => PostmortemEmbed.href("index.html", { match: id, from: "profile", pid: P?.id });
 // The main hero themes the page. Match results, teams and MVP badges keep their own palettes.
 function applyTheme(heroId) { HeroBackdrop.apply(heroId, null); }
 
@@ -134,12 +133,6 @@ function rankHtml(badge, size) {
 const badgeStep = b => Math.floor(b / 10) * 6 + (Math.max(1, b % 10) - 1);
 
 // ---------- reading the player's input ----------
-function accountId(value) {
-  if (!value || /\D/.test(value)) return null;
-  const id = Number(value);
-  return id >= 1 && id <= MAX_ACCOUNT_ID ? id : null;
-}
-
 function setupAccountId(raw) {
   let value = raw.trim();
   if (!/^\d+$/.test(value)) {
@@ -201,16 +194,13 @@ function recentAdd(p) {
 
 // ---------- routing ----------
 let loadSeq = 0;
-function go(params, push) {
-  const u = new URL(location.href);
-  u.search = "";
-  for (const [k, v] of Object.entries(params)) if (v != null && v !== "") u.searchParams.set(k, v);
-  hideout?.preserve(u);
-  if (push) history.pushState(null, "", u); else history.replaceState(null, "", u);
+function go({ id, q } = {}) {
+  history.pushState(null, "", profileHref(id, { search: q }));
   route();
 }
 function route() {
   const u = new URL(location.href), p = u.searchParams;
+  closeWith();
   hideTip();
   const me = accountId(p.get("me"));
   if (me !== null) {
@@ -239,16 +229,23 @@ document.getElementById("search").addEventListener("submit", e => {
   if (!r) return $q.focus();
   if (e.isTrusted) hideout?.signal("submit-search");
   $q.blur();
-  go(r.id != null ? { id: r.id } : { q: r.q }, true);
+  go(r.id != null ? { id: r.id } : { q: r.q });
 });
-document.getElementById("home").addEventListener("click", e => { e.preventDefault(); $q.value = ""; go({}, true); });
+document.getElementById("home").addEventListener("click", e => { e.preventDefault(); $q.value = ""; go(); });
+const backToMatch = document.getElementById("backToMatch");
+const cameFrom = new URLSearchParams(location.search);
+const returnMatch = cameFrom.get("match");
+if (cameFrom.get("from") === "match" && /^\d+$/.test(returnMatch || "")) {
+  backToMatch.href = PostmortemEmbed.href("index.html", { match: returnMatch });
+  backToMatch.hidden = false;
+}
 
 // ---------- views: home, search, states ----------
 function renderSetup(changing = false) {
   ++loadSeq;
   hideTip();
   applyTheme(0);
-  document.title = "Profile · Postmortem";
+  setProfileTitle("Profile · Postmortem");
   const recent = changing ? [] : recentGet();
   $main.innerHTML = `
     <section class="card accountSetup" aria-labelledby="accountTitle">
@@ -268,7 +265,7 @@ function renderSetup(changing = false) {
     </section>
     ${recent.length ? `
     <div class="recent"><span class="lbl">Recently viewed</span>${recent.map(r => `
-      <a class="chip person" href="?id=${r.id}" data-id="${r.id}">${safeUrl(r.avatar) ? `<img src="${esc(safeUrl(r.avatar))}" alt="">` : ""}${esc(r.name)}</a>`).join("")}</div>` : ""}`;
+      <a class="chip person" href="${esc(profileHref(r.id))}" data-player-id="${r.id}" data-tip="${playerClickTip}">${safeUrl(r.avatar) ? `<img src="${esc(safeUrl(r.avatar))}" alt="">` : ""}${esc(r.name)}</a>`).join("")}</div>` : ""}`;
   const form = document.getElementById("accountForm"), input = document.getElementById("accountInput");
   const error = document.getElementById("accountError"), preview = document.getElementById("accountPreview");
   const confirm = document.getElementById("confirmAccount"), lookup = form.querySelector("button");
@@ -322,14 +319,18 @@ function renderSetup(changing = false) {
     const id = Number(profile.account_id);
     let saved = true;
     try { localStorage.setItem("pm_me", String(id)); } catch (e) { saved = false; }
-    const url = new URL(location.pathname, location.href);
-    hideout?.preserve(url);
+    const url = new URL(profileHref(), location.href);
+    const params = new URLSearchParams(location.search);
+    const pendingWith = accountId(params.get("with"));
+    if (url.searchParams.has("match") && pendingWith !== null) {
+      url.searchParams.set("with", pendingWith);
+      url.searchParams.set("withKind", params.get("withKind") === "party" ? "party" : "team");
+    }
     history.replaceState(null, "", url);
     if (saved) hideout?.signal("confirm-account");
     loadProfile(id, null, profile, saved);
   });
   if (changing) document.getElementById("cancelAccount").addEventListener("click", route);
-  $main.querySelectorAll("a[data-id]").forEach(a => a.addEventListener("click", e => { e.preventDefault(); go({ id: a.dataset.id }, true); }));
   if (changing) input.focus();
 }
 function renderState(title, text, action) {
@@ -342,7 +343,7 @@ function renderLoading(text) { $main.innerHTML = `<section class="state"><div cl
 async function searchPlayers(q) {
   const my = ++loadSeq;
   $q.value = q;
-  document.title = `"${q}" · Postmortem`;
+  setProfileTitle(`"${q}" · Postmortem`);
   renderLoading(`Looking for "${q}"...`);
   try {
     const list = await getJson(`${API}players/steam-search?search_query=${encodeURIComponent(q)}&limit=12`);
@@ -351,14 +352,13 @@ async function searchPlayers(q) {
       return renderState(`No players found for "${q}"`, "Name search only lists players with 5 or more games in the last 30 days. Paste their Steam profile link or account ID instead.");
     }
     $main.innerHTML = `<section class="card results"><div class="cardHead"><h2>Players matching "${esc(q)}"</h2><span class="sub">${plural(list.length, "result")}</span></div>
-      <div class="resultList">${list.map(p => `
-        <a class="result" href="?id=${Number(p.account_id)}" data-id="${Number(p.account_id)}">
+      <div class="resultList">${list.filter(p => accountId(p.account_id) !== null).map(p => `
+        <a class="result" href="${esc(profileHref(p.account_id))}" data-player-id="${Number(p.account_id)}" data-tip="${playerClickTip}">
           ${safeUrl(p.avatarmedium) ? `<img src="${esc(safeUrl(p.avatarmedium))}" alt="">` : `<span class="noAv"></span>`}
           <span class="rName">${esc(p.personaname)}</span>
           <span class="rMeta">${plural(Number(p.matches_played_last_30d) || 0, "game")} in the last 30 days</span>
           <span class="rId">ID ${Number(p.account_id)}</span>
         </a>`).join("")}</div></section>`;
-    $main.querySelectorAll("a[data-id]").forEach(a => a.addEventListener("click", e => { e.preventDefault(); go({ id: a.dataset.id }, true); }));
   } catch (e) {
     if (my !== loadSeq) return;
     renderState("Search didn't work", esc(e.message), { label: "Try again", run: () => searchPlayers(q) });
@@ -618,7 +618,7 @@ function wireRefresh() { const b = document.getElementById("refreshBtn"); if (b)
 async function loadProfile(id, src, confirmedProfile = null, accountSaved = true) {
   const filters = new URLSearchParams(location.search);
   const my = ++loadSeq;
-  if (!Number.isInteger(id) || id <= 0 || id > MAX_ACCOUNT_ID) return renderState("That ID doesn't look right", "Account IDs are numbers like 135548265. A Steam profile link works too.");
+  if (accountId(id) === null) return renderState("That ID doesn't look right", "Account IDs are numbers like 135548265. A Steam profile link works too.");
   $q.value = "";
   renderLoading("Loading match history...");
   const local = src && /^test\/[\w-]+\.json$/.test(src); // local test file: only files in this repo's test/ folder
@@ -644,7 +644,7 @@ async function loadProfile(id, src, confirmedProfile = null, accountSaved = true
     const withSaved = savedWith(id, filters);
     const hero = Number(filters.get("hero"));
     const name = (profile && profile.personaname) || `Player ${id}`;
-    document.title = `${name} · Postmortem`;
+    setProfileTitle(`${name} · Postmortem`);
     if (profile) NAMES.set(id, { name, avatar: steamAvatar(profile) });
     recentAdd({ id, name, avatar: profile && steamAvatar(profile) });
     P = { id, profile, name, allGames, games, mode, accountSaved, skipped: all.length - allGames.length, range: "all", hero: allGames.some(m => m.hero_id === hero) ? hero : null, shown: 20, mates: null, matesRequest: 0, mateMode: "party", seasons: null,
@@ -663,7 +663,7 @@ async function loadProfile(id, src, confirmedProfile = null, accountSaved = true
       recentAdd({ id, name, avatar });
       const heading = $main.querySelector(".head h1");
       if (!heading) return;
-      document.title = `${name} · Postmortem`;
+      setProfileTitle(`${name} · Postmortem`);
       heading.textContent = name;
       const placeholder = $main.querySelector(".head .avatar.none");
       if (avatar && placeholder) {
@@ -957,7 +957,7 @@ function formHtml(all, brawl) {
     </div>
     <div class="wlLbl">The last ${a.n} games, oldest to newest. Green won, red lost. Click one to open it.</div>
     <div class="wl" aria-label="Last ${a.n} results, oldest first">
-      ${last.slice().reverse().map(m => `<a class="sq ${isWin(m) ? "w" : "l"}" href="${matchHref(m.match_id)}" data-tip="${isWin(m) ? "Win" : "Loss"} as ${esc(heroName(m.hero_id))}, ${m.player_kills}/${m.player_deaths}/${m.player_assists}, ${esc(ago(m.start_time))}. Click to open."><img src="${heroImg(m.hero_id)}" alt="${esc(heroName(m.hero_id))}" loading="lazy"></a>`).join("")}
+      ${last.slice().reverse().map(m => `<a class="sq ${isWin(m) ? "w" : "l"}" href="${esc(matchHref(m.match_id))}" data-tip="${isWin(m) ? "Win" : "Loss"} as ${esc(heroName(m.hero_id))}, ${m.player_kills}/${m.player_deaths}/${m.player_assists}, ${esc(ago(m.start_time))}. Click to open."><img src="${heroImg(m.hero_id)}" alt="${esc(heroName(m.hero_id))}" loading="lazy"></a>`).join("")}
     </div>
   </section>`;
 }
@@ -991,14 +991,14 @@ const MATE_MIN = 5;
 function matesHtml() {
   if (!P.mates) return `<section class="card mates"><div class="cardHead"><h2>Teammates</h2></div><p class="muted pad">Loading...</p></section>`;
   const src = withList(P.mateMode);
-  const list = (src || []).filter(m => m.matches_played >= MATE_MIN && Number(m.mate_id) !== P.id)
+  const list = (src || []).filter(m => m.matches_played >= MATE_MIN && accountId(m.mate_id) !== null && Number(m.mate_id) !== P.id)
     .map(m => ({ id: Number(m.mate_id), n: m.matches_played, w: m.wins, wr: m.wins / m.matches_played }))
     .sort((a, b) => b.wr - a.wr || b.n - a.n);
   const half = Math.ceil(list.length / 2);
   const best = list.slice(0, Math.min(3, half)), worst = list.slice(Math.max(half, list.length - 3)).reverse();
   const row = m => {
     const nm = NAMES.get(m.id) || {};
-    return `<a class="mate" href="?id=${m.id}" data-with="${m.id}" data-kind="${P.mateMode === "party" ? "party" : "team"}" data-tip="${m.w} wins and ${m.n - m.w} losses together. Click to show only your games with them. Ctrl-click opens their profile.">
+    return `<a class="mate" href="${esc(profileHref(m.id))}" data-player-id="${m.id}" data-kind="${P.mateMode === "party" ? "party" : "team"}" data-tip="${m.w} wins and ${m.n - m.w} losses together. ${playerClickTip}">
       ${nm.avatar ? `<img src="${esc(nm.avatar)}" alt="">` : `<span class="noAv"></span>`}
       <span class="mName">${esc(nm.name || "Player " + m.id)}</span>
       <span class="mN">${m.n}</span>
@@ -1257,11 +1257,12 @@ function topAccolades(me) {
 function playersCol(meta, team, m) {
   const ps = meta.players.filter(p => p.team === team).sort((a, b) => a.slot - b.slot);
   return `<span class="pCol t${team + 1}">${ps.map(p => {
-    const nm = (NAMES.get(p.account_id) || {}).name || (p.account_id ? "Player " + p.account_id : "Bot");
-    const me = p.account_id === P.id, mate = !me && p.account_id && p.team === teamNum(m.player_team);
-    if (mate) return `<a class="pl" href="?id=${p.account_id}" data-with="${p.account_id}" data-match="${m.match_id}" data-tip="${esc(nm)} on ${esc(heroName(p.hero_id))}. Click to show only your games with them. Ctrl-click opens their profile."><img src="${heroImg(p.hero_id)}" alt=""><span class="pn">${esc(nm)}</span></a>`;
-    return me ? `<span class="pl me" data-tip="${esc(nm)} on ${esc(heroName(p.hero_id))} (this profile)."><img src="${heroImg(p.hero_id)}" alt=""><span class="pn">${esc(nm)}</span></span>`
-      : `<a class="pl" href="?id=${p.account_id}" data-id="${p.account_id}" data-tip="${esc(nm)} on ${esc(heroName(p.hero_id))}. Click to open their profile."><img src="${heroImg(p.hero_id)}" alt=""><span class="pn">${esc(nm)}</span></a>`;
+    const id = accountId(p.account_id), me = id === P.id, mate = p.team === teamNum(m.player_team);
+    const nm = id === null ? "Bot" : nameOf(id);
+    const tip = `${esc(nm)} on ${esc(heroName(p.hero_id))}`;
+    const portrait = `<img src="${heroImg(p.hero_id)}" alt=""><span class="pn">${esc(nm)}</span>`;
+    if (me || id === null) return `<span class="pl${me ? " me" : ""}" data-tip="${tip}${me ? " (this profile)" : ""}.">${portrait}</span>`;
+    return `<a class="pl" href="${esc(profileHref(id))}" data-player-id="${id}" ${mate ? `data-match="${m.match_id}"` : 'data-kind="team"'} data-tip="${tip}. ${playerClickTip}">${portrait}</a>`;
   }).join("")}</span>`;
 }
 function matchRow(m) {
@@ -1274,7 +1275,7 @@ function matchRow(m) {
   const art = moodCard(m.hero_id, win);
   const teams = meta && meta.players.length >= 2 ? `<span class="players">${playersCol(meta, 0, m)}${playersCol(meta, 1, m)}</span>` : `<span class="players"></span>`;
   return `<div class="match ${win ? "w" : "l"}">
-    <a class="mLink" href="${matchHref(m.match_id)}" aria-label="${win ? "Win" : "Loss"} as ${esc(heroName(m.hero_id))}, ${esc(ago(m.start_time))}. Open in Postmortem."></a>
+    <a class="mLink" href="${esc(matchHref(m.match_id))}" aria-label="${win ? "Win" : "Loss"} as ${esc(heroName(m.hero_id))}, ${esc(ago(m.start_time))}. Open in Postmortem."></a>
     <span class="mArt"><img src="${art}" alt="" loading="lazy"></span>
     <span class="mRes"><b>${win ? "Victory" : "Defeat"}</b><span>${modeLabel(mode)}${isRanked(m) && m.ranked_delta != null ? ` <i class="${m.ranked_delta >= 0 ? "good" : "bad"}">${m.ranked_delta >= 0 ? "+" : ""}${m.ranked_delta}</i>` : ""}</span><span>${mmss(m.match_duration_s)} · ${esc(clock(m.start_time))}</span></span>
     <span class="mKda"><b>${m.player_kills} / ${m.player_deaths} / ${m.player_assists}</b><span>${fmt1((m.player_kills + m.player_assists) / Math.max(1, m.player_deaths))} KDA</span><span>${kSouls(m.net_worth)} souls</span></span>
@@ -1351,9 +1352,13 @@ function kindFor(id, matchId) {
 }
 
 let wpEl = null;
-function closeWith() { if (wpEl) wpEl.hidden = true; const b = document.getElementById("withBtn"); if (b) b.setAttribute("aria-expanded", "false"); }
+function closeWith() {
+  if (!wpEl || wpEl.hidden) return;
+  wpEl.hidden = true;
+  document.getElementById("withBtn")?.setAttribute("aria-expanded", "false");
+}
 function withRows(q) {
-  const list = (withList(P.withKind) || []).filter(m => m.matches_played >= WITH_MIN && Number(m.mate_id) !== P.id)
+  const list = (withList(P.withKind) || []).filter(m => m.matches_played >= WITH_MIN && accountId(m.mate_id) !== null && Number(m.mate_id) !== P.id)
     .sort((a, b) => b.matches_played - a.matches_played || b.wins - a.wins);
   const needle = q.trim().toLowerCase();
   const rows = needle ? list.filter(m => nameOf(Number(m.mate_id)).toLowerCase().includes(needle)) : list;
@@ -1361,10 +1366,10 @@ function withRows(q) {
 }
 function withRowHtml(m) {
   const id = Number(m.mate_id), nm = NAMES.get(id) || {};
-  return `<button type="button" class="wRow ${P.withId === id ? "sel" : ""}" data-pick="${id}">
+  return `<a class="wRow ${P.withId === id ? "sel" : ""}" href="${esc(profileHref(id))}" data-player-id="${id}" data-kind="${P.withKind}" data-tip="${playerClickTip}">
     ${nm.avatar ? `<img src="${esc(nm.avatar)}" alt="">` : `<span class="noAv"></span>`}
     <span class="wName">${esc(nameOf(id))}</span>
-    <span class="wMeta">${plural(m.matches_played, "game")} · ${pct(m.wins, m.matches_played)}% won</span></button>`;
+    <span class="wMeta">${plural(m.matches_played, "game")} · ${pct(m.wins, m.matches_played)}% won</span></a>`;
 }
 function paintWithList() {
   if (!wpEl || wpEl.hidden) return;
@@ -1384,12 +1389,9 @@ function openWith(btn) {
     document.addEventListener("pointerdown", e => { if (!wpEl.hidden && !wpEl.contains(e.target) && !e.target.closest("#withBtn")) closeWith(); });
     document.addEventListener("keydown", e => { if (e.key === "Escape" && !wpEl.hidden) { closeWith(); const b = document.getElementById("withBtn"); if (b) b.focus(); } });
     wpEl.addEventListener("click", e => {
-      const k = e.target.closest("[data-wkind]"), p = e.target.closest("[data-pick]");
+      const k = e.target.closest("[data-wkind]");
       if (k) { P.withKind = k.dataset.wkind; if (P.withId) { setWith(P.withId, P.withKind); } paintWithShell(); }
-      if (p) { setWith(Number(p.dataset.pick), P.withKind); closeWith(); const b = document.getElementById("withBtn"); if (b) b.focus(); }
       if (e.target.closest("#withClear")) { setWith(null); closeWith(); }
-      const pr = e.target.closest("a[data-id]");
-      if (pr && !(e.ctrlKey || e.metaKey || e.shiftKey || e.button)) { e.preventDefault(); closeWith(); go({ id: pr.dataset.id }, true); window.scrollTo(0, 0); }
     });
     wpEl.addEventListener("input", e => { if (e.target.id === "withQ") paintWithList(); });
   }
@@ -1413,7 +1415,7 @@ function paintWithShell() {
     <div class="seg small wKind" role="group" aria-label="What counts as played with">${withKinds.map(([v, l, tip]) => `<button type="button" data-wkind="${v}" class="${P.withKind === v ? "on" : ""}" aria-pressed="${P.withKind === v}" data-tip="${tip}">${l}</button>`).join("")}</div>
     <input id="withQ" type="search" placeholder="Find a teammate by name" aria-label="Find a teammate by name" autocomplete="off" spellcheck="false" value="${esc(q)}">
     <div id="withList" class="wList"></div>
-    ${P.withId ? `<div class="wFoot"><a class="link" href="?id=${P.withId}" data-id="${P.withId}">Open ${esc(nameOf(P.withId))}'s profile</a><button type="button" class="link" id="withClear">Show everyone</button></div>` : ""}`;
+    ${P.withId ? `<div class="wFoot"><a class="link" href="${esc(profileHref(P.withId))}" data-player-id="${P.withId}" data-kind="${P.withKind}">Open ${esc(nameOf(P.withId))}'s profile</a><button type="button" class="link" id="withClear">Show everyone</button></div>` : ""}`;
   paintWithList();
 }
 
@@ -1440,6 +1442,7 @@ function matchList() {
 function renderMatches() {
   const el = document.getElementById("matches");
   if (!el) return;
+  const restoreWithFocus = document.activeElement?.id === "withBtn";
   const list = matchList();
   const shown = list.slice(0, P.shown);
   const days = new Map();
@@ -1485,18 +1488,16 @@ function renderMatches() {
   if (clr) clr.addEventListener("click", () => { P.hero = null; P.shown = 20; updateFilterUrl("hero", null); renderSide(); renderMatches(); loadMetaFor(P.games.slice(0, 20)); });
   el.querySelectorAll("[data-mode]").forEach(b => b.addEventListener("click", () => setMode(b.dataset.mode)));
   const wb = document.getElementById("withBtn");
-  if (wb) wb.addEventListener("click", () => { if (wpEl && !wpEl.hidden) closeWith(); else openWith(wb); });
+  if (wb) {
+    wb.addEventListener("click", () => { if (wpEl && !wpEl.hidden) closeWith(); else openWith(wb); });
+    if (restoreWithFocus) wb.focus({ preventScroll: true });
+  }
   const cw = document.getElementById("clearWith");
   if (cw) cw.addEventListener("click", () => { closeWith(); setWith(null); });
-  el.querySelectorAll("a[data-with]").forEach(a => a.addEventListener("click", e => {
-    if (e.ctrlKey || e.metaKey || e.shiftKey || e.button) return; // ctrl-click and the like keep opening the profile
-    e.preventDefault(); setWith(Number(a.dataset.with), a.dataset.kind || kindFor(a.dataset.with, a.dataset.match));
-  }));
   wireRefresh();
   for (const id of ["openUpload", "openUpload2"]) { const b = document.getElementById(id); if (b) b.addEventListener("click", () => openUpload(b)); }
   const retry = document.getElementById("metaRetry");
   if (retry) retry.addEventListener("click", () => { for (const m of shown) if (META.get(m.match_id) === null) META.delete(m.match_id); metaNote = ""; renderMatches(); loadMetaFor(shown); });
-  el.querySelectorAll("a[data-id]").forEach(a => a.addEventListener("click", e => { e.preventDefault(); go({ id: a.dataset.id }, true); window.scrollTo(0, 0); }));
 }
 
 function wireSide() {
@@ -1517,12 +1518,6 @@ function wireSide() {
   if (pa) pa.addEventListener("click", () => { P.patsAll = !P.patsAll; renderSide(); });
   const ma = document.getElementById("matesAll");
   if (ma) ma.addEventListener("click", () => { P.matesAll = !P.matesAll; renderSide(); });
-  side.querySelectorAll("a[data-with]").forEach(a => a.addEventListener("click", e => {
-    if (e.ctrlKey || e.metaKey || e.shiftKey || e.button) return;
-    e.preventDefault(); setWith(Number(a.dataset.with), a.dataset.kind);
-    const m = document.getElementById("matches"); if (m && window.innerWidth < 900) m.scrollIntoView({ block: "start" });
-  }));
-  side.querySelectorAll("a[data-id]").forEach(a => a.addEventListener("click", e => { e.preventDefault(); go({ id: a.dataset.id }, true); window.scrollTo(0, 0); }));
   const ch = document.getElementById("rjChart");
   if (ch && P.rankData) {
     const cur = document.getElementById("rjCursor");
@@ -1699,5 +1694,17 @@ document.addEventListener("click", e => {
 });
 window.addEventListener("scroll", hideTip, { passive: true });
 
+PlayerLinks.bind({
+  applyFilter(id, link, keyboard) {
+    const matches = document.getElementById("matches");
+    if (!matches) return false;
+    const inPicker = wpEl?.contains(link);
+    if (inPicker) closeWith();
+    setWith(id, link.dataset.kind || kindFor(id, link.dataset.match));
+    if (inPicker || keyboard) document.getElementById("withBtn")?.focus({ preventScroll: true });
+    if (link.classList.contains("mate") && window.innerWidth < 900) matches.scrollIntoView({ block: "start" });
+    return true;
+  },
+});
 hideout?.signal("ready");
 route();

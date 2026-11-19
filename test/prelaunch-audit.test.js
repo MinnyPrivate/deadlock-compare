@@ -400,7 +400,8 @@ test("the Profile swaps instantly with reduced motion and retains its last color
   await page(`document.querySelector("#clearHero").click()`);
   assert.deepEqual(await state(), ["Kelvin", kelvin, false]);
   await page(`document.querySelector("[data-range='all']").click()`);
-  await page(`document.querySelector("#withBtn").click(); document.querySelector("[data-pick='98765432']").click()`);
+  await page(`document.querySelector("#withBtn").click(); document.querySelector(".wRow[data-player-id='98765432']")
+    .dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, ctrlKey: true }))`);
   assert.deepEqual(await state(), ["Kelvin", kelvin, false], "the lower hero ID wins a tie even if its game is older");
   await clickMode("street_brawl");
   assert.deepEqual(await state(), [null, kelvin, false]);
@@ -871,7 +872,8 @@ test("profile filters survive a tab reload and reset in new tabs and browser ses
     document.querySelector('[data-mode="ranked"]').click();
     document.querySelector('#withBtn').click();
     document.querySelector('[data-wkind="team"]').click();
-    document.querySelector('[data-pick="${mateId}"]').click();
+    document.querySelector('.wRow[data-player-id="${mateId}"]')
+      .dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, ctrlKey: true }));
   `);
   const assertFiltered = async () => {
     await waitPage(`location.pathname === '/profile.html' && typeof P !== 'undefined' && P?.games[0]?.match_id === ${ranked.match_id}`);
@@ -914,4 +916,230 @@ test("profile filter URLs override tab choices and still apply the existing filt
     ["ranked", "team", ranked.hero_id, ranked.match_id]);
   await page("document.querySelector('#clearWith').click(); document.querySelector('#clearHero').click()");
   assert.equal(await page("new URL(location.href).search"), `?id=${id}&mode=ranked`);
+});
+
+function servePlayerClickProfiles() {
+  const viewer = match.match_info.players.find(p => p.account_id === 81646827);
+  const mate = match.match_info.players.find(p => p.team === viewer.team && p !== viewer);
+  const rival = match.match_info.players.find(p => p.team !== viewer.team);
+  const identities = [
+    { account_id: viewer.account_id, personaname: "Test Player" },
+    { account_id: mate.account_id, personaname: "Queue Friend" },
+    { account_id: rival.account_id, personaname: "Other Team" },
+  ];
+  const standard = profile.history.filter(m => m.game_mode === 1).slice(0, 14);
+  for (const player of [viewer, mate, rival]) {
+    const history = [{
+      ...standard[0], account_id: player.account_id, match_id: standardId,
+      start_time: standard[0].start_time + 60, player_team: player.team, hero_id: player.hero_id,
+    }, ...standard];
+    routes.set(`/v1/players/${player.account_id}/match-history`, res => json(res, history));
+  }
+  const shared = { mate_id: mate.account_id, matches_played: 6, wins: 4, matches: [standardId] };
+  routes.set(`/v1/players/${viewer.account_id}/mate-stats`, res => json(res, [shared]));
+  routes.set(`/v1/matches/${standardId}/metadata`, res => json(res, match));
+  routes.set("/v1/matches/metadata", res => json(res, [match]));
+  routes.set("/v1/players/steam", res => json(res, identities));
+  routes.set("/v1/players/steam-search", res => json(res, [{ ...identities[1], matches_played_last_30d: 6 }]));
+  return { id: viewer.account_id, mate: mate.account_id, rival: rival.account_id, mateSlot: mate.player_slot };
+}
+
+async function resetClickTestFilters() {
+  routes.set("/click-test-start.html", res => res.writeHead(200, { "Content-Type": "text/html" }).end("<!doctype html>"));
+  await navigate("/__fixture/click-test-start.html");
+  await waitPage("location.pathname === '/__fixture/click-test-start.html'");
+  await page(`sessionStorage.removeItem("pm_with"); sessionStorage.removeItem("pm_mode")`);
+}
+
+async function hoverPlayer(selector) {
+  const point = await page(`(() => {
+    const row = document.querySelector(${JSON.stringify(selector)});
+    row.scrollIntoView({ block: "center" });
+    const { x, y, width, height } = row.getBoundingClientRect();
+    return { x: Math.round(x + width / 2), y: Math.round(y + height / 2) };
+  })()`);
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", ...point });
+  await waitPage(`document.querySelector(${JSON.stringify(selector)})?.matches(":hover")`);
+  return point;
+}
+
+async function pressPlayer(selector, modifiers = 0) {
+  if (selector) await page(`document.querySelector(${JSON.stringify(selector)}).focus()`);
+  for (const type of ["keyDown", "keyUp"]) {
+    await send("Input.dispatchKeyEvent", { type, key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, modifiers });
+  }
+}
+
+async function clickPlayer(selector, modifiers = 0) {
+  const point = await hoverPlayer(selector);
+  for (const type of ["mousePressed", "mouseReleased"]) {
+    await send("Input.dispatchMouseEvent", { type, ...point, button: "left", clickCount: 1, modifiers });
+  }
+}
+
+async function checkSingleTab(t) {
+  const tabs = async () => (await send("Target.getTargets")).targetInfos.filter(info => info.type === "page")
+    .map(info => info.targetId).sort();
+  const before = await tabs();
+  const { identifier } = await send("Page.addScriptToEvaluateOnNewDocument", { source: `
+    const realOpen = window.open;
+    window.open = (...args) => {
+      sessionStorage.setItem("auditPlayerOpen", "called");
+      return realOpen(...args);
+    };
+  ` });
+  t.after(async () => {
+    assert.equal(await page("sessionStorage.getItem('auditPlayerOpen')"), null);
+    assert.deepEqual(await tabs(), before);
+    await send("Page.removeScriptToEvaluateOnNewDocument", { identifier });
+  });
+}
+
+const noBlankPlayerLinks = `!document.querySelector('a[data-player-id]:is([target="_blank"], [rel~="noopener"])')`;
+const embedCursors = `[...document.querySelectorAll('*')]
+  .every(element => getComputedStyle(element).cursor === "default")`;
+const cheapHover = selector => `(() => {
+  const style = getComputedStyle(document.querySelector(${JSON.stringify(selector)}));
+  return style.outlineStyle === "solid" && parseFloat(style.outlineWidth) > 0 && style.transitionDuration === "0s"
+    && style.animationName === "none" && style.filter === "none";
+})()`;
+
+test("player links open one tab and Ctrl, Cmd and Ctrl+Enter apply the existing played-with filter", async t => {
+  const { id, mate, rival } = servePlayerClickProfiles();
+  await checkSingleTab(t);
+  await resetClickTestFilters();
+  const byId = `[data-player-id="${mate}"]`;
+  const teammate = ".mate" + byId, matchRow = ".match .pl" + byId, picker = ".wRow" + byId;
+  const shown = async id => waitPage(`typeof P !== "undefined" && P?.id === ${id} && document.querySelector(".head h1")`);
+  const open = async params => {
+    await navigate(`/profile.html?id=${id}${params || ""}`);
+    await waitPage(`document.querySelector('${teammate}') && document.querySelector('${matchRow}')`);
+    assert.ok(await page(noBlankPlayerLinks));
+  };
+  const showPicker = async () => {
+    await page(`document.querySelector("#withBtn").click()`);
+    await waitPage(`document.querySelector('.withPop:not([hidden]) ${picker}')`);
+    assert.ok(await page(noBlankPlayerLinks));
+  };
+  await open();
+  assert.equal(await page(`getComputedStyle(document.querySelector('${teammate}')).cursor`), "pointer");
+  assert.deepEqual(await page(`["auxclick", "contextmenu"].map(type => document.querySelector('${teammate}')
+    .dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: type === "auxclick" ? 1 : 2 })))`), [true, true]);
+  await clickPlayer(teammate);
+  await shown(mate);
+  await page("history.back()");
+  await shown(id);
+  await waitPage(`document.querySelector('${matchRow}')`);
+  await clickPlayer(matchRow);
+  await shown(mate);
+  await open();
+  await showPicker();
+  await clickPlayer(picker);
+  await shown(mate);
+
+  await open("&ingame=1&dlh=7");
+  await pressPlayer(`.match .pl[data-player-id="${rival}"]`);
+  await shown(rival);
+  assert.deepEqual(await page(`["embed", "dlh"].map(key => new URLSearchParams(location.search).get(key))`), ["1", "7"]);
+  await page("history.back()");
+  await shown(id);
+  await waitPage(`document.querySelector('${matchRow}')`);
+  await clickPlayer(matchRow, 2);
+  const state = () => page("[P.id, P.withId, P.withKind, P.games.map(m => m.match_id)]");
+  assert.deepEqual(await state(), [id, mate, "party", [standardId]]);
+  await page(`document.querySelector("#clearWith").click()`);
+  await showPicker();
+  await page(`document.querySelector('[data-wkind="team"]').click()`);
+  await pressPlayer(picker, 2);
+  assert.deepEqual(await state(), [id, mate, "team", [standardId]]);
+  assert.equal(await page("document.activeElement.id"), "withBtn");
+  await page(`document.querySelector("#clearWith").click()`);
+  await clickPlayer(teammate, 4);
+  assert.deepEqual(await state(), [id, mate, "party", [standardId]]);
+  await showPicker();
+  assert.ok(await page(`document.querySelector('.wFoot a[data-player-id="${mate}"]')`));
+
+  await page(`document.querySelector("#q").value = "Queue Friend"; document.querySelector("#search").requestSubmit()`);
+  await waitPage(`document.querySelector('.result${byId}')`);
+  assert.ok(await page(noBlankPlayerLinks));
+  await pressPlayer(".result" + byId);
+  await shown(mate);
+  assert.equal(await page(`new URLSearchParams(location.search).get("embed")`), "1");
+});
+
+test("match selection stays in the panel and player links keep embed, the filter and Back working", async t => {
+  const { id, mate, mateSlot } = servePlayerClickProfiles();
+  await checkSingleTab(t);
+  await resetClickTestFilters();
+  const openMatch = async () => {
+    await navigate(`${localMatch}&ingame=1&tab=summary&me=${id}`);
+    await loaded(standardId);
+    await clickPlayer(`[data-summary-portrait="${mateSlot}"]`);
+    await waitPage(`document.querySelector('.summary-name a[data-player-id="${mate}"]')`);
+    assert.ok(await page(noBlankPlayerLinks));
+    assert.ok(await page(embedCursors));
+  };
+  await openMatch();
+  const summaryLink = ".summary-name a";
+  await hoverPlayer(summaryLink);
+  assert.ok(await page(cheapHover(summaryLink)));
+  await clickPlayer(summaryLink);
+  await waitPage(`typeof P !== "undefined" && P?.id === ${mate} && document.title.startsWith("DLC_ALIVE:${standardId}:")`);
+  assert.equal(await page(`new URLSearchParams(location.search).get("embed")`), "1");
+  await clickPlayer("#backToMatch");
+  await loaded(standardId);
+  assert.equal(await page(`new URLSearchParams(location.search).get("embed")`), "1");
+  await openMatch();
+  await clickPlayer(summaryLink, 2);
+  await waitPage(`typeof P !== "undefined" && P?.id === ${id} && P?.games[0]?.match_id === ${standardId} && P.games.length === 1`);
+  assert.deepEqual(await page(`["id", "with", "withKind", "embed"].map(key => new URLSearchParams(location.search).get(key))`),
+    [String(id), String(mate), "team", "1"]);
+  await clickPlayer(".match .mLink");
+  await loaded(standardId);
+  assert.equal(await page("new URLSearchParams(location.search).get('embed')"), "1");
+  await clickPlayer("#backLink");
+  await waitPage(`typeof P !== "undefined" && P?.id === ${id} && P?.withId === ${mate}`);
+
+  await navigate(`${localMatch}&tab=mvp&me=${id}`);
+  await loaded(standardId);
+  await clickPlayer(`.mvpRow[data-slot="${mateSlot}"]`);
+  await waitPage(`document.querySelector('.whyName a[data-player-id="${mate}"]')`);
+  assert.ok(await page(noBlankPlayerLinks));
+  await pressPlayer(".whyName a", 2);
+  await waitPage(`typeof P !== "undefined" && P?.id === ${id} && P?.withId === ${mate}`);
+});
+
+test("embed replaces the hand with an instant highlight and the website keeps its existing hover", async () => {
+  const { id, mate } = servePlayerClickProfiles();
+  await resetClickTestFilters();
+  const selector = `.mate[data-player-id="${mate}"]`;
+  const capture = process.env.PM_CLICK_SCREENSHOTS;
+  if (capture) await mkdir(capture, { recursive: true });
+  await send("Emulation.setDeviceMetricsOverride", { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false });
+  try {
+    for (const embed of [true, false]) {
+      await navigate(`/profile.html?id=${id}${embed ? "&embed=1" : ""}`);
+      await waitPage(`document.querySelector('${selector}') && document.querySelector(".match .pl")`);
+      const style = field => page(`getComputedStyle(document.querySelector('${selector}')).${field}`);
+      const idleBackground = await style("backgroundColor");
+      assert.equal(await style("cursor"), embed ? "default" : "pointer");
+      if (embed) assert.ok(await page(embedCursors));
+      await hoverPlayer(selector);
+      if (embed) {
+        assert.ok(await page(cheapHover(selector)));
+        await hoverPlayer(".match .mLink");
+        assert.ok(await page(cheapHover(".match")));
+        await hoverPlayer(selector);
+      } else {
+        assert.notEqual(await style("backgroundColor"), idleBackground);
+      }
+      if (capture) {
+        await page("document.fonts.ready.then(() => true)");
+        const { data } = await send("Page.captureScreenshot", { format: "png" });
+        await writeFile(join(capture, embed ? "embed-hover.png" : "website-hover.png"), Buffer.from(data, "base64"));
+      }
+    }
+  } finally {
+    await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+  }
 });

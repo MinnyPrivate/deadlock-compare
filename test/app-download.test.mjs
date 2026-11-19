@@ -4,8 +4,8 @@ import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 
 test("the missing-match dialog links to the Windows pilot ZIP", () => {
-  const download = readFileSync(new URL("../companion-download.js", import.meta.url), "utf8");
-  const source = readFileSync(new URL("../profile.js", import.meta.url), "utf8");
+  const scripts = ["companion-download.js", "postmortem-embed.js", "player-links.js", "profile.js"]
+    .map(script => readFileSync(new URL("../" + script, import.meta.url), "utf8")).join("\n");
   const noop = () => {};
   const control = { addEventListener: noop, querySelector: () => control, querySelectorAll: () => [] };
   const dialog = {
@@ -14,10 +14,10 @@ test("the missing-match dialog links to the Windows pilot ZIP", () => {
     querySelector: () => control,
     showModal() { this.open = true; },
   };
-  runInNewContext(download + "\n" + source + "\nopenUpload();", {
-    URL,
+  runInNewContext(scripts + "\nopenUpload();", {
+    URL, URLSearchParams,
     setInterval: noop,
-    location: { href: "http://localhost/profile.html" },
+    location: new URL("http://localhost/profile.html"),
     localStorage: { getItem: () => null },
     navigator: { userAgent: "Windows" },
     document: {

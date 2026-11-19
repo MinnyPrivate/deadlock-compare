@@ -438,13 +438,11 @@ a.pl:hover { color: var(--offWhite); text-decoration: underline; }
 @media (prefers-reduced-motion: reduce) { .backdrop { transition: none; } .backdrop i, .backdrop b { animation: none; will-change: auto; } }
 
 /* Hideout's off-screen browser shares rendering time with Deadlock. */
-.profileEmbed, .profileEmbed * { cursor: default !important; }
 .profileEmbed .topbar { background: #080907; backdrop-filter: none; }
 .profileEmbed .backdrop { transition: none; }
 .profileEmbed .backdrop::before { inset: 0; background: radial-gradient(ellipse at 50% 15%, var(--accentSoft), transparent 70%); filter: none; }
 .profileEmbed .backdrop i, .profileEmbed .backdrop b, .profileEmbed .dust, .profileEmbed .grain { display: none; }
 .profileEmbed .spin, .profileEmbed .items.loading i { animation: none; }
-.profileEmbed .match:hover { filter: none; background-color: rgba(255,239,215,0.06); }
 
 /* ---------- matches toolbar: mode filter, freshness, missing games ---------- */
 .modeSeg { margin-left: auto; align-self: center; }
@@ -510,4 +508,8 @@ a.pl:hover { color: var(--offWhite); text-decoration: underline; }
 .wName { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wMeta { font-size: 12px; color: var(--dim); white-space: nowrap; }
 .wFoot { display: flex; justify-content: space-between; gap: 12px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); font-size: 13px; }
-.pl[data-with]:hover .pn { text-decoration: underline; }
+.pl[data-match]:hover .pn { text-decoration: underline; }
+
+/* Profile click rules. In-game overrides live in postmortem-embed.css. */
+#backToMatch { display: inline-flex; align-items: center; white-space: nowrap; }
+.profileEmbed .match:hover { background-color: rgba(255,239,215,0.06); }

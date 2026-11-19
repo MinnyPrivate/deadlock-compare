@@ -324,7 +324,7 @@ window.Summary = (() => {
       <div class="summary-hero-head">
         <div class="summary-art">${heroArt(p, r?.place)}<span class="summary-result summary-${won ? "up" : "down"}">${won ? "+ Victory" : "− Defeat"}</span></div>
         <div class="summary-who">
-          <div class="summary-player">${showHero ? "" : portraitOf(p)}<h2 class="summary-name" title="${esc(username)}">${esc(username)}</h2>${p === state.me ? '<span class="summary-you">You</span>' : ""}</div>
+          <div class="summary-player">${showHero ? "" : portraitOf(p)}<h2 class="summary-name" title="${esc(username)}">${matchPlayerProfile(p, username)}</h2>${p === state.me ? '<span class="summary-you">You</span>' : ""}</div>
           ${showHero ? `<div class="summary-hero-name">${portraitOf(p)}${esc(p.hero)}</div>` : ""}
           <div class="summary-meta"><span>${team.name}</span> · ${LANES_BY_COLOR[p.lane] ? LANES_BY_COLOR[p.lane] + " lane" : "No lane"} · ${fmtTime(match.duration_s)}</div>
           <div class="summary-hero-rank">${rankHtml(p.badge) || (state.awaitingValve ? "" : '<span class="rank none">Unranked</span>')}${valveBadge(p)}</div>
