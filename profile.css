@@ -280,9 +280,9 @@ button.hRow.sel { background: rgba(255,239,215,0.12); box-shadow: inset 3px 0 0 
 .cl.few { color: rgba(255,239,215,0.5); }
 .clock24 { display: grid; grid-template-columns: 26px repeat(12, minmax(0, 1fr)); gap: 3px; align-items: center; }
 .ap { font-size: 11px; font-weight: 600; color: rgba(255,239,215,0.7); }
-.timeOfDay [data-step="1"] { --hour-color: #332F2A; }
-.timeOfDay [data-step="2"] { --hour-color: #6B655D; }
-.timeOfDay [data-step="3"] { --hour-color: #494949; }
+.timeOfDay [data-step="1"] { --hour-color: #302C28; }
+.timeOfDay [data-step="2"] { --hour-color: #524D47; }
+.timeOfDay [data-step="3"] { --hour-color: #85827D; }
 .timeOfDay [data-step="4"] { --hour-color: #B8A64F; }
 .timeOfDay [data-step="5"] { --hour-color: var(--gold); }
 .hr { position: relative; isolation: isolate; display: flex; align-items: center; justify-content: center; aspect-ratio: 1; border-radius: 3px;
@@ -290,7 +290,7 @@ button.hRow.sel { background: rgba(255,239,215,0.12); box-shadow: inset 3px 0 0 
 .hr:not(.empty)::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit;
   background: var(--hour-color); }
 .hr.few::before { opacity: 0.75; }
-.hr:is([data-step="4"], [data-step="5"]) { color: var(--offBlack); }
+.hr:is([data-step="3"], [data-step="4"], [data-step="5"]) { color: var(--offBlack); }
 .hr:focus-visible { z-index: 1; outline: 2px solid var(--offWhite); outline-offset: 1px; }
 .hr sup { font-size: 8px; margin-left: 1px; line-height: 0; }
 .hr.empty { box-shadow: inset 0 0 0 1px rgba(255,239,215,0.12); color: rgba(255,239,215,0.7); }

@@ -255,7 +255,7 @@ test("Time of day uses five fixed steps around 50% with matching hover and keybo
   const cells = await page(cellStyles);
   assert.equal(cells.length, 24);
   assert.deepEqual([13, 18, 16, 15, 14].map(hour => cells[hour].step), [1, 2, 3, 4, 5]);
-  const colors = ["rgb(51, 47, 42)", "rgb(107, 101, 93)", "rgb(73, 73, 73)", "rgb(184, 166, 79)", "rgb(255, 237, 121)"];
+  const colors = ["rgb(48, 44, 40)", "rgb(82, 77, 71)", "rgb(133, 130, 125)", "rgb(184, 166, 79)", "rgb(255, 237, 121)"];
   assert.deepEqual([13, 18, 16, 15, 14].map(hour => cells[hour].color), colors);
   assert.equal(cells[15].color, cells[17].color);
   assert.equal(cells[15].sign, "+");

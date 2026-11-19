@@ -6,11 +6,13 @@ Time of day buckets finished matches by the viewer's local hour. It compares eac
 
 | Step | Win rate | Swatch | CIEDE2000 from previous step |
 | --- | --- | --- | --- |
-| 1 | 40% or less | `#332F2A` | |
-| 2 | Over 40%, under 47% | `#6B655D` | 18.48 |
-| 3 | 47% through 53%, inclusive | `#494949` | 11.32 |
-| 4 | Over 53%, under 60% | `#B8A64F` | 43.47 |
+| 1 | 40% or less | `#302C28` | |
+| 2 | Over 40%, under 47% | `#524D47` | 10.89 |
+| 3 | 47% through 53%, inclusive | `#85827D` | 19.98 |
+| 4 | Over 53%, under 60% | `#B8A64F` | 23.78 |
 | 5 | 60% or more | `#FFED79` | 17.64 |
+
+The scale gets lighter at every step (L* 18, 33, 55, 68, 93), so the order reads dark ash, lighter ash, neutral gray, mid gold, bright gold. Steps 3 to 5 use dark hour labels for contrast (4.9, 7.7 and 15.7 against the swatch).
 
 Distances use the full-opacity sRGB swatches converted to CIELAB with a D65 white point. The calculation matched all 34 published CIEDE2000 reference pairs. [Sharma, Wu and Dalal, February 2005](https://hajim.rochester.edu/ece/sites/gsharma/ciede2000/)
 
@@ -37,3 +39,5 @@ To capture the chart on the current code, set `PM_TIMEOFDAY_HISTORY` to the save
 ## How Zachary wants to work
 
 Read Vault Decisions and the newest handoff first. Sketch the plan and wait for explicit approval unless the brief already gives it. Keep design decisions with Zachary and use saved real data for visual checks. Stage only named files and keep credentials and local logs out of Git. This brief authorizes pushing only `codex/timeofday-gold`. Merging, deploying, or pushing to `main` requires separate authorization.
+
+The screenshots above were captured before the palette reorder and show the earlier step 2 and 3 colors.
