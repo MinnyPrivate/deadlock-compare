@@ -513,9 +513,12 @@ window.Summary = (() => {
       ["Damage taken", q => (snap(q).player_damage_taken || 0) + (snap(q).damage_mitigated || 0)],
     ];
     const led = LIST.map(([label, read]) => {
-      const mine = read(p), others = state.players.filter(q => q !== p).map(read);
-      return { label, mine, led: (mine > 0 || label === "Fewest deaths") && others.every(v => v < mine) };
-    }).filter(x => x.led);
+      const mine = read(p), rest = state.players.filter(q => q !== p);
+      const next = rest.reduce((best, q) => read(q) > read(best) ? q : best, rest[0]);
+      // Margin over the runner-up, the size of the lead, so the rows can be ranked and drawn.
+      const margin = label === "Fewest deaths" ? read(next) - mine : mine / Math.max(1, read(next));
+      return { label, mine, next, nextValue: read(next), margin, led: (mine > 0 || label === "Fewest deaths") && rest.every(q => read(q) < mine) };
+    }).filter(x => x.led).sort((a, b) => (b.label !== "Fewest deaths") - (a.label !== "Fewest deaths") || b.margin - a.margin);
     if (!led.length) return null;
     const shown = led.slice(0, 6);
     return {
@@ -523,7 +526,8 @@ window.Summary = (() => {
       kicker: "Lobby bests",
       big: `<b class="hl-big summary-gold">${led.length}</b><span class="hl-of">lobby ${led.length === 1 ? "stat" : "stats"} led</span>`,
       sub: "",
-      visual: `<ul class="hl-best-list${shown.length <= 3 ? " is-single" : ""}">${shown.map(x => `<li><span>${esc(x.label)}</span><b>${x.label === "Fewest deaths" ? -x.mine : fmtStat(x.mine)}</b></li>`).join("")}${led.length > shown.length ? `<li class="hl-best-more" ${explain(led.slice(shown.length).map(x => x.label).join(", ") + ".")}>+${led.length - shown.length} more</li>` : ""}</ul>`,
+      visual: `<ul class="hl-best-list${shown.length <= 3 ? " is-single" : ""}">${shown.map(x => `<li ${explain(`Next best: ${name(x.next)} with ${x.label === "Fewest deaths" ? -x.nextValue : fmtStat(x.nextValue)}.`)}><span>${esc(x.label)}</span><b>${x.label === "Fewest deaths" ? -x.mine : fmtStat(x.mine)}</b>
+        ${x.label === "Fewest deaths" ? "" : `<i class="hl-best-bar"><i style="--w:${(x.nextValue / Math.max(1, x.mine) * 100).toFixed(1)}%"></i></i><small>Next best ${fmtStat(x.nextValue)}, ${esc(name(x.next))}</small>`}</li>`).join("")}${led.length > shown.length ? `<li class="hl-best-more" ${explain(led.slice(shown.length).map(x => x.label).join(", ") + ".")}>+${led.length - shown.length} more</li>` : ""}</ul>`,
       more: "",
       foot: led.length > shown.length ? `+${led.length - shown.length} more` : "",
       interest: led.length >= 2 ? 20 + led.length * 12 : 12, // one lobby best is a footnote, not a card
