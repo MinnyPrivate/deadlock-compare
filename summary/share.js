@@ -100,21 +100,26 @@ window.ShareCard = (() => {
     ctx.fillStyle = d.team.c;
     ctx.fillRect(0, 0, 6, H);
 
-    // Who: username, hero and rank, then the KDA, over the art's foot.
+    // Who leads: the username at the top of the art, hero and rank under it, the KDA at its foot.
+    g = ctx.createLinearGradient(0, 0, 0, 170);
+    g.addColorStop(0, "rgba(13,12,11,.92)");
+    g.addColorStop(1, "rgba(13,12,11,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(6, 0, ART - 6, 170);
     const LX = 34, LW = ART - 60;
     ctx.shadowColor = "rgba(0,0,0,.85)";
     ctx.shadowBlur = 14;
     setFont(ctx, d.username, LW, "700 {s}px Radiance", 44, 24);
     ctx.fillStyle = CREAM;
-    ctx.fillText(ellipsize(ctx, d.username, LW), LX, H - 128);
+    ctx.fillText(ellipsize(ctx, d.username, LW), LX, 72);
     ctx.shadowBlur = 0;
     ctx.font = "600 19px Radiance";
     ctx.fillStyle = DIM;
     let x = LX;
-    if (d.username !== d.hero) { ctx.fillText(d.hero, x, H - 96); x += ctx.measureText(d.hero).width + 14; }
+    if (d.username !== d.hero) { ctx.fillText(d.hero, x, 104); x += ctx.measureText(d.hero).width + 14; }
     if (rankImage && d.rank) {
-      ctx.drawImage(rankImage, x, H - 118, 28, 28);
-      ctx.fillText(ellipsize(ctx, d.rank.name, LX + LW - x - 34), x + 34, H - 96);
+      ctx.drawImage(rankImage, x, 82, 28, 28);
+      ctx.fillText(ellipsize(ctx, d.rank.name, LX + LW - x - 34), x + 34, 104);
     }
     ctx.font = "600 40px Oracle";
     let kx = LX;
@@ -196,9 +201,24 @@ window.ShareCard = (() => {
       ctx.restore();
       ctx.strokeStyle = "rgba(255,239,215,.25)"; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(L, mid); ctx.lineTo(R, mid); ctx.stroke();
-      ctx.font = "700 12px Pulp";
+      // Annotate the moment that defines the story, such as the low point of a comeback.
+      const mark = d.lines.find(line => line.mark)?.mark;
+      const point = mark && d.spark.find(pt => pt.t === mark.t);
+      if (point) {
+        const mx = px(point.t), my = py(point.lead);
+        ctx.fillStyle = CREAM;
+        ctx.beginPath(); ctx.arc(mx, my, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.font = "600 17px Oracle";
+        const tw = ctx.measureText(mark.text).width, tx = Math.min(R - tw, Math.max(L, mx - tw / 2));
+        const ty = point.lead >= 0 ? my - 12 : my + 26;
+        ctx.fillStyle = "rgba(10,10,9,.85)";
+        ctx.fillRect(tx - 6, ty - 17, tw + 12, 23);
+        ctx.fillStyle = CREAM;
+        ctx.fillText(mark.text, tx, ty);
+      }
+      ctx.font = "700 14px Pulp";
       ctx.fillStyle = FAINT;
-      ctx.fillText(`${d.team.name.toUpperCase()} SOUL LEAD`, L, y - 6);
+      ctx.fillText(`${d.team.name.toUpperCase()} SOUL LEAD`, L, y - 8);
       y += sh + 40;
     } else y += 20;
 
@@ -214,9 +234,9 @@ window.ShareCard = (() => {
       setFont(ctx, line.big, colW, "600 {s}px Oracle", 38, 22);
       ctx.fillStyle = color(line.tone);
       ctx.fillText(ellipsize(ctx, line.big, colW), cx, y + 42);
-      ctx.font = "600 16px Radiance";
-      ctx.fillStyle = "rgba(255,239,215,.8)";
-      ctx.fillText(ellipsize(ctx, line.sub || "", colW), cx, y + 68);
+      ctx.font = "600 19px Radiance";
+      ctx.fillStyle = "rgba(255,239,215,.82)";
+      ctx.fillText(ellipsize(ctx, line.sub || "", colW), cx, y + 70);
     });
 
     // Footer: the site's name and the fan-project notice.
@@ -276,14 +296,21 @@ window.ShareCard = (() => {
     dialog.querySelectorAll(".share-actions button").forEach(b => { b.disabled = b.dataset.share !== "link"; });
     dialog.hidden = false;
     dialog.querySelector(".share-close").focus();
+    // Every await is a chance for the dialog to close or reopen on another player, so results are kept local
+    // and published only if this is still the current request.
+    const stale = () => data !== d || dialog.hidden;
     const canvas = await draw(d);
-    if (data !== d || dialog.hidden) return;
+    if (stale()) return;
+    let url = null, png = null;
     try {
-      lastUrl = canvas.toDataURL("image/png");
-      blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
+      url = canvas.toDataURL("image/png");
+      png = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
     } catch (_) {
-      lastUrl = null;
+      url = null;
     }
+    if (stale()) return;
+    lastUrl = url;
+    blob = png;
     dialog.querySelector(".share-loading").hidden = true;
     if (!lastUrl) {
       dialog.querySelector(".share-status").textContent = "This browser could not draw the image.";

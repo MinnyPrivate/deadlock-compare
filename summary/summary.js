@@ -16,7 +16,7 @@ window.Summary = (() => {
   const DAY = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
   const num = n => n.toLocaleString("en-US", { maximumFractionDigits: 1 });
   const SHORT_GAME_S = 1200; // under 20:00 every percentile uses the per minute table
-  const ENTER_MS = 900;
+  const ENTER_MS = 600;
   const lookups = new Map();
   let names = new Map(), art = {}, match, rows, deaths, percentiles, shownTip, tipTimer;
   let enteredMatch, enterStart = 0, renderedBackdrop, current;
@@ -226,11 +226,12 @@ window.Summary = (() => {
       const dot = { x, pos: (x.score - min) / span };
       const gapIn = row => Math.min(1, ...placed[row].map(o => Math.abs(o.pos - dot.pos)));
       dot.row = x === r ? 0 : [0, 1, 2].find(row => placed[row].every(o => room(o, dot)) && !(row === 1 && Math.abs(dot.pos - youPos) < 0.09)) ?? [0, 1, 2].sort((a, b) => gapIn(b) - gapIn(a))[0];
+      for (let tries = 0; tries < 6 && placed[dot.row].some(o => !room(o, dot)); tries++) dot.pos = Math.min(1, dot.pos + 0.03);
       placed[dot.row].push(dot);
       return dot;
     }).reverse();
     const strip = `<div class="hl-strip" role="img" aria-label="Estimated Valve score for all ${n} players, lowest on the left">
-      <span class="hl-strip-axis"></span><span class="hl-strip-end">Lowest score</span><span class="hl-strip-end right">Highest</span>
+      <span class="hl-strip-axis"></span>
       <div class="hl-strip-lane">${dots.map(({ x, pos, row }) => `<button type="button" class="hl-dot${x.p === p ? " is-you" : ""}${x.place <= 3 ? " is-top" : ""}"
         style="--x:${(pos * 100).toFixed(2)}%;--dy:${[0, -50, 50][row]}px" data-summary-slot="${x.p.slot}" data-summary-score="${x.p.slot}"
         aria-label="${esc(fullName(x.p))}, ${ordinal(x.place)}, ${x.score.toFixed(1)} points">
@@ -243,55 +244,54 @@ window.Summary = (() => {
     const boost = parts[0], drag = parts[parts.length - 1];
     const bottom = r.place > n - 3;
     return {
-      id: "place", area: "place", go: link("mvp", "MVP"), tone: r.place === 1 ? "gold" : bottom ? "bad" : "",
+      id: "place", go: link("mvp", "MVP"), tone: r.place === 1 ? "gold" : bottom ? "bad" : "",
       kicker,
       big: `<b class="hl-big">${ordinal(r.place)}</b><span class="hl-of">of ${n}${p.mvp ? ", estimated" : ""}</span>`,
       sub: `${esc(gapText)}${teamBest && r.place > 1 ? ` · best on ${TEAMS[p.team].name}` : ""}`,
       visual: strip,
       more: `<span>Biggest boost <b class="summary-up">${esc(boost.label)} ${signed(boost.v, 1)}</b></span><span>Biggest drag <b class="${drag.v < 0 ? "summary-down" : ""}">${esc(drag.label)} ${signed(drag.v, 1)}</b></span>`,
       interest: r.place === 1 ? 100 : r.place <= 3 ? 60 : bottom ? 45 : 20,
-      share: { label: kicker, big: `${ordinal(r.place)} of ${n}`, sub: gapText, tone: r.place === 1 ? "gold" : bottom ? "bad" : "" },
+      share: { label: p.mvp ? `${kicker} · estimated place` : kicker, big: `${ordinal(r.place)} of ${n}`, sub: gapText, tone: r.place === 1 ? "gold" : bottom ? "bad" : "" },
     };
   }
 
   function sweepCard(p, stats) {
     const vsHero = stats.filter(s => s.percentile).length >= 3;
     const pos = s => vsHero ? (s.percentile ? s.percentile.pct / 100 : null) : 1 - (s.place - 1) / Math.max(1, s.size - 1);
-    const word = s => vsHero ? (s.bounds ? bucket(s.bounds) : ["No data", "even"])
-      : [ordinal(s.place), s.place <= 2 ? "up" : s.place >= s.size - 1 ? "down" : "even"];
-    const ranked = stats.filter(s => pos(s) != null).sort((a, b) => pos(b) - pos(a));
-    const best = ranked[0], worst = ranked[ranked.length - 1];
-    const [bestWord, bestTone] = word(best), [worstWord] = word(worst), worstTone = word(worst)[1];
-    const flat = bestTone !== "up" && worstTone !== "down", low = bestTone !== "up" && !flat;
-    const lead = low ? worst : best, leadWord = low ? worstWord : bestWord;
+    // Green and red mean "against the hero average" (DESIGN.md). Against the lobby only a first place gets gold.
+    const word = s => vsHero ? (s.bounds ? bucket(s.bounds) : ["No data", "even"]) : [ordinal(s.place), s.place === 1 ? "gold" : "even"];
+    // Rank by how unusual each stat is, either direction, so a Bottom 1% outranks a Top 10%.
+    const strength = s => pos(s) == null ? -1 : Math.abs(pos(s) - 0.5) - (word(s)[1] === "even" ? 1 : 0);
+    const ranked = stats.filter(s => pos(s) != null).sort((a, b) => strength(b) - strength(a) || STATS.indexOf(a) - STATS.indexOf(b));
+    const lead = ranked[0], [leadWord, leadTone] = word(lead);
+    const flat = leadTone === "even", low = leadTone === "down";
     const per = short() ? " per minute" : "";
-    // The three most unusual stats, either direction, carry the card. The rest are one hover away.
-    const strength = s => pos(s) == null ? -1 : Math.abs(pos(s) - 0.5);
-    const shown = stats.slice().sort((a, b) => strength(b) - strength(a)).slice(0, 3);
-    const hidden = stats.filter(s => !shown.includes(s));
+    const shown = ranked.slice(0, 3), hidden = stats.filter(s => !shown.includes(s));
     const lines = shown.map(s => {
       const at = pos(s), [w, tone] = word(s);
       return `<div class="hl-sweep-row" ${explain(proof(p, s))}><span class="hl-sweep-label">${esc(s.short || s.label)}</span>
         <span class="hl-sweep-track">${at == null ? "" : `<i class="hl-sweep-dot summary-${tone}" style="--x:${(at * 100).toFixed(1)}%"></i>`}</span>
         <span class="hl-sweep-word summary-${tone}">${tone === "up" ? "▲ " : tone === "down" ? "▼ " : ""}${esc(w)}</span></div>`;
     }).join("");
-    const bestName = (best.short || best.label).toLowerCase();
+    const leadName = (lead.short || lead.label).toLowerCase();
     return {
-      id: "sweep", area: "sweep", go: link("mvp", "MVP"), tone: low ? "bad" : "",
+      id: "sweep", go: link("mvp", "MVP"), tone: low ? "bad" : "",
       kicker: vsHero ? `Vs other ${esc(p.hero)} games` : "Vs the lobby",
       big: flat ? `<b class="hl-big hl-word">Typical</b><span class="hl-of">on every stat${per}</span>`
-        : `<b class="hl-big summary-${low ? "down" : "up"}">${esc(leadWord)}</b><span class="hl-of">${esc((lead.short || lead.label).toLowerCase())}${per}</span>`,
+        : `<b class="hl-big summary-${leadTone}">${esc(leadWord)}</b><span class="hl-of">${esc(leadName)}${per}</span>`,
       sub: "",
       visual: `<div class="hl-sweep">${lines}
         ${hidden.length ? `<span class="hl-sweep-rest" ${explain(hidden.map(s => `${s.short || s.label}: ${word(s)[0]}.`).join(" "))}>+${hidden.length} more stats${hidden.every(s => word(s)[1] === "even") ? ", all typical" : ""}</span>` : ""}</div>`,
       more: "",
-      interest: flat ? 5 : best.percentile ? Math.abs(best.percentile.pct - 50) : 10,
-      share: flat || low ? null : { label: vsHero ? `Vs ${p.hero} games` : "Vs the lobby", big: bestWord, sub: `in ${bestName}${per}`, tone: "good" },
+      interest: flat ? 0 : 20 + (lead.percentile ? Math.abs(lead.percentile.pct - 50) : 25), // the honest overall read, so it ranks high
+      share: flat || low ? null : { label: vsHero ? `Vs ${p.hero} games` : "Vs the lobby", big: leadWord, sub: `in ${leadName}${per}`, tone: leadTone === "gold" ? "gold" : "good" },
     };
   }
 
   function storyCard(p) {
-    const series = leadSeries(p.team), won = Number(match.winning_team) === p.team, dur = match.duration_s;
+    const series = leadSeries(p.team);
+    if (series.length < 4) return null; // too few shared snapshots to tell a story
+    const won = Number(match.winning_team) === p.team, dur = match.duration_s;
     let low = series[0], high = series[0], changes = 0, sign = 0;
     for (const pt of series) {
       if (pt.lead < low.lead) low = pt;
@@ -301,9 +301,13 @@ window.Summary = (() => {
       if (s) sign = s;
     }
     // Share of the match this team spent ahead, weighted by the time between snapshots.
-    let aheadTime = 0;
-    for (let i = 1; i < series.length; i++) if (series[i].lead > 0) aheadTime += series[i].t - series[i - 1].t;
-    const ahead = aheadTime / Math.max(1, series[series.length - 1].t);
+    let aheadTime = 0, behindTime = 0;
+    for (let i = 1; i < series.length; i++) {
+      const span = series[i].t - series[i - 1].t;
+      if (series[i].lead > 0) aheadTime += span;
+      else if (series[i].lead < 0) behindTime += span;
+    }
+    const total = Math.max(1, series[series.length - 1].t), ahead = aheadTime / total, behind = behindTime / total;
     const trailedLate = series.some(pt => pt.t > 300 && (won ? pt.lead < 0 : pt.lead > 0));
     const final = series[series.length - 1].lead;
     let word, sub, tone = "", mark;
@@ -313,7 +317,7 @@ window.Summary = (() => {
     else if (!won && !trailedLate && low.lead <= -15000) { word = "Steamrolled"; sub = `Never led after 5:00. Down ${fmtStat(-low.lead)} at the worst.`; mark = low; tone = "bad"; }
     else if (changes >= 3) { word = "Back and forth"; sub = `The soul lead changed hands ${changes} times. ${won ? "Won" : "Lost"} in ${fmtTime(dur)}.`; mark = won ? high : low; }
     else if (won && ahead >= 0.6) { word = "Held the lead"; sub = `Ahead for about ${Math.round(ahead * 100)}% of the game. Won in ${fmtTime(dur)}.`; mark = high; }
-    else if (!won && ahead <= 0.4) { word = "Chased all game"; sub = `Behind for about ${Math.round((1 - ahead) * 100)}% of the game. Lost in ${fmtTime(dur)}.`; mark = low; tone = "bad"; }
+    else if (!won && behind >= 0.6) { word = "Chased all game"; sub = `Behind for about ${Math.round(behind * 100)}% of the game. Lost in ${fmtTime(dur)}.`; mark = low; tone = "bad"; }
     else if (Math.max(high.lead, -low.lead) < 6000) { word = "Close one"; sub = `Neither team got 6k ahead. ${won ? "Won" : "Lost"} in ${fmtTime(dur)}.`; mark = won ? high : low; }
     else if (won) { word = "Took control"; sub = `Biggest lead ${fmtStat(high.lead)} at ${fmtTime(high.t)}.`; mark = high; }
     else { word = "Fell behind"; sub = `Biggest deficit ${fmtStat(-low.lead)} at ${fmtTime(low.t)}.`; mark = low; tone = "bad"; }
@@ -325,7 +329,7 @@ window.Summary = (() => {
     const id = `hl${match.match_id}`;
     const mine = TEAMS[p.team].c, theirs = TEAMS[1 - p.team].c;
     const bosses = (match.mid_boss || []).filter(b => b.destroyed_time_s).map(b =>
-      `<path class="hl-boss" d="M${x(b.destroyed_time_s)},${H - 12}l5,5l-5,5l-5,-5Z"/>`).join("");
+      `<path class="hl-boss" d="M${x(b.destroyed_time_s)},${H - 12}l5,5l-5,5l-5,-5Z"><title>Mid Boss at ${fmtTime(b.destroyed_time_s)}</title></path>`).join("");
     const svg = `<svg class="hl-story-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Team soul lead over the match. Above the line ${esc(TEAMS[p.team].name)} was ahead.">
       <defs><clipPath id="${id}u"><rect width="${W}" height="${mid}"/></clipPath><clipPath id="${id}d"><rect y="${mid}" width="${W}" height="${mid}"/></clipPath></defs>
       <g class="hl-area"><path d="${area}" fill="${mine}" fill-opacity=".42" clip-path="url(#${id}u)"/><path d="${area}" fill="${theirs}" fill-opacity=".42" clip-path="url(#${id}d)"/></g>
@@ -335,34 +339,35 @@ window.Summary = (() => {
     const markText = `${mark.lead >= 0 ? "+" : "−"}${fmtStat(Math.abs(mark.lead))} at ${fmtTime(mark.t)}`;
     const dot = `<i class="hl-mark" style="left:${markX.toFixed(2)}%;top:${markY.toFixed(2)}%"></i>
       <span class="hl-mark-label${markY < 40 ? " below" : ""}${markX > 78 ? " left" : ""}" style="left:${markX.toFixed(2)}%;top:${markY.toFixed(2)}%">${markText}</span>`;
-    const labels = `<span class="hl-story-team up" style="--tc:${mine}">${esc(TEAMS[p.team].name)} ahead</span><span class="hl-story-team down" style="--tc:${theirs}">${esc(TEAMS[1 - p.team].name)} ahead</span>`;
+    const ends = `<span class="hl-story-time">0:00</span><span class="hl-story-time end">${fmtTime(dur)}</span>`;
+    const labels = ends + `<span class="hl-story-team up" style="--tc:${mine}">${esc(TEAMS[p.team].name)} ahead</span><span class="hl-story-team down" style="--tc:${theirs}">${esc(TEAMS[1 - p.team].name)} ahead</span>`;
     return {
-      id: "story", area: "story", go: link("souls_lead", "Graphs"), tone: tone === "bad" ? "bad" : "",
+      id: "story", go: link("souls_lead", "Graphs"), tone: tone === "bad" ? "bad" : "",
       kicker: "Match story",
       big: `<b class="hl-big hl-word">${word}</b>`,
       sub: esc(sub),
       visual: `<div class="hl-story">${svg}${dot}${labels}</div>`,
       more: `<span>Biggest lead <b>${fmtStat(Math.max(0, high.lead))}</b></span><span>Biggest deficit <b>${fmtStat(Math.max(0, -low.lead))}</b></span><span>Final gap <b>${fmtStat(Math.abs(final))}</b></span>`,
       interest: tone ? 70 : 15,
-      share: tone || changes >= 3 ? { label: "Match story", big: word, sub, tone, spark: true } : null,
+      share: tone || changes >= 3 ? { label: "Match story", big: word, sub, tone, mark: { t: mark.t, text: markText } } : null,
     };
   }
 
   function rivalCard(p) {
     const { nemesis, victim, killers } = rivals(p), damage = damageTo(p);
     const deathsTotal = p.raw.deaths || 0;
-    const stamp = events => events.slice(0, 5).map(e => `<b>${fmtTime(e.t)}</b>`).join(" ");
+    const stamp = events => events.slice(0, 5).map(e => fmtTime(e.t)).join(", ");
     const duel = (q, label, tone, score, sub, more, interest) => {
       const d = damage?.find(e => e.q === q);
       const max = Math.max(1, d?.out || 0, d?.in || 0);
-      const bars = d ? `<div class="hl-duel-bars" role="img" aria-label="Hero damage to each other">
+      const bars = d ? `<div class="hl-duel-bars" role="img" aria-label="Hero damage to each other"><small class="hl-duel-head">Hero damage</small>
           <span>${isMe(p) ? "You" : esc(name(p))}</span><span class="hl-duel-track"><i style="--w:${(d.out / max * 100).toFixed(1)}%;--tc:${TEAMS[p.team].c}"></i></span><b>${fmtStat(d.out)}</b>
           <span>${esc(name(q))}</span><span class="hl-duel-track"><i style="--w:${(d.in / max * 100).toFixed(1)}%;--tc:${TEAMS[q.team].c}"></i></span><b>${fmtStat(d.in)}</b></div>` : "";
       return {
-        id: "rival", area: "rival", go: link("matchups", "Matchups"), tone, rival: q,
+        id: "rival", go: link("matchups", "Matchups"), tone, rival: q,
         kicker: label, big: `<span class="hl-rival-name">${who(q)}</span>`, sub,
-        visual: `<div class="hl-duel">${coin(q, "big")}<div class="hl-duel-score"><b>${score}</b><small>Kills, ${isMe(p) ? "you" : esc(name(p))} vs them</small></div>${bars}</div>`,
-        more, interest,
+        visual: `<div class="hl-duel">${coin(q, "big")}<div class="hl-duel-score" ${more ? explain(plain(more)) : ""}><b>${score}</b><small>Kills, ${isMe(p) ? "you" : esc(name(p))} vs them</small></div>${bars}</div>`,
+        more: "", interest,
         share: { label, big: name(q), sub: plain(sub), tone },
       };
     };
@@ -381,7 +386,7 @@ window.Summary = (() => {
     }
     if (deathsTotal === 0) {
       return {
-        id: "rival", area: "rival", go: link("matchups", "Matchups"), tone: "good", kicker: "Untouchable",
+        id: "rival", go: link("matchups", "Matchups"), tone: "good", kicker: "Untouchable",
         big: `<b class="hl-big">0</b><span class="hl-of">deaths</span>`, sub: `Not one death in ${fmtTime(match.duration_s)}.`,
         visual: lobbyDeaths(p), more: `<span>Nobody on ${esc(TEAMS[1 - p.team].name)} found the kill</span>`, interest: 90,
         share: { label: "Untouchable", big: "0 deaths", sub: `in ${fmtTime(match.duration_s)}`, tone: "good" },
@@ -391,14 +396,14 @@ window.Summary = (() => {
       const all = damage.reduce((sum, e) => sum + e.out, 0), top = damage[0];
       const share = Math.round(top.out / Math.max(1, all) * 100);
       return {
-        id: "rival", area: "rival", go: link("matchups", "Matchups"), tone: "", rival: top.q, kicker: "Focus target",
+        id: "rival", go: link("matchups", "Matchups"), tone: "", rival: top.q, kicker: "Focus target",
         big: `<span class="hl-rival-name">${who(top.q)}</span>`, sub: `Took ${share}% of ${your(p)} hero damage.`,
         visual: columns(damage.map((e, i) => ({ value: e.out, color: TEAMS[e.q.team].c, top: i === 0, foot: coin(e.q), tip: `${fmtStat(e.out)} hero damage to ${name(e.q)}.` }))),
         more: `<span>No one killed ${you(p)} twice. ${killers} different killers.</span>`, interest: 20, share: null,
       };
     }
     return {
-      id: "rival", area: "rival", go: link("matchups", "Matchups"), tone: "", kicker: "No repeat killer",
+      id: "rival", go: link("matchups", "Matchups"), tone: "", kicker: "No repeat killer",
       big: `<b class="hl-big">${killers}</b><span class="hl-of">different killers</span>`, sub: `Nobody got ${you(p)} twice.`,
       visual: lobbyDeaths(p), more: "", interest: 10, share: null,
     };
@@ -415,7 +420,9 @@ window.Summary = (() => {
   function laneCard(p) {
     const lane = laneInfo(p);
     if (!lane) return null;
-    const gap = lane.gap, pctGap = Math.round(Math.abs(gap) * 100);
+    const gap = lane.gap;
+    // Shown as "how far ahead of the other side": the difference over the smaller total.
+    const pctGap = Math.round(Math.abs(lane.friendlySouls - lane.enemySouls) / Math.max(1, Math.min(lane.friendlySouls, lane.enemySouls)) * 100);
     // Over 15% apart is a won or lost lane; never "Even" past that.
     const [word, tone] = gap > 0.15 ? ["Won lane", "good"] : gap < -0.15 ? ["Lost lane", "bad"]
       : gap > 0.05 ? ["Edged lane", ""] : gap < -0.05 ? ["Behind in lane", ""] : ["Even lane", ""];
@@ -426,17 +433,17 @@ window.Summary = (() => {
       const own = lane.snapshots.get(p)[key] || 0;
       const avg = lane.opponents.reduce((s, q) => s + (lane.snapshots.get(q)[key] || 0), 0) / lane.opponents.length;
       const t = own > avg ? "up" : own < avg ? "down" : "even";
-      return `<span>${label} <b class="summary-${t}">${t === "up" ? "▲" : t === "down" ? "▼" : "≈"} ${num(own)}</b> vs ${num(Math.round(avg))}</span>`;
+      return `<span>${label} <b>${t === "up" ? "▲" : t === "down" ? "▼" : "≈"} ${num(own)}</b> vs ${num(Math.round(avg))}</span>`;
     };
     return {
-      id: "lane", area: "lane", go: link("lanes", "Lanes"), tone: tone === "bad" ? "bad" : "",
+      id: "lane", go: link("lanes", "Lanes"), tone: tone === "bad" ? "bad" : "",
       kicker: `<span class="hl-lane-word" data-lane="${color.toLowerCase()}">${color} lane</span> · 9:00`,
-      big: `<b class="hl-big hl-word">${word}</b>`,
+      big: `<b class="hl-big hl-word${tone ? "" : " is-quiet"}">${word}</b>`,
       sub: `${pctGap ? `${pctGap}% ${gap > 0 ? "ahead" : "behind"} on team souls.` : "Dead even on team souls."}`,
       visual: `<div class="hl-tug" style="--mine:${TEAMS[p.team].c};--theirs:${TEAMS[1 - p.team].c};--share:${(share * 100).toFixed(1)}%">
         ${side(lane.mates, lane.friendlySouls)}<div class="hl-tug-bar"><i></i><span class="hl-tug-mid"></span></div>${side(lane.opponents, lane.enemySouls, true)}</div>`,
       more: row("Last hits", "creep_kills") + row("Denies", "denies") + row("Hero dmg", "player_damage"),
-      interest: tone ? 35 + pctGap : 10,
+      interest: tone ? 35 + pctGap : 12,
       share: tone ? { label: `${color} lane`, big: word, sub: `${fmtStat(lane.friendlySouls)} vs ${fmtStat(lane.enemySouls)} souls at 9:00`, tone } : null,
     };
   }
@@ -469,7 +476,7 @@ window.Summary = (() => {
     } else if (first?.victim === p) {
       word = "First to fall"; sub = `${name(first.killer)} got ${isMe(p) ? "you" : name(p)} at ${fmtTime(first.t)}.`; focus = [first]; tone = "bad"; interest = 30;
     } else {
-      word = "Longest life"; sub = `${fmtTime(longest.to - longest.from)} without dying, from ${fmtTime(longest.from)} to ${fmtTime(longest.to)}.`; interest = 15;
+      word = "Longest life"; sub = `${fmtTime(longest.to - longest.from)} without dying${died.length !== (p.raw.deaths || 0) ? " (recorded deaths)" : ""}, from ${fmtTime(longest.from)} to ${fmtTime(longest.to)}.`; interest = 15;
     }
     const W = wide ? 660 : 440, H = wide ? 112 : 122, mid = wide ? 52 : 57, x = t => (t / dur * W).toFixed(1);
     const tick = (e, up) => `<g class="hl-tick ${up ? "kill" : "death"}${focus.includes(e) ? " is-focus" : ""}" transform="translate(${x(e.t)},${mid})"><line y1="${up ? -4 : 4}" y2="${up ? -32 : 32}"/><circle cy="${up ? -37 : 37}" r="${focus.includes(e) ? 7 : 5}"/></g>`;
@@ -486,7 +493,7 @@ window.Summary = (() => {
     const callout = faces.length ? `<div class="hl-callout${focus[0].victim === p ? " is-death" : ""}" style="--at:${at.toFixed(1)}%">${faces.map(q => coin(q)).join("")}
       <span>${focus.length > 1 ? `${focus.length} kills in ${Math.round(focus[focus.length - 1].t - focus[0].t)} s · ${fmtTime(focus[0].t)}` : `${esc(name(faces[0]))} · ${fmtTime(focus[0].t)}`}</span></div>` : "";
     return {
-      id: "moments", area: "moments", go: link("kills", "Graphs"), tone: tone === "bad" ? "bad" : "",
+      id: "moments", go: link("kills", "Graphs"), tone: tone === "bad" ? "bad" : "",
       kicker: "Big moment",
       big: `<b class="hl-big hl-word">${word}</b>`, sub: callout ? "" : esc(sub),
       visual: `<div class="hl-moments${callout ? " has-callout" : ""}">${callout}${svg}<span class="hl-moments-key"><i class="kill"></i>Kills<i class="death"></i>Deaths${bosses ? '<i class="boss"></i>Mid Boss' : ""}</span>
@@ -512,18 +519,19 @@ window.Summary = (() => {
     if (!led.length) return null;
     const shown = led.slice(0, 6);
     return {
-      id: "bests", area: "extra", go: link("mvp", "MVP"), tone: "gold",
+      id: "bests", go: link("mvp", "MVP"), tone: "gold",
       kicker: "Lobby bests",
       big: `<b class="hl-big summary-gold">${led.length}</b><span class="hl-of">lobby ${led.length === 1 ? "stat" : "stats"} led</span>`,
       sub: "",
-      visual: `<ul class="hl-best-list${shown.length <= 3 ? " is-single" : ""}">${shown.map(x => `<li><span>${esc(x.label)}</span><b>${x.label === "Fewest deaths" ? -x.mine : fmtStat(x.mine)}</b></li>`).join("")}</ul>`,
+      visual: `<ul class="hl-best-list${shown.length <= 3 ? " is-single" : ""}">${shown.map(x => `<li><span>${esc(x.label)}</span><b>${x.label === "Fewest deaths" ? -x.mine : fmtStat(x.mine)}</b></li>`).join("")}${led.length > shown.length ? `<li class="hl-best-more" ${explain(led.slice(shown.length).map(x => x.label).join(", ") + ".")}>+${led.length - shown.length} more</li>` : ""}</ul>`,
       more: "",
-      interest: 20 + led.length * 12,
+      foot: led.length > shown.length ? `+${led.length - shown.length} more` : "",
+      interest: led.length >= 2 ? 20 + led.length * 12 : 12, // one lobby best is a footnote, not a card
       share: led.length >= 2 ? { label: "Lobby bests", big: `Led ${led.length} stats`, sub: led.slice(0, 3).map(x => x.label.toLowerCase()).join(", "), tone: "gold" } : null,
     };
   }
 
-  function soulsCard(p, area) {
+  function soulsCard(p) {
     const s = p.stats[p.stats.length - 1] || {};
     const sources = [["Troopers", (s.gold_lane_creep || 0) + (s.gold_lane_creep_orbs || 0)], ["Jungle", (s.gold_neutral_creep || 0) + (s.gold_neutral_creep_orbs || 0)],
       ["Heroes", (s.gold_player || 0) + (s.gold_player_orbs || 0)], ["Objectives", (s.gold_boss || 0) + (s.gold_boss_orb || 0)], ["Urn and crates", s.gold_treasure || 0]]
@@ -531,7 +539,7 @@ window.Summary = (() => {
     const total = sources.reduce((sum, [, v]) => sum + v, 0) || 1;
     const place = 1 + state.players.filter(q => q.souls > p.souls).length;
     return {
-      id: "souls", area, go: link("souls_source", "Graphs"), tone: "",
+      id: "souls", go: link("souls_source", "Graphs"), tone: "",
       kicker: "Where the souls came from",
       big: `<b class="hl-big hl-word">${esc(sources[0]?.[0] || "Souls")}</b>`,
       sub: `${Math.round((sources[0]?.[1] || 0) / total * 100)}% of tracked income. ${ordinal(place)} richest in the lobby.`,
@@ -540,15 +548,30 @@ window.Summary = (() => {
     };
   }
 
+  // Cards are candidates, ranked by how interesting they are. Fillers drop out, at most two bad-news cards stay,
+  // and the grid reflows: row one is placement plus the top pick, row two the story plus the next, row three the rest.
+  const MIN_INTEREST = 18;
   function buildCards(p, stats) {
-    const lane = laneCard(p), bests = bestsCard(p);
-    // Without a lobby-bests card the bottom row has two wide cards, so the time line gets a wider canvas.
-    const cards = [placeCard(p), sweepCard(p, stats), storyCard(p), rivalCard(p), momentsCard(p, !bests)];
-    cards.push(lane || soulsCard(p, "lane"));
-    if (bests) cards.push(bests);
-    // Bad news is part of the story, but a page of it is not: at most two cards get the rust edge.
-    cards.filter(card => card.tone === "bad").sort((a, b) => b.interest - a.interest).slice(2).forEach(card => { card.tone = ""; });
-    return cards;
+    const place = placeCard(p), story = storyCard(p);
+    const picks = [sweepCard(p, stats), rivalCard(p), momentsCard(p, false), laneCard(p), bestsCard(p)]
+      .filter(card => card && card.interest >= MIN_INTEREST).sort((a, b) => b.interest - a.interest);
+    // A loss is told with its bad moments, so they all stay; only the two strongest keep the rust edge,
+    // so the page reads as a story rather than a wall of warnings. The placement is the anchor and never counts.
+    [story, ...picks].filter(card => card?.tone === "bad").slice(2).forEach(card => { card.tone = ""; });
+    if (picks.length < 2) picks.push(...[soulsCard(p)].slice(0, 2 - picks.length));
+    // The slot beside the placement is short, so it goes to the strongest compact card; the rest keep their ranking.
+    const compactIndex = picks.findIndex(card => ["sweep", "bests", "lane"].includes(card.id));
+    const beside = compactIndex >= 0 ? picks.splice(compactIndex, 1)[0] : picks.shift();
+    const rows = [[place, beside], [story, picks[0]], picks.slice(1, 4)].map(row => row.filter(Boolean)).filter(row => row.length);
+    const spans = row => row.length === 1 ? [6] : row[0] === place ? [4, 2] : row[0] === story ? [3, 3] : row.length === 2 ? [3, 3] : [2, 2, 2];
+    const cards = [];
+    rows.forEach(row => row.forEach((card, i) => {
+      const span = spans(row)[i];
+      // The time line is drawn to its card's width.
+      const sized = card.id === "moments" && span >= 3 ? momentsCard(p, true) : card;
+      cards.push({ ...sized, span });
+    }));
+    return { cards, rows: rows.length };
   }
 
   // The three strongest highlights for the share image, strongest first.
@@ -603,7 +626,7 @@ window.Summary = (() => {
   }
 
   function cardHtml(card) {
-    return `<article class="hl-card hl-${card.id}${card.tone ? " is-" + card.tone : ""}" style="grid-area:${card.area}" tabindex="0" data-hl-card="${card.id}">
+    return `<article class="hl-card hl-${card.id}${card.tone ? " is-" + card.tone : ""}" style="grid-column:span ${card.span}" tabindex="0" data-hl-card="${card.id}">
       <header class="hl-head"><span class="hl-kicker">${card.kicker}</span>${card.go}</header>
       <h3 class="hl-headline">${card.big}</h3>
       ${card.sub || card.more ? `<div class="hl-body">${card.sub ? `<p class="hl-sub">${card.sub}</p>` : ""}${card.more ? `<p class="hl-more">${card.more}</p>` : ""}</div>` : ""}
@@ -634,10 +657,10 @@ window.Summary = (() => {
       enteredMatch = key;
       enterStart = performance.now();
     }
-    const cards = rows.length ? buildCards(p, stats) : [];
+    const built = rows.length ? buildCards(p, stats) : { cards: [], rows: 0 }, cards = built.cards;
     current = { p, cards, won: Number(match.winning_team) === p.team, stats };
     view.innerHTML = `<div class="hl-layout">${heroColumn(p, stats)}
-      ${cards.length ? `<div class="hl-grid${cards.some(c => c.area === "extra") ? "" : " no-extra"}">${cards.map(cardHtml).join("")}</div>` : basicStats(stats)}
+      ${cards.length ? `<div class="hl-grid" style="grid-template-rows:${["1fr", ".9fr 1.1fr", ".84fr 1.08fr 1.08fr"][built.rows - 1]}">${cards.map(cardHtml).join("")}</div>` : basicStats(stats)}
       ${EMBED ? "" : '<footer class="hl-footer">Unofficial fan project. Not affiliated with or endorsed by Valve. Deadlock art and fonts belong to Valve.</footer>'}</div>`;
     animateIn();
     if (active.summaryFocus) view.querySelector(`[data-summary-focus="${CSS.escape(active.summaryFocus)}"]`)?.focus({ preventScroll: true });
@@ -650,21 +673,14 @@ window.Summary = (() => {
     const elapsed = performance.now() - enterStart;
     if (elapsed > ENTER_MS || !motion() || !view.animate) return;
     const at = delay => ({ delay: delay - elapsed, fill: "backwards" });
-    const ease = "cubic-bezier(.2,.7,.2,1)";
-    // One short rise for the column and the cards. Final numbers are on screen from the first frame.
-    const rise = (el, delay) => el.animate([{ opacity: 0, transform: "translateY(8px)" }, { opacity: 1, transform: "none" }], { duration: 220, easing: ease, ...at(delay) });
+    // One short rise for the column and the cards; numbers and charts are final from the first frame.
+    const rise = (el, delay) => el.animate([{ opacity: 0, transform: "translateY(6px)" }, { opacity: 1, transform: "none" }], { duration: 160, easing: "ease-out", ...at(delay) });
     const hero = view.querySelector(".hl-hero");
     if (hero) rise(hero, 0);
-    view.querySelector(".hl-result b")?.animate([{ opacity: 0, transform: "rotate(-3deg) scale(1.25)" }, { opacity: 1, transform: "rotate(-3deg) scale(1)" }],
-      { duration: 200, easing: "ease-in-out", ...at(60) });
-    view.querySelectorAll(".hl-card").forEach((card, i) => rise(card, 40 + i * 35));
+    view.querySelectorAll(".hl-card").forEach((card, i) => rise(card, 20 + i * 20));
     if (EMBED) return;
-    // Website only: each chart settles once, so the eye follows the data rather than the decoration.
-    view.querySelectorAll(".hl-story-line").forEach(line => line.animate([{ strokeDashoffset: 1 }, { strokeDashoffset: 0 }], { duration: 650, easing: "ease-out", ...at(200) }));
-    view.querySelectorAll(".hl-area, .hl-mark, .hl-mark-label").forEach(el => el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 250, ...at(700) }));
-    view.querySelectorAll(".hl-sweep-dot").forEach(dot => dot.animate([{ left: "50%" }, { left: dot.style.getPropertyValue("--x") }], { duration: 450, easing: ease, ...at(220) }));
-    view.querySelectorAll(".hl-tug").forEach(tug => tug.querySelector(".hl-tug-bar i").animate([{ width: "50%" }, { width: tug.style.getPropertyValue("--share") }], { duration: 500, easing: ease, ...at(260) }));
-    view.querySelectorAll(".hl-col i, .hl-duel-track i").forEach(bar => bar.animate([{ transform: bar.closest(".hl-col") ? "scaleY(0)" : "scaleX(0)" }, { transform: "none" }], { duration: 400, easing: ease, ...at(260) }));
+    // Website only: the soul lead line draws once, because its shape is the story.
+    view.querySelectorAll(".hl-story-line").forEach(line => line.animate([{ strokeDashoffset: 1 }, { strokeDashoffset: 0 }], { duration: 450, easing: "ease-out", ...at(120) }));
   }
 
   // ---------- tooltips ----------
