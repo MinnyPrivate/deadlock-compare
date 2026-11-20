@@ -4,8 +4,9 @@ body.tabSummary .tab[data-tab="summary"].on { border-bottom-color: var(--summary
 .tab[data-tab="summary"]:disabled { opacity: .55; cursor: default; }
 #summaryView {
   --hero-accent: #ac9e8b;
-  --dim: rgba(255, 239, 215, .66);
-  --faint: rgba(255, 239, 215, .44);
+  --dim: rgba(255, 239, 215, .74);
+  --faint: rgba(255, 239, 215, .7);
+  --decor: rgba(255, 239, 215, .4);
   --line: rgba(255, 239, 215, .08);
   --gold: #FFED79;
   --good: #58D86A;
@@ -90,7 +91,7 @@ body:not(.standalone) #summaryView, body:not(.standalone) #summaryView * { curso
 .hl-id-meta .rank .rk { --b: 30px; }
 .summary-kda { display: flex; align-items: baseline; justify-content: space-between; padding: 0 2px; }
 .summary-kda b { font: 600 44px/1 var(--oracle); white-space: nowrap; }
-.summary-kda b i { margin: 0 2px; color: var(--faint); font-style: normal; }
+.summary-kda b i { margin: 0 2px; color: var(--decor); font-style: normal; }
 .summary-kda span { display: flex; align-items: center; gap: 6px; font: 600 26px/1 var(--oracle); color: var(--dim); }
 .summary-kda span img { width: 20px; height: 20px; }
 .summary-items { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
@@ -178,14 +179,14 @@ body:not(.standalone) #summaryView, body:not(.standalone) #summaryView * { curso
   grid-template-rows: .84fr 1fr 1fr;
   grid-template-areas:
     "place place place place sweep sweep"
-    "story story rival rival sweep sweep"
+    "story story story rival rival rival"
     "lane lane moments moments extra extra";
   gap: 16px;
   min-height: 0;
 }
 .hl-grid.no-extra { grid-template-areas:
     "place place place place sweep sweep"
-    "story story rival rival sweep sweep"
+    "story story story rival rival rival"
     "lane lane lane moments moments moments"; }
 .hl-card {
   position: relative;
@@ -232,7 +233,7 @@ body:not(.standalone) #summaryView, body:not(.standalone) #summaryView * { curso
 .hl-card:hover .hl-link, .hl-card:focus-within .hl-link { color: rgba(255, 239, 215, .8); }
 .hl-card .hl-link:hover { color: var(--ritual); }
 .hl-link:hover i { transform: translateX(3px); }
-.hl-headline { display: flex; align-items: baseline; gap: 10px; min-width: 0; margin-top: 6px; }
+.hl-headline { display: flex; align-items: baseline; gap: 10px; min-width: 0; margin-top: 6px !important; font: inherit; }
 .hl-big { font: 600 58px/1 var(--oracle); white-space: nowrap; }
 .hl-big.hl-word { font-size: 46px; line-height: 1.05; }
 .hl-of { color: var(--dim); font-size: 18px; font-weight: 600; white-space: nowrap; }
@@ -305,24 +306,28 @@ body:not(.standalone) #summaryView, body:not(.standalone) #summaryView * { curso
   white-space: nowrap;
 }
 .hl-place.is-gold .hl-you-pin { background: var(--gold); }
-
-.hl-sheen {
+.hl-dot-name {
   position: absolute;
-  inset: 0 auto 0 0;
-  width: 40%;
-  background: linear-gradient(90deg, transparent, rgba(255, 237, 121, .16), transparent);
-  transform: translateX(-100%) skewX(-18deg);
-  pointer-events: none;
+  left: 50%;
+  top: calc(100% + 6px);
+  transform: translateX(-50%);
+  max-width: 130px;
+  overflow: hidden;
+  color: rgba(255, 239, 215, .85);
+  font: 700 12px/1 var(--sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  z-index: 3;
+  padding: 2px 5px;
+  border-radius: 3px;
+  background: rgba(10, 10, 9, .8);
 }
-body:not(.standalone) .hl-sheen { display: none; }
+.hl-dot-name.up { top: auto; bottom: calc(100% + 6px); }
 
 /* Stat sweep: every stat against other games on this hero. */
-.hl-sweep { display: flex; flex-direction: column; height: 100%; }
-.hl-sweep-scale, .hl-sweep-row { display: grid; grid-template-columns: 128px minmax(0, 1fr) 104px; align-items: center; gap: 12px; }
-.hl-sweep-scale { margin-bottom: 6px; color: var(--faint); font: 700 11px/1 var(--block); letter-spacing: .08em; text-transform: uppercase; }
-.hl-sweep-scale span { grid-row: 1; grid-column: 2; }
-.hl-sweep-scale span:nth-child(2) { justify-self: end; }
-.hl-sweep-row { flex: 1; min-height: 40px; border-top: 1px solid var(--line); border-radius: 3px; cursor: help; }
+.hl-sweep { display: flex; flex-direction: column; height: 100%; justify-content: center; }
+.hl-sweep-row { display: grid; grid-template-columns: 128px minmax(0, 1fr) 104px; align-items: center; gap: 12px; }
+.hl-sweep-row { display: grid; grid-template-columns: 128px minmax(0, 1fr) 104px; align-items: center; gap: 12px; flex: 0 0 36px; min-height: 36px; border-top: 1px solid var(--line); border-radius: 3px; cursor: help; }
 .hl-sweep-row:hover { background: rgba(255, 239, 215, .04); }
 .hl-sweep-label { padding-left: 2px; color: rgba(255, 239, 215, .82); font-size: 15px; font-weight: 600; }
 .hl-sweep-track {
@@ -347,6 +352,7 @@ body:not(.standalone) .hl-sheen { display: none; }
 .hl-sweep-dot.summary-even { color: #d6c9b6; box-shadow: 0 0 0 3px #181716; }
 .hl-sweep-word { justify-self: end; font: 600 16px/1 var(--oracle); white-space: nowrap; }
 .hl-sweep-word.summary-even { color: var(--faint); }
+.hl-sweep-rest { align-self: flex-start; margin-top: 4px; color: var(--faint); font-size: 13px; font-weight: 600; cursor: help; }
 
 /* Match story: the team soul lead over the whole match. */
 .hl-story { position: relative; height: 100%; min-height: 96px; }
@@ -381,17 +387,17 @@ body:not(.standalone) .hl-sheen { display: none; }
 .hl-story-team.down { bottom: 0; }
 
 /* Rival: one enemy, the score between you, and damage both ways. */
-.hl-duel { display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: center; gap: 18px; }
-.hl-duel .hl-coin.big { --size: 108px; box-shadow: inset 0 0 0 3px var(--tc), 0 6px 20px #000b; }
+.hl-duel { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 14px 20px; }
+.hl-duel .hl-coin.big { grid-row: span 2; --size: 104px; box-shadow: inset 0 0 0 3px var(--tc), 0 6px 20px #000b; }
 .hl-duel-score { display: flex; flex-direction: column; }
 .hl-duel-score b { font: 600 62px/1 var(--oracle); white-space: nowrap; }
-.hl-duel-score b i { margin: 0 3px; color: var(--faint); font-style: normal; }
+.hl-duel-score b i { margin: 0 3px; color: var(--decor); font-style: normal; }
 .hl-duel-score small { margin-top: 5px; color: var(--faint); font: 700 11px/1 var(--block); letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
-.hl-duel-bars { display: grid; grid-template-columns: minmax(0, 76px) minmax(0, 1fr) auto; align-items: center; gap: 6px 10px; font-size: 14px; }
+.hl-duel-bars { display: grid; grid-template-columns: minmax(0, 110px) minmax(140px, 1fr) 56px; align-items: center; gap: 8px 12px; font-size: 14px; }
 .hl-duel-bars span { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hl-duel-bars i { display: block; width: var(--w); height: 12px; border-radius: 6px; background: var(--tc); transform-origin: left; }
-.hl-duel-bars b { font: 600 16px/1 var(--oracle); }
-.hl-duel-bars small { grid-column: 1 / -1; color: var(--faint); font-size: 12px; }
+.hl-duel-track { display: block; height: 12px; border-radius: 6px; background: rgba(255, 239, 215, .06); }
+.hl-duel-track i { display: block; width: var(--w); height: 100%; border-radius: 6px; background: var(--tc); transform-origin: left; }
+.hl-duel-bars b { font: 600 17px/1 var(--oracle); text-align: right; }
 /* Lane: a tug of war on team souls at 9:00. */
 .hl-tug { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 14px; }
 .hl-tug-side { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
@@ -418,7 +424,26 @@ body:not(.standalone) .hl-sheen { display: none; }
 .hl-tick.is-focus { color: var(--gold); }
 .hl-tick.is-focus line { opacity: 1; }
 .hl-tick.is-focus circle { stroke: #181716; stroke-width: 2; }
-.hl-focus-label { fill: var(--gold) !important; font: 600 14px var(--oracle) !important; letter-spacing: 0 !important; }
+.hl-callout {
+  position: absolute;
+  z-index: 1;
+  top: -6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px 3px 3px;
+  border-radius: 50px;
+  background: rgba(10, 10, 9, .9);
+  box-shadow: 0 0 0 1px rgba(255, 237, 121, .5);
+  left: clamp(110px, var(--at), calc(100% - 110px));
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.hl-callout .hl-coin { --size: 30px; }
+.hl-callout .hl-coin + .hl-coin { margin-left: -10px; }
+.hl-callout span { margin-left: 4px; color: var(--gold); font: 600 15px/1 var(--oracle); }
+.hl-callout.is-death { top: auto; bottom: 18px; box-shadow: 0 0 0 1px rgba(224, 160, 144, .6); }
+.hl-callout.is-death span { color: var(--rust-text); }
 .hl-life { fill: var(--gold); opacity: .85; }
 .hl-moments-key { display: flex; align-items: center; gap: 14px; color: var(--faint); font: 700 11px/1 var(--block); letter-spacing: .08em; text-transform: uppercase; }
 .hl-moments-key i { display: inline-block; width: 8px; height: 8px; margin-right: -8px; border-radius: 50%; }
@@ -428,11 +453,10 @@ body:not(.standalone) .hl-sheen { display: none; }
 .hl-note { color: #FFD23F; font-size: 13px; cursor: help; }
 
 /* Lobby bests and soul sources. */
-.hl-best-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; padding: 0; list-style: none; }
-.hl-best-list li { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 10px 12px 11px; border-radius: 6px; background: linear-gradient(rgba(255, 237, 121, .09), rgba(255, 237, 121, .02)); box-shadow: inset 0 0 0 1px rgba(255, 237, 121, .16); }
-.hl-best-list span { overflow: hidden; color: rgba(255, 239, 215, .78); font: 700 12px/1.1 var(--block); letter-spacing: .06em; text-transform: uppercase; text-overflow: ellipsis; white-space: nowrap; }
-.hl-best-list b { color: var(--gold); font: 600 44px/1 var(--oracle); }
-.hl-best-list li { padding: 16px 16px 18px !important; gap: 10px !important; }
+.hl-best-list { display: grid; grid-template-columns: 1fr 1fr; gap: 0 22px; padding: 0; list-style: none; }
+.hl-best-list li { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; min-width: 0; padding: 9px 0; border-top: 1px solid rgba(255, 237, 121, .16); }
+.hl-best-list span { overflow: hidden; color: rgba(255, 239, 215, .82); font-size: 15px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.hl-best-list b { color: var(--gold); font: 600 26px/1 var(--oracle); }
 .hl-cols { display: flex; align-items: flex-end; gap: 10px; height: 124px; }
 body:not(.standalone) .hl-cols { height: 112px; }
 .hl-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 5px; height: 100%; min-width: 0; cursor: help; }
@@ -441,6 +465,10 @@ body:not(.standalone) .hl-cols { height: 112px; }
 .hl-col i { display: block; width: 100%; max-width: 46px; height: var(--h); min-height: 3px; border-radius: 4px 4px 1px 1px; background: color-mix(in srgb, var(--c) 45%, #181716); transform-origin: bottom; }
 .hl-col.is-top i { background: var(--c); box-shadow: 0 0 18px color-mix(in srgb, var(--c) 40%, transparent); }
 .hl-col .hl-coin { --size: 32px; }
+.hl-cols.is-deaths { gap: 6px; }
+.hl-cols.is-deaths .hl-coin { --size: 28px; }
+.hl-cols.is-deaths .hl-col:not(.is-top) i { opacity: .55; }
+.hl-cols.is-deaths .hl-col.is-top b { color: var(--gold); }
 .hl-col small { max-width: 100%; overflow: hidden; color: var(--dim); font-size: 12px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
 .hl-col.is-top small { color: var(--offWhite); }
 
@@ -534,3 +562,12 @@ body:not(.standalone) .hl-body { min-height: 38px; margin-top: 4px; }
 body:not(.standalone) .hl-grid { grid-template-rows: .76fr 1fr 1fr; }
 body:not(.standalone) .hl-strip { height: 164px; }
 body:not(.standalone) .hl-story { min-height: 64px; }
+
+body:not(.standalone) #summaryView *, body:not(.standalone) #shareDialog * { transition-property: transform, opacity !important; }
+.hl-sweep .hl-big, .hl-place ~ .hl-sweep .hl-big { font-size: 50px; }
+.hl-card.hl-sweep .hl-big { font-size: 50px; }
+.hl-moments.has-callout { padding-top: 40px; }
+body:not(.standalone) .hl-sweep-row { flex-basis: 32px; min-height: 32px; }
+.hl-best-list.is-single { grid-template-columns: 1fr; }
+.hl-best-list.is-single li { padding: 12px 0; }
+.hl-best-list.is-single b { font-size: 34px; }

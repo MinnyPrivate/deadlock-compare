@@ -4,8 +4,8 @@
 // canvas from local art so it can be copied or saved. It shows usernames and the match, never an account ID.
 window.ShareCard = (() => {
   const W = 1200, H = 630, SCALE = 2;
-  const CREAM = "#FFEFD7", DIM = "rgba(255,239,215,.66)", FAINT = "rgba(255,239,215,.42)";
-  const TONE = { good: "#58D86A", bad: "#E0A090", gold: "#FFED79", "": "rgba(255,239,215,.66)" };
+  const CREAM = "#FFEFD7", DIM = "rgba(255,239,215,.76)", FAINT = "rgba(255,239,215,.7)", DECOR = "rgba(255,239,215,.4)";
+  const TONE = { good: "rgba(255,239,215,.76)", bad: "#E0A090", gold: "#FFED79", "": "rgba(255,239,215,.76)" };
   let dialog, opener, lastUrl;
 
   const load = (src, cors) => new Promise(resolve => {
@@ -23,35 +23,24 @@ window.ShareCard = (() => {
     ctx.drawImage(image, (image.width - sw) / 2, Math.max(0, (image.height - sh) * focusY), sw, sh, x, y, w, h);
   }
 
-  // Wraps text to a width and returns the lines, cutting the last one with an ellipsis.
-  function wrap(ctx, text, width, max) {
-    const words = String(text).split(/\s+/), lines = [];
-    let line = "";
-    for (const word of words) {
-      const next = line ? line + " " + word : word;
-      if (ctx.measureText(next).width <= width || !line) line = next;
-      else { lines.push(line); line = word; }
-    }
-    if (line) lines.push(line);
-    if (lines.length > max) {
-      lines.length = max;
-      let last = lines[max - 1];
-      while (last && ctx.measureText(last + "…").width > width) last = last.slice(0, -1);
-      lines[max - 1] = last.trimEnd() + "…";
-    }
-    return lines;
+  // Cuts text to a width with an ellipsis, so a long name or a name without spaces never runs off the card.
+  function ellipsize(ctx, text, width) {
+    text = String(text);
+    if (ctx.measureText(text).width <= width) return text;
+    while (text && ctx.measureText(text + "…").width > width) text = text.slice(0, -1);
+    return text.trimEnd() + "…";
   }
 
-  function fit(ctx, text, width, font, size, min) {
+  // Sets the largest font size from size down to min that fits; ellipsize() handles anything still too wide.
+  function setFont(ctx, text, width, font, size, min) {
     for (let s = size; s >= min; s -= 2) {
       ctx.font = font.replace("{s}", s);
-      if (ctx.measureText(text).width <= width) return s;
+      if (ctx.measureText(text).width <= width) return;
     }
-    return min;
   }
 
   async function draw(d) {
-    await Promise.all(["600 40px Oracle", "700 40px Radiance", "600 20px Radiance", "700 16px Pulp"].map(f => document.fonts.load(f).catch(() => null)));
+    await Promise.all(["600 40px Oracle", "700 40px Radiance", "600 20px Radiance", "400 13px Radiance", "700 16px Pulp"].map(f => document.fonts.load(f).catch(() => null)));
     const local = (window.HERO_BACKDROPS || []).includes(d.heroId) ? `assets/backdrops/${d.heroId}.webp` : "assets/backdrops/generic.webp";
     const [backdrop, remoteArt, localArt, icon, rankImage, soul] = await Promise.all([
       load(local), load(d.art, true), load(d.card), load(d.team.icon), load(d.rank?.img), load("assets/ui/icon_soul.svg"),
@@ -72,10 +61,12 @@ window.ShareCard = (() => {
       ctx.globalAlpha = 1;
     }
     let g = ctx.createRadialGradient(240, 300, 40, 240, 300, 620);
-    g.addColorStop(0, d.accent + "55");
+    g.addColorStop(0, d.accent);
     g.addColorStop(1, "rgba(0,0,0,0)");
     ctx.fillStyle = g;
+    ctx.globalAlpha = 0.33;
     ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = 1;
     g = ctx.createLinearGradient(0, 0, W, 0);
     g.addColorStop(0, "rgba(10,10,9,.15)");
     g.addColorStop(0.42, "rgba(10,10,9,.7)");
@@ -84,142 +75,162 @@ window.ShareCard = (() => {
     ctx.fillRect(0, 0, W, H);
 
     // Hero art down the left, fading into the page.
+    const ART = 400;
     const art = remoteArt || localArt;
     if (art) {
       ctx.save();
       ctx.beginPath();
-      ctx.rect(0, 0, 470, H);
+      ctx.rect(0, 0, ART, H);
       ctx.clip();
-      cover(ctx, art, 0, 0, 470, H, 0.1);
+      cover(ctx, art, 0, 0, ART, H, 0.1);
       ctx.restore();
-      g = ctx.createLinearGradient(300, 0, 470, 0);
+      g = ctx.createLinearGradient(ART - 150, 0, ART, 0);
       g.addColorStop(0, "rgba(13,12,11,0)");
       g.addColorStop(1, "rgba(13,12,11,1)");
       ctx.fillStyle = g;
-      ctx.fillRect(300, 0, 171, H);
-      g = ctx.createLinearGradient(0, H - 220, 0, H);
+      ctx.fillRect(ART - 150, 0, 151, H);
+      g = ctx.createLinearGradient(0, H - 260, 0, H);
       g.addColorStop(0, "rgba(13,12,11,0)");
-      g.addColorStop(1, "rgba(13,12,11,.95)");
+      g.addColorStop(0.55, "rgba(13,12,11,.82)");
+      g.addColorStop(1, "rgba(13,12,11,.97)");
       ctx.fillStyle = g;
-      ctx.fillRect(0, H - 220, 471, 220);
+      ctx.fillRect(0, H - 260, ART + 1, 260);
     }
     // A thin team stripe down the left edge.
     ctx.fillStyle = d.team.c;
     ctx.fillRect(0, 0, 6, H);
 
-    // Username and hero over the art's foot.
-    ctx.fillStyle = CREAM;
-    const nameSize = fit(ctx, d.username, 400, "700 {s}px Radiance", 46, 26);
-    ctx.font = `700 ${nameSize}px Radiance`;
-    ctx.shadowColor = "rgba(0,0,0,.8)";
+    // Who: username, hero and rank, then the KDA, over the art's foot.
+    const LX = 34, LW = ART - 60;
+    ctx.shadowColor = "rgba(0,0,0,.85)";
     ctx.shadowBlur = 14;
-    ctx.fillText(d.username, 36, H - 86);
+    setFont(ctx, d.username, LW, "700 {s}px Radiance", 44, 24);
+    ctx.fillStyle = CREAM;
+    ctx.fillText(ellipsize(ctx, d.username, LW), LX, H - 128);
     ctx.shadowBlur = 0;
-    ctx.font = "600 20px Radiance";
+    ctx.font = "600 19px Radiance";
     ctx.fillStyle = DIM;
-    let x = 36;
-    const heroLine = d.username === d.hero ? "" : d.hero;
-    if (heroLine) { ctx.fillText(heroLine, x, H - 52); x += ctx.measureText(heroLine).width + 16; }
+    let x = LX;
+    if (d.username !== d.hero) { ctx.fillText(d.hero, x, H - 96); x += ctx.measureText(d.hero).width + 14; }
     if (rankImage && d.rank) {
-      ctx.drawImage(rankImage, x, H - 76, 32, 32);
-      ctx.fillText(d.rank.name, x + 38, H - 52);
+      ctx.drawImage(rankImage, x, H - 118, 28, 28);
+      ctx.fillText(ellipsize(ctx, d.rank.name, LX + LW - x - 34), x + 34, H - 96);
+    }
+    ctx.font = "600 40px Oracle";
+    let kx = LX;
+    d.kda.forEach((value, i) => {
+      if (i) {
+        ctx.fillStyle = DECOR;
+        ctx.fillText("/", kx + 8, H - 42);
+        kx += ctx.measureText("/").width + 18;
+      }
+      ctx.fillStyle = CREAM;
+      ctx.fillText(String(value), kx, H - 42);
+      kx += ctx.measureText(String(value)).width;
+    });
+    if (Number.isFinite(d.souls)) {
+      ctx.font = "600 24px Oracle";
+      ctx.fillStyle = DIM;
+      const souls = fmtStat(d.souls);
+      if (soul) ctx.drawImage(soul, kx + 22, H - 62, 20, 20);
+      ctx.fillText(souls, kx + 46, H - 43);
     }
 
-    // Right side: result, KDA, then the three highlights.
-    const L = 510, R = W - 56;
+    // Right side: the result, then one headline achievement, the soul lead, and two supporting facts.
+    const L = 440, R = W - 56, RW = R - L;
     if (icon) { // the team crest as a cream silhouette, since Hidden King's is near black
       const tint = document.createElement("canvas");
-      tint.width = tint.height = 46 * SCALE;
+      tint.width = tint.height = 40 * SCALE;
       const t = tint.getContext("2d");
       t.drawImage(icon, 0, 0, tint.width, tint.height);
       t.globalCompositeOperation = "source-in";
       t.fillStyle = CREAM;
       t.fillRect(0, 0, tint.width, tint.height);
-      ctx.drawImage(tint, L, 52, 46, 46);
+      ctx.drawImage(tint, L, 44, 40, 40);
     }
     ctx.save();
-    ctx.translate(L + 62, 96);
+    ctx.translate(L + 52, 80);
     ctx.rotate(-3 * Math.PI / 180);
-    ctx.font = "600 64px Oracle";
+    ctx.font = "600 46px Oracle";
     ctx.fillStyle = d.won ? CREAM : "#E0A090";
     ctx.fillText(d.won ? "VICTORY" : "DEFEAT", 0, 0);
     ctx.restore();
-    ctx.font = "600 19px Radiance";
+    ctx.font = "600 17px Radiance";
     ctx.fillStyle = DIM;
-    ctx.fillText([d.team.name, d.lane && d.lane + " lane", d.duration, d.date].filter(Boolean).join("  ·  "), L, 136);
-
-    ctx.font = "600 60px Oracle";
-    ctx.fillStyle = CREAM;
-    let kx = L;
-    d.kda.forEach((value, i) => {
-      if (i) {
-        ctx.fillStyle = FAINT;
-        ctx.fillText("/", kx + 12, 226);
-        kx += ctx.measureText("/").width + 26;
-        ctx.fillStyle = CREAM;
-      }
-      ctx.fillText(String(value), kx, 226);
-      kx += ctx.measureText(String(value)).width;
-    });
-    ctx.font = "700 14px Pulp";
-    ctx.fillStyle = FAINT;
-    ctx.fillText("K  /  D  /  A", L + 2, 250);
-    if (Number.isFinite(d.souls)) {
-      ctx.font = "600 34px Oracle";
-      const souls = fmtStat(d.souls), sw = ctx.measureText(souls).width;
-      ctx.fillStyle = DIM;
-      ctx.fillText(souls, R - sw, 222);
-      if (soul) ctx.drawImage(soul, R - sw - 30, 196, 24, 24);
-      ctx.font = "700 14px Pulp";
-      ctx.fillStyle = FAINT;
-      ctx.fillText("SOULS", R - ctx.measureText("SOULS").width, 250);
-    }
+    ctx.fillText(ellipsize(ctx, [d.team.name, d.lane && d.lane + " lane", d.duration, d.date].filter(Boolean).join("  ·  "), RW), L, 116);
 
     const lines = d.lines.length ? d.lines : [{ label: "Match", big: d.won ? "Victory" : "Defeat", sub: d.duration, tone: "" }];
-    const top = 294, gap = 22, colW = (R - L - gap * (lines.length - 1)) / lines.length;
-    lines.forEach((line, i) => {
-      const cx = L + i * (colW + gap);
-      ctx.fillStyle = "rgba(24,23,22,.82)";
-      roundRect(ctx, cx, top, colW, 224, 10);
-      ctx.fill();
-      ctx.strokeStyle = line.tone === "gold" ? "rgba(255,237,121,.35)" : "rgba(255,239,215,.1)";
-      ctx.lineWidth = 1;
-      ctx.stroke();
-      if (line.tone === "bad") { ctx.fillStyle = "#B84A3C"; ctx.fillRect(cx, top + 12, 3, 200); }
+    const [hero, ...rest] = lines;
+    const color = tone => tone === "gold" ? "#FFED79" : CREAM;
+    ctx.font = "700 17px Pulp";
+    ctx.fillStyle = TONE[hero.tone] || DIM;
+    ctx.fillText(ellipsize(ctx, hero.label.toUpperCase(), RW), L, 180);
+    setFont(ctx, hero.big, RW, "600 {s}px Oracle", 88, 40);
+    ctx.fillStyle = color(hero.tone);
+    if (hero.tone === "gold") { ctx.shadowColor = "rgba(255,237,121,.35)"; ctx.shadowBlur = 24; }
+    ctx.fillText(ellipsize(ctx, hero.big, RW), L - 3, 264);
+    ctx.shadowBlur = 0;
+    ctx.font = "600 21px Radiance";
+    ctx.fillStyle = "rgba(255,239,215,.84)";
+    ctx.fillText(ellipsize(ctx, hero.sub || "", RW), L, 298);
+
+    // The soul lead over the whole match: the one real chart on the card.
+    let y = 340;
+    if (d.spark?.length > 2) {
+      const sh = 84, mid = y + sh / 2, scale = Math.max(2000, ...d.spark.map(pt => Math.abs(pt.lead)));
+      const px = t => L + t / d.dur * RW, py = v => mid - v / scale * (sh / 2 - 4);
+      ctx.save();
+      ctx.beginPath();
+      d.spark.forEach((pt, i) => (i ? ctx.lineTo : ctx.moveTo).call(ctx, px(pt.t), py(pt.lead)));
+      ctx.lineTo(px(d.spark[d.spark.length - 1].t), mid);
+      ctx.lineTo(L, mid);
+      ctx.closePath();
+      ctx.save(); ctx.clip();
+      ctx.globalAlpha = 0.45;
+      ctx.fillStyle = d.team.c; ctx.fillRect(L, y, RW, sh / 2);
+      ctx.fillStyle = d.enemy.c; ctx.fillRect(L, mid, RW, sh / 2);
+      ctx.restore();
+      ctx.beginPath();
+      d.spark.forEach((pt, i) => (i ? ctx.lineTo : ctx.moveTo).call(ctx, px(pt.t), py(pt.lead)));
+      ctx.strokeStyle = CREAM; ctx.lineWidth = 2; ctx.lineJoin = "round"; ctx.stroke();
+      ctx.restore();
+      ctx.strokeStyle = "rgba(255,239,215,.25)"; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(L, mid); ctx.lineTo(R, mid); ctx.stroke();
+      ctx.font = "700 12px Pulp";
+      ctx.fillStyle = FAINT;
+      ctx.fillText(`${d.team.name.toUpperCase()} SOUL LEAD`, L, y - 6);
+      y += sh + 40;
+    } else y += 20;
+
+    // Two supporting facts, side by side, no boxes.
+    const colW = (RW - 40) / 2;
+    rest.slice(0, 2).forEach((line, i) => {
+      const cx = L + i * (colW + 40);
+      if (i) { ctx.fillStyle = "rgba(255,239,215,.14)"; ctx.fillRect(cx - 20, y - 14, 1, 92); }
+      if (line.tone === "bad") { ctx.fillStyle = "#B84A3C"; ctx.fillRect(cx - (i ? 12 : 14), y - 12, 3, 88); }
       ctx.font = "700 14px Pulp";
       ctx.fillStyle = TONE[line.tone] || DIM;
-      ctx.fillText(wrap(ctx, line.label.toUpperCase(), colW - 40, 1)[0], cx + 22, top + 42);
-      const size = fit(ctx, line.big, colW - 40, "600 {s}px Oracle", 46, 26);
-      ctx.font = `600 ${size}px Oracle`;
-      ctx.fillStyle = line.tone === "gold" ? "#FFED79" : line.tone === "good" ? "#7FE38C" : CREAM;
-      ctx.fillText(line.big, cx + 22, top + 106);
-      ctx.font = "600 18px Radiance";
-      ctx.fillStyle = "rgba(255,239,215,.78)";
-      wrap(ctx, line.sub || "", colW - 40, 3).forEach((text, j) => ctx.fillText(text, cx + 22, top + 146 + j * 25));
+      ctx.fillText(ellipsize(ctx, line.label.toUpperCase(), colW), cx, y);
+      setFont(ctx, line.big, colW, "600 {s}px Oracle", 38, 22);
+      ctx.fillStyle = color(line.tone);
+      ctx.fillText(ellipsize(ctx, line.big, colW), cx, y + 42);
+      ctx.font = "600 16px Radiance";
+      ctx.fillStyle = "rgba(255,239,215,.8)";
+      ctx.fillText(ellipsize(ctx, line.sub || "", colW), cx, y + 68);
     });
 
     // Footer: the site's name and the fan-project notice.
-    ctx.font = "700 20px Pulp";
+    ctx.font = "700 19px Pulp";
     ctx.fillStyle = CREAM;
-    ctx.fillText("POSTMORTEM", L, H - 50);
+    ctx.fillText("POSTMORTEM", L, H - 34);
     const brand = ctx.measureText("POSTMORTEM").width;
-    ctx.font = "600 16px Radiance";
+    ctx.font = "600 15px Radiance";
     ctx.fillStyle = FAINT;
-    ctx.fillText("Deadlock match highlights", L + brand + 14, H - 51);
-    ctx.font = "400 12px Radiance";
+    ctx.fillText("Deadlock match highlights", L + brand + 12, H - 35);
+    ctx.font = "400 13px Radiance";
     const notice = "Unofficial fan project. Not affiliated with Valve.";
-    ctx.fillText(notice, R - ctx.measureText(notice).width, H - 51);
+    ctx.fillText(notice, R - ctx.measureText(notice).width, H - 35);
     return canvas;
-  }
-
-  function roundRect(ctx, x, y, w, h, r) {
-    ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.arcTo(x + w, y, x + w, y + h, r);
-    ctx.arcTo(x + w, y + h, x, y + h, r);
-    ctx.arcTo(x, y + h, x, y, r);
-    ctx.arcTo(x, y, x + w, y, r);
-    ctx.closePath();
   }
 
   function build() {
