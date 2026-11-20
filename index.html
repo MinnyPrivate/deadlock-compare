@@ -39,7 +39,7 @@
     <button class="tab" data-tab="matchups">Matchups</button>
     <button class="tab" data-tab="mvp">MVP</button>
     <span id="lobbyRank" class="lobbyRank"></span>
-    <span id="companionSource" hidden>From your app · awaiting Valve data</span>
+    <span id="companionSource" aria-live="polite"></span>
   </nav>
   <span id="tabLoading" hidden>Loading match data</span>
 
@@ -176,6 +176,7 @@
     </span>
   </form>
   <div id="status" class="status"></div>
+  <div id="appReading" class="status" role="status" hidden><div class="waitTitle">Reading your match from the app</div></div>
   <div id="companionControls" class="companionControls">
     <button id="companionLink" class="graphOptionButton" type="button" hidden>Link companion</button>
     <form id="companionPair" hidden>

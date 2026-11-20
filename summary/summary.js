@@ -19,8 +19,9 @@ window.Summary = (() => {
   const ENTER_MS = 300;
   const lookups = new Map();
   let names = new Map(), art = {}, match, rows, deaths, percentiles, shownTip, tipTimer;
-  let enteredMatch, enterStart = 0, renderedBackdrop, current;
+  let enteredMatch, enterStart = 0, renderedBackdrop, current, previewPlan;
 
+  const preview = () => state.previewSlot !== null;
   const name = p => names.get(Number(p.raw.account_id)) || p.hero;
   const fullName = p => name(p) === p.hero ? p.hero : `${name(p)} on ${p.hero}`;
   const explain = text => `tabindex="0" data-summary-tip="${esc(text)}"`;
@@ -36,7 +37,14 @@ window.Summary = (() => {
   const you = p => isMe(p) ? "you" : esc(name(p));
   const your = p => isMe(p) ? "your" : `${esc(name(p))}'s`;
   const short = () => match.duration_s < SHORT_GAME_S;
-  const link = (go, text) => `<button type="button" class="hl-link" data-hl-go="${go}">${text}<i aria-hidden="true">›</i></button>`;
+  const link = (go, text) => {
+    const tab = go === "mvp" || go === "matchups" ? go : "graphs";
+    const pending = preview() ? ` disabled aria-describedby="${tab}Coming"` : "";
+    return `<button type="button" class="hl-link" data-hl-go="${go}"${pending}>${text}<i aria-hidden="true">›</i></button>`;
+  };
+  const pendingCard = (id, kicker, field, go) => ({
+    id, kicker, big: previewPending(field), go, interest: 18,
+  });
 
   function selected() {
     return state.players.find(p => p.slot === state.summaryPick) || state.me ||
@@ -109,7 +117,7 @@ window.Summary = (() => {
   }
 
   function canGrade() {
-    return hasSummaryStats() && (!state.awaitingValve || state.players.every(p => availableValues(p).every(Number.isFinite)));
+    return hasSummaryStats() && (!preview() || state.players.every(p => availableValues(p).every(Number.isFinite)));
   }
 
   const finalValues = p => {
@@ -173,7 +181,7 @@ window.Summary = (() => {
     const mates = byLane.filter(q => q.team === p.team), opponents = byLane.filter(q => q.team !== p.team);
     if (!opponents.length) return null;
     const snapshots = new Map(byLane.map(q => [q, window.PM_SCORE.snapAt(q.raw, 540)]));
-    if ([...snapshots.values()].some(snap => !snap)) return null;
+    if ([...snapshots.values()].some(snap => !snap || (preview() && !Number.isFinite(snap.net_worth)))) return null;
     const sum = players => players.reduce((total, q) => total + (snapshots.get(q).net_worth || 0), 0);
     const friendlySouls = sum(mates), enemySouls = sum(opponents);
     return { mates, opponents, snapshots, friendlySouls, enemySouls, gap: (friendlySouls - enemySouls) / Math.max(1, friendlySouls, enemySouls) };
@@ -239,6 +247,10 @@ window.Summary = (() => {
     const gapText = other ? `${Math.abs(other.score - r.score).toFixed(1)} est. pts ${r.place === 1 ? "ahead of" : "behind"} ${name(other.p)}` : "";
     // Valve's own award is a fact; the place is our estimate of Valve's score, so it says so.
     const kicker = p.mvp === 1 ? "Valve MVP" : p.mvp > 1 ? "Valve key player" : "Estimated lobby place";
+    const awardsPending = preview() && !state.players.some(q => Number.isFinite(q.raw.mvp_rank));
+    const accoladePending = preview() && state.players.some(q => !Array.isArray(q.raw.accolades));
+    const pending = awardsPending || accoladePending ? `<span class="hl-place-pending">
+      ${awardsPending ? previewPending("MVP awards") : ""}${accoladePending ? previewPending("Accolades") : ""}</span>` : "";
     const teamBest = rows.find(x => x.p.team === p.team) === r;
     const parts = VALVE_ROWS.map(([label, i]) => ({ label, v: r.v.points[i] })).sort((a, b) => b.v - a.v);
     const boost = parts[0], drag = parts[parts.length - 1];
@@ -247,7 +259,7 @@ window.Summary = (() => {
       id: "place", go: link("mvp", "MVP"), tone: r.place === 1 ? "gold" : bottom ? "bad" : "",
       kicker,
       big: `<b class="hl-big">${ordinal(r.place)}</b><span class="hl-of">of ${n}${p.mvp ? ", estimated" : ""}</span>`,
-      sub: `${esc(gapText)}${teamBest && r.place > 1 ? ` · best on ${TEAMS[p.team].name}` : ""}`,
+      sub: `${esc(gapText)}${teamBest && r.place > 1 ? ` · best on ${TEAMS[p.team].name}` : ""}${pending}`,
       visual: strip,
       more: `<span>Biggest boost <b class="summary-up">${esc(boost.label)} ${signed(boost.v, 1)}</b></span><span>Biggest drag <b class="${drag.v < 0 ? "summary-down" : ""}">${esc(drag.label)} ${signed(drag.v, 1)}</b></span>`,
       interest: r.place === 1 ? 100 : r.place <= 3 ? 60 : bottom ? 45 : 20,
@@ -360,16 +372,19 @@ window.Summary = (() => {
     const { nemesis, victim, killers } = rivals(p), damage = damageTo(p);
     const deathsTotal = p.raw.deaths || 0;
     const stamp = events => events.slice(0, 5).map(e => fmtTime(e.t)).join(", ");
-    const duel = (q, label, tone, score, sub, more, interest) => {
+    const duel = (q, label, tone, score, sub, more, interest, fastest) => {
       const d = damage?.find(e => e.q === q);
       const max = Math.max(1, d?.out || 0, d?.in || 0);
       const bars = d ? `<div class="hl-duel-bars" role="img" aria-label="Hero damage to each other"><small class="hl-duel-head">Hero damage</small>
           <span>${isMe(p) ? "You" : esc(name(p))}</span><span class="hl-duel-track"><i style="--w:${(d.out / max * 100).toFixed(1)}%;--tc:${TEAMS[p.team].c}"></i></span><b>${fmtStat(d.out)}</b>
-          <span>${esc(name(q))}</span><span class="hl-duel-track"><i style="--w:${(d.in / max * 100).toFixed(1)}%;--tc:${TEAMS[q.team].c}"></i></span><b>${fmtStat(d.in)}</b></div>` : "";
+          <span>${esc(name(q))}</span><span class="hl-duel-track"><i style="--w:${(d.in / max * 100).toFixed(1)}%;--tc:${TEAMS[q.team].c}"></i></span><b>${fmtStat(d.in)}</b></div>`
+        : preview() ? previewPending("Damage by opponent") : "";
+      const deathDetail = preview() && fastest === "" ? previewPending("Time to kill")
+        : state.confirmedPreview && fastest ? `<small class="hl-duel-ttk">Fastest death in ${fastest} s</small>` : "";
       return {
         id: "rival", go: link("matchups", "Matchups"), tone, rival: q,
         kicker: label, big: `<span class="hl-rival-name">${who(q)}</span>`, sub,
-        visual: `<div class="hl-duel">${coin(q, "big")}<div class="hl-duel-score" ${more ? explain(plain(more)) : ""}><b>${score}</b><small>Kills, ${isMe(p) ? "you" : esc(name(p))} vs them</small></div>${bars}</div>`,
+        visual: `<div class="hl-duel">${coin(q, "big")}<div class="hl-duel-score" ${more ? explain(plain(more)) : ""}><b>${score}</b><small>Kills, ${isMe(p) ? "you" : esc(name(p))} vs them</small></div>${bars || deathDetail ? `<div class="hl-duel-detail">${bars}${deathDetail}</div>` : ""}</div>`,
         more: "", interest,
         share: { label, big: name(q), sub: plain(sub), tone },
       };
@@ -377,9 +392,11 @@ window.Summary = (() => {
     if (nemesis && nemesis.them.length >= 2) {
       const n = nemesis.them.length;
       const ttk = nemesis.them.map(e => e.victim.raw.death_details?.find(d => d.game_time_s === e.t)?.time_to_kill_s).filter(Number.isFinite);
+      const fastest = ttk.length ? Math.min(...ttk).toFixed(1) : "";
       return duel(nemesis.p, "Nemesis", "bad", `${nemesis.you.length}<i>–</i>${n}`,
         `Killed ${you(p)} ${n} of ${deathsTotal} times.`,
-        `<span>Deaths at ${stamp(nemesis.them)}</span>${ttk.length ? `<span>Fastest <b>${Math.min(...ttk).toFixed(1)} s</b></span>` : ""}`, 40 + n * 5);
+        `<span>Deaths at ${stamp(nemesis.them)}</span>${fastest ? `<span>Fastest <b>${fastest} s</b></span>` : ""}`,
+        40 + n * 5, fastest);
     }
     if (victim && victim.you.length >= 2) {
       const n = victim.you.length;
@@ -433,6 +450,9 @@ window.Summary = (() => {
     const share = lane.friendlySouls / Math.max(1, lane.friendlySouls + lane.enemySouls);
     const side = (team, souls, right) => `<div class="hl-tug-side${right ? " right" : ""}"><span class="hl-tug-coins">${team.map(q => coin(q)).join("")}</span><b>${fmtStat(souls)}</b></div>`;
     const row = (label, key) => {
+      if (preview() && [p, ...lane.opponents].some(q => !Number.isFinite(lane.snapshots.get(q)[key]))) {
+        return previewPending(label);
+      }
       const own = lane.snapshots.get(p)[key] || 0;
       const avg = lane.opponents.reduce((s, q) => s + (lane.snapshots.get(q)[key] || 0), 0) / lane.opponents.length;
       const t = own > avg ? "up" : own < avg ? "down" : "even";
@@ -500,6 +520,7 @@ window.Summary = (() => {
       kicker: "Big moment",
       big: `<b class="hl-big hl-word">${word}</b>`, sub: callout ? "" : esc(sub),
       visual: `<div class="hl-moments${callout ? " has-callout" : ""}">${callout}${svg}<span class="hl-moments-key"><i class="kill"></i>Kills<i class="death"></i>Deaths${bosses ? '<i class="boss"></i>Mid Boss' : ""}</span>
+        ${preview() && !Array.isArray(match.mid_boss) ? previewPending("Mid Boss timing") : ""}
         ${mismatch ? `<span class="hl-note summary-chart-caption" ${explain("Valve's per-death records and the end screen scoreboard disagree for this player. The headline numbers use the scoreboard.")}>Recorded markers differ from the scoreboard.</span>` : ""}</div>`,
       more: callout ? "" : `<span>Longest life <b>${fmtTime(longest.to - longest.from)}</b></span><span>Time dead <b>${fmtTime(died.reduce((s, e) => s + e.duration, 0))}</b></span>`,
       interest, share: tone ? { label: "Big moment", big: word, sub, tone } : null,
@@ -508,12 +529,13 @@ window.Summary = (() => {
 
   function bestsCard(p, sweep) {
     const snap = q => q.stats[q.stats.length - 1] || {};
+    const value = v => v ?? (preview() ? NaN : 0);
     const LIST = [
-      ["Kills", q => q.raw.kills || 0], ["Assists", q => q.raw.assists || 0], ["Fewest deaths", q => -(q.raw.deaths || 0)],
-      ["Hero damage", q => snap(q).player_damage || 0], ["Objective damage", q => snap(q).boss_damage || 0],
-      ["Souls", q => q.souls || 0], ["Ally heal + barrier", q => (snap(q).teammate_healing || 0) + (snap(q).teammate_barriering || 0)],
-      ["Last hits", q => q.raw.last_hits || 0], ["Denies", q => q.raw.denies || 0],
-      ["Damage taken", q => (snap(q).player_damage_taken || 0) + (snap(q).damage_mitigated || 0)],
+      ["Kills", q => value(q.raw.kills)], ["Assists", q => value(q.raw.assists)], ["Fewest deaths", q => -value(q.raw.deaths)],
+      ["Hero damage", q => value(snap(q).player_damage)], ["Objective damage", q => value(snap(q).boss_damage)],
+      ["Souls", q => value(q.raw.net_worth)], ["Ally heal + barrier", q => value(snap(q).teammate_healing) + value(snap(q).teammate_barriering)],
+      ["Last hits", q => value(q.raw.last_hits)], ["Denies", q => value(q.raw.denies)],
+      ["Damage taken", q => value(snap(q).player_damage_taken) + value(snap(q).damage_mitigated)],
     ];
     const led = LIST.map(([label, read]) => {
       const mine = read(p), rest = state.players.filter(q => q !== p);
@@ -564,7 +586,23 @@ window.Summary = (() => {
   function buildCards(p, stats) {
     const place = placeCard(p), story = storyCard(p);
     const sweep = sweepCard(p, stats), bests = bestsCard(p, sweep);
-    const picks = [sweep, rivalCard(p), momentsCard(p, false), laneCard(p), bests]
+    const deathsPending = preview() && state.players.some(q => q.raw.deaths > 0 &&
+      (!q.raw.death_details?.length || q.raw.death_details.some(d => !Number.isFinite(d.game_time_s) || !Number.isFinite(d.death_duration_s))));
+    const rival = deathsPending ? pendingCard("rival", "Who you fought", "Opponent damage and death detail", link("matchups", "Matchups")) : rivalCard(p);
+    const moments = wide => deathsPending ? pendingCard("moments", "Big moment", "Death timeline", link("kills", "Graphs")) : momentsCard(p, wide);
+    const rivalView = preview() && rival.interest < MIN_INTEREST
+      ? pendingCard("rival", "Who you fought", "Damage by opponent", link("matchups", "Matchups")) : rival;
+    const candidates = [sweep, rivalView, moments(false), laneCard(p), bests];
+    const size = (card, span) => ({ ...(card.id === "moments" && span >= 3 ? moments(true) : card), span });
+    // Reuse the companion card positions for this player's first official view.
+    if (state.confirmedPreview && previewPlan?.load === loadSeq && samePlayer(p, previewPlan.player)) {
+      const filled = previewPlan.cards.map(({ id, span }) => {
+        const card = [place, story, ...candidates].find(card => card?.id === id);
+        return card && size(card, span);
+      });
+      if (filled.every(Boolean)) return { cards: filled, rows: previewPlan.rows };
+    }
+    const picks = candidates
       .filter(card => card && card.interest >= MIN_INTEREST).sort((a, b) => b.interest - a.interest);
     // The slot beside the placement is short, so it goes to the strongest compact card; the rest keep their ranking.
     const compactIndex = picks.findIndex(card => ["sweep", "bests", "lane"].includes(card.id));
@@ -577,12 +615,12 @@ window.Summary = (() => {
     rows.forEach(row => row.forEach((card, i) => {
       const span = spans(row)[i];
       // The time line is drawn to its card's width.
-      const sized = card.id === "moments" && span >= 3 ? momentsCard(p, true) : card;
-      cards.push({ ...sized, span });
+      cards.push(size(card, span));
     }));
     // A loss is told with its bad moments, so they all stay; only the two strongest keep the rust edge,
     // so the page reads as a story rather than a wall of warnings.
     cards.filter(card => card.tone === "bad").sort((a, b) => b.interest - a.interest).slice(2).forEach(card => { card.tone = ""; });
+    if (preview()) previewPlan = { load: loadSeq, player: p, cards: cards.map(({ id, span }) => ({ id, span })), rows: rows.length };
     return { cards, rows: rows.length };
   }
 
@@ -603,32 +641,37 @@ window.Summary = (() => {
     const order = ["w", "v", "s"];
     const items = GraphMarkers.itemRecords(p).filter(item => !item.sold)
       .sort((a, b) => order.indexOf(a.slot) - order.indexOf(b.slot) || a.t - b.t).slice(0, 12);
-    const slots = items.map(item => `<span class="summary-item" data-category="${esc(item.slot)}" ${explain(`${item.name}. Bought at ${fmtTime(item.t)}.`)}>
+    const slots = items.map(item => `<span class="summary-item" data-category="${esc(item.slot)}" data-summary-focus="item-${item.id}-${item.t}" ${explain(`${item.name}. Bought at ${fmtTime(item.t)}.`)}>
       <img src="assets/items/${esc(item.icon)}.webp" alt="${esc(item.name)}"></span>`);
     while (slots.length < 12) slots.push('<span class="summary-item empty-slot" aria-hidden="true"></span>');
-    return `<section class="summary-build"><div class="summary-items">${slots.join("")}</div></section>`;
+    return `<section class="summary-build"><div class="summary-items">${slots.join("")}</div>
+      ${preview() && !Array.isArray(p.raw.items) ? previewPending("Final build") : ""}</section>`;
   }
 
   function heroColumn(p, stats) {
     const won = Number(match.winning_team) === p.team, team = TEAMS[p.team], username = name(p);
-    const kda = stats.slice(0, 3).map(stat => stat.value ?? "–").join(" <i>/</i> ");
+    const kda = stats.slice(0, 3).map(stat => stat.value ?? (preview() ? "?" : "–")).join(" <i>/</i> ");
     const souls = stats[5].value;
     const lane = LANES_BY_COLOR[p.lane];
     const date = match.start_time ? DAY.format(new Date(match.start_time * 1000)) : "";
-    const rank = rankHtml(p.badge) || (state.awaitingValve ? "" : '<span class="rank none">Unranked</span>');
+    const rank = rankHtml(p.badge) || (preview() && !isStreetBrawl() ? previewPending("Player rank") :
+      preview() ? "" : '<span class="rank none">Unranked</span>');
+    const laneText = lane ? ` · ${lane} lane` :
+      preview() && !isStreetBrawl() && p.raw.assigned_lane == null ? ` · ${previewPending("Lane")}` : "";
     return `<section class="hl-hero" style="--tc:${team.c}" aria-label="Player overview">
       <div class="hl-result ${won ? "win" : "loss"}"><img src="${team.icon}" alt=""><b>${won ? "Victory" : "Defeat"}</b>
-        <span>${esc(team.name)}${lane ? ` · ${lane} lane` : ""} · ${fmtTime(match.duration_s)}${date ? ` · ${date}` : ""}</span></div>
+        <span>${esc(team.name)}${laneText} · ${fmtTime(match.duration_s)}${date ? ` · ${date}` : ""}</span></div>
       <div class="hl-art">${heroArt(p, won)}
         <div class="hl-id">
           <div class="hl-id-name"><h2 class="summary-name" title="${esc(username)}">${esc(username)}</h2>${isMe(p) ? '<span class="summary-you">You</span>' : ""}</div>
           <div class="hl-id-meta">${username !== p.hero ? `<span>${esc(p.hero)}</span>` : ""}${rank}</div>
+          ${preview() ? previewPending("Player name") : ""}
         </div></div>
       <div class="summary-kda" aria-label="Kills, deaths, assists and souls"><b>${kda}</b>${Number.isFinite(souls) ? `<span><img src="assets/ui/icon_soul.svg" alt="">${fmtStat(souls)}</span>` : ""}</div>
-      ${!state.awaitingValve || Array.isArray(p.raw.items) ? itemGrid(p) : ""}
+      ${itemGrid(p)}
       <div class="hl-actions">
         ${rows.length && !EMBED && window.ShareCard ? '<button type="button" class="hl-share" data-hl-share data-summary-focus="share"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>Share</button>' : ""}
-        ${state.awaitingValve ? "" : `<details class="summary-compare"><summary class="hl-button" data-summary-focus="compare">Compare with…</summary>
+        ${state.awaitingValve ? (EMBED ? "" : '<span class="hl-compare-space" aria-hidden="true"></span>') : `<details class="summary-compare"><summary class="hl-button" data-summary-focus="compare">Compare with…</summary>
           <div class="summary-compare-menu" aria-label="Choose a player to compare on the Graphs tab">${state.players.filter(q => q !== p).map(q =>
             `<button type="button" data-summary-compare="${q.slot}">${coin(q)}<span class="summary-name" title="${esc(fullName(q))}">${esc(name(q))}</span></button>`).join("")}</div>
         </details>`}
@@ -647,14 +690,17 @@ window.Summary = (() => {
 
   function basicStats(stats) {
     return `<section class="hl-waiting"><h2>Highlights appear when Valve publishes the full match.</h2>
-      <div class="hl-basic">${stats.filter(stat => Number.isFinite(stat.value)).map(stat =>
-        `<div><span>${stat.label}</span><b>${fmtStat(stat.value)}</b></div>`).join("")}</div></section>`;
+      <div class="hl-basic">${stats.map(stat => `<div><span>${stat.label}</span>${Number.isFinite(stat.value)
+        ? `<b>${fmtStat(stat.value)}</b>` : previewPending(stat.label, "Data")}</div>`).join("")}
+        ${!state.players.some(p => Number.isFinite(p.raw.mvp_rank)) ? `<div>${previewPending("MVP awards")}</div>` : ""}
+        ${state.players.some(p => !Array.isArray(p.raw.accolades)) ? `<div>${previewPending("Accolades")}</div>` : ""}
+      </div></section>`;
   }
 
   function render(preserveFocus = false) {
     prepareMatch();
     const p = selected(), stats = statsFor(p);
-    const active = preserveFocus && view.contains(document.activeElement) ? document.activeElement.dataset : {};
+    const active = preserveFocus && view.contains(document.activeElement) ? document.activeElement : null;
     hideTip();
     const accent = heroColor(p.heroId);
     view.style.setProperty("--hero-accent", accent);
@@ -674,10 +720,24 @@ window.Summary = (() => {
     view.innerHTML = `<div class="hl-layout">${heroColumn(p, stats)}
       ${cards.length ? `<div class="hl-grid" style="grid-template-rows:${["1fr", ".8fr 1.2fr", ".84fr 1.08fr 1.08fr"][built.rows - 1]}">${cards.map(cardHtml).join("")}</div>` : basicStats(stats)}
       ${EMBED ? "" : '<footer class="hl-footer">Unofficial fan project. Not affiliated with or endorsed by Valve. Deadlock art and fonts belong to Valve.</footer>'}</div>`;
-    animateIn();
-    if (active.summaryFocus) view.querySelector(`[data-summary-focus="${CSS.escape(active.summaryFocus)}"]`)?.focus({ preventScroll: true });
-    else if (active.hlCard) view.querySelector(`[data-hl-card="${CSS.escape(active.hlCard)}"]`)?.focus({ preventScroll: true });
-    else if (active.summaryScore) view.querySelector(`.hl-dot[data-summary-score="${CSS.escape(active.summaryScore)}"]`)?.focus({ preventScroll: true });
+    if (!preview() && !state.confirmedPreview) animateIn();
+    if (active) restoreFocus(active);
+  }
+
+  function restoreFocus(previous) {
+    const attrs = ["data-summary-portrait", "data-summary-focus", "data-summary-score", "data-hl-card", "data-summary-tip"];
+    for (const attr of attrs) {
+      const value = previous.getAttribute(attr);
+      if (value === null) continue;
+      const replacement = $("stage").querySelector(`[${attr}="${CSS.escape(value)}"]`);
+      if (replacement) {
+        replacement.focus({ preventScroll: true });
+        return true;
+      }
+    }
+    const card = previous.closest("[data-hl-card]");
+    if (card && card !== previous) return restoreFocus(card);
+    return false;
   }
 
   // Entrance: the column and cards rise in one after another; on the website numbers count up and lines draw too.
@@ -779,6 +839,7 @@ window.Summary = (() => {
   }
 
   function go(where) {
+    if (state.awaitingValve) return;
     hideTip();
     const p = selected();
     if (where === "mvp") {
@@ -838,5 +899,5 @@ window.Summary = (() => {
     return true;
   }
 
-  return { selected, select, render, name, hideTip, dismissTip };
+  return { selected, select, render, name, hideTip, dismissTip, restoreFocus };
 })();

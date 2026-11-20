@@ -16,12 +16,26 @@ const chrome = process.env.PM_AUDIT_CHROME || (process.platform === "win32"
 const match = require("./137018749.json");
 const profile = require("./profile_fixture.json");
 const routes = new Map();
+const staticFiles = new Map();
 const mime = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json",
   ".png": "image/png", ".webp": "image/webp", ".svg": "image/svg+xml", ".woff2": "font/woff2" };
-const json = (res, body, status = 200) => { res.writeHead(status, { "Content-Type": "application/json" }); res.end(JSON.stringify(body)); };
-let browser, socket, server, origin, send, browserExit, userData, debugPort;
+const json = (res, body, status = 200) => {
+  res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" }).end(JSON.stringify(body));
+};
+let browser, socket, server, origin, send, browserExit, userData, debugPort, playwrightContext, playwrightPage;
+const isFixtureRoute = pathname => pathname.startsWith("/api/v1/companion/") || pathname.startsWith("/__fixture/");
 
-async function until(read, label, ms = 4000) {
+function staticFile(pathname) {
+  const file = resolve(site, "." + (pathname === "/" ? "/index.html" : pathname));
+  const contentType = mime[extname(file)];
+  if (!file.startsWith(site + sep) || !contentType) return null;
+  if (!staticFiles.has(file)) {
+    staticFiles.set(file, readFile(file).then(body => ({ body, contentType }), () => null));
+  }
+  return staticFiles.get(file);
+}
+
+async function until(read, label, ms = playwrightContext ? 12_000 : 4000) {
   const end = Date.now() + ms;
   do {
     const value = await read();
@@ -34,17 +48,14 @@ async function until(read, label, ms = 4000) {
 before(async () => {
   server = createServer(async (req, res) => {
     const url = new URL(req.url, "http://127.0.0.1");
-    if (url.pathname.startsWith("/api/v1/companion/") || url.pathname.startsWith("/__fixture/")) {
+    if (isFixtureRoute(url.pathname)) {
       const route = routes.get(url.pathname.replace(/^\/__fixture/, ""));
       if (!route && url.pathname === "/api/v1/companion/session") return json(res, { state: "paused" }, 503);
       return route ? route(res) : json(res, [], 404);
     }
-    const file = resolve(site, "." + (url.pathname === "/" ? "/index.html" : url.pathname));
-    if (!file.startsWith(site + sep) || !mime[extname(file)]) return res.writeHead(404).end();
-    try {
-      const data = await readFile(file);
-      res.writeHead(200, { "Content-Type": mime[extname(file)] }).end(data);
-    } catch (_) { res.writeHead(404).end(); }
+    const file = await staticFile(url.pathname);
+    if (file) res.writeHead(200, { "Content-Type": file.contentType }).end(file.body);
+    else res.writeHead(404).end();
   });
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
@@ -55,6 +66,16 @@ before(async () => {
 });
 
 async function startBrowser() {
+  if (process.env.PM_FAST_PLAYWRIGHT) {
+    const { chromium } = require(process.env.PM_FAST_PLAYWRIGHT);
+    playwrightContext = await chromium.launchPersistentContext(userData, { executablePath: chrome, viewport: null });
+    await playwrightContext.route(url => url.origin === origin && !isFixtureRoute(url.pathname), async route => {
+      const file = await staticFile(new URL(route.request().url()).pathname);
+      await route.fulfill(file || { status: 404 });
+    });
+    await connectPlaywrightPage(playwrightContext.pages()[0]);
+    return;
+  }
   browser = spawn(chrome, ["--headless=new", "--no-first-run", "--disable-background-networking", "--disable-extensions",
     "--remote-debugging-port=0", `--user-data-dir=${userData}`, "about:blank"], { stdio: "ignore", windowsHide: true });
   browserExit = once(browser, "exit").catch(() => {});
@@ -67,7 +88,7 @@ async function connectPage(targetId, portFile) {
   const target = await until(async () => {
     try {
       if (portFile) debugPort = (await readFile(portFile, "utf8")).split(/\r?\n/)[0];
-      const targets = await (await fetch(`http://127.0.0.1:${debugPort}/json/list`)).json();
+      const targets = await (await fetch(`http://127.0.0.1:${debugPort}/json/list`, { signal: AbortSignal.timeout(1000) })).json();
       return targets.find(t => t.type === "page" && (!targetId || t.id === targetId));
     }
     catch (_) { return false; }
@@ -90,6 +111,17 @@ async function connectPage(targetId, portFile) {
     pending.set(++id, { done, reject });
     connection.send(JSON.stringify({ id, method, params }));
   });
+  await initializePage();
+}
+
+async function connectPlaywrightPage(page) {
+  playwrightPage = page;
+  const session = await playwrightContext.newCDPSession(page);
+  send = (method, params) => session.send(method, params);
+  await initializePage();
+}
+
+async function initializePage() {
   await send("Page.enable");
   await send("Network.enable");
   await send("Network.setBlockedURLs", { urls: ["https://*"] });
@@ -120,6 +152,12 @@ async function connectPage(targetId, portFile) {
 }
 
 async function stopBrowser() {
+  if (playwrightContext) {
+    await playwrightContext.close();
+    playwrightContext = null;
+    playwrightPage = null;
+    return;
+  }
   if (send && socket?.readyState === WebSocket.OPEN) await Promise.race([send("Browser.close").catch(() => {}), delay(500)]);
   await Promise.race([browserExit, delay(3000)]);
   if (socket?.readyState === WebSocket.OPEN) socket.close();
@@ -138,7 +176,10 @@ async function page(expression) {
   if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text);
   return result.result.value;
 }
-async function navigate(path) { await send("Page.navigate", { url: origin + path }); }
+async function navigate(path) {
+  if (playwrightPage) await playwrightPage.goto(origin + path, { waitUntil: "domcontentloaded", timeout: 60_000 });
+  else await send("Page.navigate", { url: origin + path });
+}
 async function waitPage(expression, ms) {
   return until(() => page(expression).catch(() => false), "Page did not satisfy " + expression, ms);
 }
@@ -577,7 +618,7 @@ test("U2 and P1: Summary opens on the viewer and cleans the hint while preservin
   assert.equal(await page("state.summaryPick === null && viewerAccount === null && !new URL(location.href).searchParams.has('pick')"), true);
 });
 
-test("match tabs wait for Valve on the website and in the overlay", { timeout: 30_000 }, async t => {
+test("match tabs wait for Valve on the website and in the overlay", { timeout: 90_000 }, async t => {
   const { normalizeUpload } = await import("../companion/metadata.mjs");
   const fixture = async (path, fallback) => path ? JSON.parse(await readFile(path, "utf8")) : fallback;
   const official = await fixture(process.env.PM_LOADING_OFFICIAL, match);
@@ -624,25 +665,42 @@ test("match tabs wait for Valve on the website and in the overlay", { timeout: 3
     const motion = value => send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value }] });
     await motion("no-preference");
     await navigate(`/?match=${id}&tab=${requested}${embed ? "&embed=1" : ""}${requested === "graphs" ? "&graph=dmg_type" : ""}`);
-    await until(() => previewResponse && metadataResponse, "Both match requests started");
+    await until(() => previewResponse && metadataResponse, `${mode}/${requested}: both match requests started`);
     assert.deepEqual(await tabState(), pending);
-    assert.equal(await page("document.querySelector('#status').textContent"), `Loading match ${id}...`);
+    assert.equal(await page("document.querySelector('#appReading').hidden"), false);
 
     const result = structuredClone(preview);
     result.expires_at = Date.now() + 60_000;
-    if (sparse) delete result.match_info.players[0].stats;
+    if (sparse) {
+      for (const key of ["stats", "items", "assigned_lane", "accolades"]) delete result.match_info.players[0][key];
+      for (const p of result.match_info.players) delete p.mvp_rank;
+    }
+    if (requested === "graphs") {
+      const p = result.match_info.players.find(player => player.deaths > 0);
+      delete p.death_details;
+    }
     json(previewResponse, result);
     await waitPage("!document.querySelector('#summaryView').hidden && !!document.querySelector('.summary-kda')");
     assert.deepEqual(await tabState(), pending);
-    assert.equal(await page("document.querySelector('#companionSource').hidden"), false);
+    assert.equal(await page("document.querySelector('#companionSource').textContent"), "App copy. Valve data will replace it.");
     assert.equal(await page("Summary.selected().slot"), viewer.player_slot);
     assert.equal(await page("document.querySelector('.summary-kda b').textContent"), `${viewer.kills} / ${viewer.deaths} / ${viewer.assists}`);
     assert.equal(await page("!!document.querySelector('.hl-grid')"), !sparse);
     assert.equal(await page("!!document.querySelector('.summary-compare')"), false);
+    const pendingFields = await page("Array.from(document.querySelectorAll('[data-valve-pending]'), n => n.dataset.valvePending)");
+    if (sparse) {
+      for (const name of ["Final build", "Lane", "MVP awards", "Accolades", "Hero damage + ally healing", "Objective damage"]) {
+        assert.ok(pendingFields.includes(name), name);
+      }
+    }
+    if (requested === "graphs") {
+      assert.ok(pendingFields.includes("Opponent damage and death detail"));
+      assert.ok(pendingFields.includes("Death timeline"));
+    }
 
     const loadingWidth = await page(`${selectors}.slice(1).map(b => b.offsetWidth)`);
     const animation = await page("getComputedStyle(document.querySelector('[data-tab=graphs]'), '::after').animationName");
-    assert.equal(animation, "tab-spin");
+    assert.equal(animation, "none");
     await motion("reduce");
     assert.equal(await page("getComputedStyle(document.querySelector('[data-tab=graphs]'), '::after').animationName"), "none");
 
@@ -661,7 +719,7 @@ test("match tabs wait for Valve on the website and in the overlay", { timeout: 3
     const root = (await send("DOM.getDocument")).root.nodeId;
     const { nodeId } = await send("DOM.querySelector", { nodeId: root, selector: '[data-tab="graphs"]' });
     const { nodes: [accessible] } = await send("Accessibility.getPartialAXTree", { nodeId, fetchRelatives: false });
-    assert.equal(accessible.description.value, "Loading match data");
+    assert.equal(accessible.description.value, "Accurate graphs coming");
     assert.equal(accessible.properties.find(property => property.name === "disabled").value.value, true);
 
     const picked = result.match_info.players[1].player_slot;
@@ -672,7 +730,7 @@ test("match tabs wait for Valve on the website and in the overlay", { timeout: 3
     await waitPage(`state.previewSlot === null && state.tab === '${requested}'`);
     assert.deepEqual(await tabState(), ["summary", "graphs", "matchups", "mvp"].map(tab => [tab, false, tab === requested, false]));
     assert.deepEqual(await page(`${selectors}.slice(1).map(b => b.offsetWidth)`), loadingWidth);
-    assert.equal(await page("document.querySelector('#companionSource').hidden"), true);
+    assert.equal(await page("document.querySelector('#companionSource').textContent"), "Updated with official Valve data");
     assert.equal(await page("state.me.slot"), viewer.player_slot);
     assert.equal(await page("location.search.includes('tab=' + state.tab)"), true);
     if (requested === "summary") {
@@ -1030,8 +1088,11 @@ test("recent profiles persist while other settings reset in new tabs and browser
     await assertDefaults();
     assert.deepEqual(await page(storedRecent), expectedRecent);
   };
-  const { targetId } = await send("Target.createTarget", { url: "about:blank" });
-  await connectPage(targetId);
+  if (playwrightContext) await connectPlaywrightPage(await playwrightContext.newPage());
+  else {
+    const { targetId } = await send("Target.createTarget", { url: "about:blank" });
+    await connectPage(targetId);
+  }
   await assertFreshOpen();
 
   await stopBrowser();
