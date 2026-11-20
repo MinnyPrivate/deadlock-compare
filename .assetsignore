@@ -5,6 +5,7 @@ mod
 test
 docs/
 tools
+/dev-cards.*
 README.md
 wrangler.jsonc
 .assetsignore

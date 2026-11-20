@@ -58,12 +58,16 @@ window.Summary = (() => {
     render(true);
   }
 
-  function prepareMatch() {
-    if (match === state.match) return;
+  function prepareMatchData() {
     match = state.match;
     rows = canGrade() ? valveRows() : [];
     deaths = deathEvents();
     names = new Map();
+  }
+
+  function prepareMatch() {
+    if (match === state.match) return;
+    prepareMatchData();
     const currentMatch = match;
     const ids = [...new Set(state.players.map(p => Number(p.raw.account_id)).filter(id => Number.isInteger(id) && id > 0))];
     if (ids.length) {
@@ -554,17 +558,22 @@ window.Summary = (() => {
       big: `<b class="hl-big hl-word">${esc(sources[0]?.[0] || "Souls")}</b>`,
       sub: `${Math.round((sources[0]?.[1] || 0) / total * 100)}% of tracked income. ${ordinal(place)} richest in the lobby.`,
       visual: columns(sources.map(([label, v], i) => ({ value: v, color: "var(--hero-accent)", top: i === 0, foot: `<small>${esc(label)}</small>`, tip: `${label}: ${fmtStat(v)} souls.` }))),
-      more: `<span>Dropped on death <b>${fmtStat(s.gold_death_loss || 0)}</b></span>`, interest: 5, share: null,
+      more: `<span>Dropped on death <b>${fmtStat(s.gold_death_loss || 0)}</b></span>`, interest: 5, share: null, hasSources: sources.length > 0,
     };
   }
 
   // Cards are candidates, ranked by how interesting they are. Fillers drop out, at most two bad-news cards stay,
   // and the grid reflows: row one is placement plus the top pick, row two the story plus the next, row three the rest.
   const MIN_INTEREST = 18;
-  function buildCards(p, stats) {
+  function buildCandidates(p, stats) {
     const place = placeCard(p), story = storyCard(p);
     const sweep = sweepCard(p, stats), bests = bestsCard(p, sweep);
-    const picks = [sweep, rivalCard(p), momentsCard(p, false), laneCard(p), bests]
+    return { place, story, sweep, rival: rivalCard(p), moments: momentsCard(p, false), lane: laneCard(p), bests };
+  }
+
+  function buildCards(p, stats, candidates = buildCandidates(p, stats)) {
+    const { place, story, ...ranked } = candidates;
+    const picks = Object.values(ranked)
       .filter(card => card && card.interest >= MIN_INTEREST).sort((a, b) => b.interest - a.interest);
     // The slot beside the placement is short, so it goes to the strongest compact card; the rest keep their ranking.
     const compactIndex = picks.findIndex(card => ["sweep", "bests", "lane"].includes(card.id));
@@ -645,6 +654,10 @@ window.Summary = (() => {
       ${card.visual ? `<div class="hl-visual">${card.visual}</div>` : ""}</article>`;
   }
 
+  function gridHtml(built) {
+    return `<div class="hl-grid" style="grid-template-rows:${["1fr", ".8fr 1.2fr", ".84fr 1.08fr 1.08fr"][built.rows - 1]}">${built.cards.map(cardHtml).join("")}</div>`;
+  }
+
   function basicStats(stats) {
     return `<section class="hl-waiting"><h2>Highlights appear when Valve publishes the full match.</h2>
       <div class="hl-basic">${stats.filter(stat => Number.isFinite(stat.value)).map(stat =>
@@ -672,7 +685,7 @@ window.Summary = (() => {
     const built = rows.length ? buildCards(p, stats) : { cards: [], rows: 0 }, cards = built.cards;
     current = { p, cards, won: Number(match.winning_team) === p.team, stats };
     view.innerHTML = `<div class="hl-layout">${heroColumn(p, stats)}
-      ${cards.length ? `<div class="hl-grid" style="grid-template-rows:${["1fr", ".8fr 1.2fr", ".84fr 1.08fr 1.08fr"][built.rows - 1]}">${cards.map(cardHtml).join("")}</div>` : basicStats(stats)}
+      ${cards.length ? gridHtml(built) : basicStats(stats)}
       ${EMBED ? "" : '<footer class="hl-footer">Unofficial fan project. Not affiliated with or endorsed by Valve. Deadlock art and fonts belong to Valve.</footer>'}</div>`;
     animateIn();
     if (active.summaryFocus) view.querySelector(`[data-summary-focus="${CSS.escape(active.summaryFocus)}"]`)?.focus({ preventScroll: true });
@@ -706,9 +719,7 @@ window.Summary = (() => {
     clearTimeout(tipTimer);
     if (!anchor || shownTip === anchor) return;
     hideTip();
-    const { summaryTip, summaryScore } = anchor.dataset;
-    if (summaryScore) tooltip.innerHTML = scoreWhy(rows.find(r => r.p.slot === Number(summaryScore)));
-    else tooltip.textContent = summaryTip;
+    tooltip.innerHTML = tipHtml(anchor);
     tooltip.hidden = false;
     shownTip = anchor;
     anchor.setAttribute("aria-describedby", tooltip.id);
@@ -720,6 +731,10 @@ window.Summary = (() => {
     const y = bottom + height + 10 <= stage.offsetHeight ? bottom + 8 : Math.max(4, (bounds.top - box.top) / scale - height - 8);
     tooltip.style.left = x + "px";
     tooltip.style.top = y + "px";
+  }
+
+  function tipHtml({ dataset: { summaryTip, summaryScore } }) {
+    return summaryScore ? scoreWhy(rows.find(r => r.p.slot === Number(summaryScore))) : esc(summaryTip);
   }
 
   function releaseTip() {
@@ -838,5 +853,27 @@ window.Summary = (() => {
     return true;
   }
 
-  return { selected, select, render, name, hideTip, dismissTip };
+  // The local gallery uses an isolated match page and fixture data without remote enrichment.
+  async function inspectCards(info, slot) {
+    setMatchRoster(info);
+    state.me = null;
+    prepareMatchData();
+    const p = state.players.find(player => player.slot === slot);
+    if (!p) throw new Error("Missing gallery player slot " + slot);
+    const unavailable = isStreetBrawl() ? "Highlights is disabled for Street Brawl."
+      : !rows.length ? "Highlights needs a scored match and player stat snapshots." : "";
+    const result = { hero: p.hero, accent: heroColor(p.heroId), scale: state.zoom, unavailable };
+    if (unavailable) return result;
+    await SummaryPercentiles.load();
+    const stats = statsFor(p), candidates = buildCandidates(p, stats), built = buildCards(p, stats, candidates);
+    return {
+      ...result, cardHtml, tipHtml, bento: gridHtml(built), minInterest: MIN_INTEREST,
+      candidates: { ...candidates, souls: soulsCard(p) }, picked: built.cards,
+      lead: leadSeries(p.team), team: p.team,
+      hasLane: Boolean(LANES_BY_COLOR[p.lane]),
+      hasLaneOpponent: state.players.some(q => q.lane === p.lane && q.team !== p.team),
+    };
+  }
+
+  return { selected, select, render, name, hideTip, dismissTip, inspectCards };
 })();
