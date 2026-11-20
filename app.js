@@ -726,16 +726,11 @@ function renderTabs() {
   }
 }
 
-function setup(mi, picked, hadGraph, summary) {
+function setMatchRoster(mi) {
   state.match = mi;
   state.deaths = null;
   state.exactKda = new Map();
   const brawl = isStreetBrawl();
-  $("companionSource").hidden = state.previewSlot === null;
-  closeMenu();
-  if (!availableGraphs().includes(graphNow())) openGraph("souls");
-  if (brawl && state.mode === "lane") state.mode = "value";
-  document.body.classList.remove("noMatch");
   const lane = p => brawl ? 0 : p.assigned_lane || 0;
   const ordered = [...mi.players].sort((a, b) => a.team - b.team || lane(a) - lane(b) || a.player_slot - b.player_slot);
   state.players = ordered.map(p => ({
@@ -751,6 +746,16 @@ function setup(mi, picked, hadGraph, summary) {
     badge: brawl ? 0 : Number(p.player_rank_data?.initial_display_rank) || 0,
     raw: p,
   }));
+}
+
+function setup(mi, picked, hadGraph, summary) {
+  setMatchRoster(mi);
+  const brawl = isStreetBrawl();
+  $("companionSource").hidden = state.previewSlot === null;
+  closeMenu();
+  if (!availableGraphs().includes(graphNow())) openGraph("souls");
+  if (brawl && state.mode === "lane") state.mode = "value";
+  document.body.classList.remove("noMatch");
   applyViewer();
   const stillPresent = old => state.players.some(p => samePlayer(p, old));
   const requested = params.get("pick");
