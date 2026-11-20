@@ -180,9 +180,9 @@ window.ShareCard = (() => {
     ctx.fillText(ellipsize(ctx, hero.sub || "", RW), L, 298);
 
     // The soul lead over the whole match: the one real chart on the card.
-    let y = 340;
+    let y = 346;
     if (d.spark?.length > 2) {
-      const sh = 84, mid = y + sh / 2, scale = Math.max(2000, ...d.spark.map(pt => Math.abs(pt.lead)));
+      const sh = 78, mid = y + sh / 2, scale = Math.max(2000, ...d.spark.map(pt => Math.abs(pt.lead)));
       const px = t => L + t / d.dur * RW, py = v => mid - v / scale * (sh / 2 - 4);
       ctx.save();
       ctx.beginPath();
@@ -216,10 +216,13 @@ window.ShareCard = (() => {
         ctx.fillStyle = CREAM;
         ctx.fillText(mark.text, tx, ty);
       }
-      ctx.font = "700 14px Pulp";
+      ctx.font = "700 17px Pulp";
       ctx.fillStyle = FAINT;
       ctx.fillText(`${d.team.name.toUpperCase()} SOUL LEAD`, L, y - 8);
-      y += sh + 40;
+      ctx.font = "600 16px Radiance";
+      ctx.fillText("0:00", L, y + sh + 20);
+      ctx.fillText(d.duration, R - ctx.measureText(d.duration).width, y + sh + 20);
+      y += sh + 54;
     } else y += 20;
 
     // Two supporting facts, side by side, no boxes.
@@ -228,15 +231,15 @@ window.ShareCard = (() => {
       const cx = L + i * (colW + 40);
       if (i) { ctx.fillStyle = "rgba(255,239,215,.14)"; ctx.fillRect(cx - 20, y - 14, 1, 92); }
       if (line.tone === "bad") { ctx.fillStyle = "#B84A3C"; ctx.fillRect(cx - (i ? 12 : 14), y - 12, 3, 88); }
-      ctx.font = "700 14px Pulp";
+      ctx.font = "700 17px Pulp";
       ctx.fillStyle = TONE[line.tone] || DIM;
       ctx.fillText(ellipsize(ctx, line.label.toUpperCase(), colW), cx, y);
       setFont(ctx, line.big, colW, "600 {s}px Oracle", 38, 22);
       ctx.fillStyle = color(line.tone);
       ctx.fillText(ellipsize(ctx, line.big, colW), cx, y + 42);
-      ctx.font = "600 19px Radiance";
-      ctx.fillStyle = "rgba(255,239,215,.82)";
-      ctx.fillText(ellipsize(ctx, line.sub || "", colW), cx, y + 70);
+      ctx.font = "600 21px Radiance";
+      ctx.fillStyle = "rgba(255,239,215,.84)";
+      ctx.fillText(ellipsize(ctx, line.sub || "", colW), cx, y + 72);
     });
 
     // Footer: the site's name and the fan-project notice.

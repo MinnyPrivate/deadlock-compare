@@ -543,7 +543,6 @@ body:not(.standalone) .hl-cols { height: 112px; }
 .share-actions button:disabled { opacity: .35; cursor: default; }
 .share-status { margin-left: auto; color: #7CBC1D; font-size: 15px; overflow-wrap: anywhere; }
 .share-privacy { margin: 12px 0 0; color: rgba(255, 239, 215, .72); font-size: 13px; }
-#shareDialog button:focus-visible { outline: 2px solid var(--offWhite); outline-offset: 3px; }
 @media (prefers-reduced-motion: reduce) { .share-panel { animation: none; } }
 
 /* The in-game panel is 84 units shorter: tighten the type a step so every card keeps its whole visual. */
@@ -564,7 +563,7 @@ body:not(.standalone) .hl-sweep-row { flex-basis: 32px; min-height: 32px; }
 
 .hl-big.is-quiet { font-size: 38px; }
 .hl-story-time { position: absolute; left: 50%; bottom: 0; transform: translateX(-50%); color: var(--faint); font: 700 11px/1 var(--block); letter-spacing: .06em; }
-.hl-story-time:not(.end) { left: 0; transform: none; display: none; }
+.hl-story-time:not(.end) { left: 0; bottom: auto; top: 0; transform: none; display: none; }
 .hl-story-time.end { left: auto; right: 0; bottom: auto; top: 0; transform: none; }
 .hl-duel-head { grid-column: 1 / -1; color: var(--faint); font: 700 11px/1 var(--block); letter-spacing: .08em; text-transform: uppercase; }
 .hl-best-list .hl-best-more { color: var(--faint); font-size: 14px; font-weight: 600; cursor: help; }
@@ -579,3 +578,11 @@ body:not(.standalone) .hl-duel-score b { font-size: 52px; }
 .hl-best-bar { background: linear-gradient(90deg, rgba(255, 237, 121, .35), var(--gold)); }
 .hl-best-list small { flex: 1 0 100%; margin-top: -2px; color: var(--faint); font-size: 12px; font-weight: 600; }
 .hl-best-list:not(.is-single) .hl-best-bar, .hl-best-list:not(.is-single) small { display: none; }
+
+/* Round 4: the lobby comparison has no "good" or "bad" direction, so its track is neutral. */
+.hl-sweep.is-lobby .hl-sweep-track { background: rgba(255, 239, 215, .08); }
+/* Hover and dialog timing inside DESIGN.md's 150 ms. */
+.hl-card, .hl-sub, .hl-more { transition-duration: .15s !important; }
+.share-panel { animation-duration: .15s; }
+.hl-best-list.is-single li { padding: 8px 0; }
+.hl-best-list.is-single b { font-size: 26px; }

@@ -16,7 +16,7 @@ window.Summary = (() => {
   const DAY = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
   const num = n => n.toLocaleString("en-US", { maximumFractionDigits: 1 });
   const SHORT_GAME_S = 1200; // under 20:00 every percentile uses the per minute table
-  const ENTER_MS = 600;
+  const ENTER_MS = 300;
   const lookups = new Map();
   let names = new Map(), art = {}, match, rows, deaths, percentiles, shownTip, tipTimer;
   let enteredMatch, enterStart = 0, renderedBackdrop, current;
@@ -266,7 +266,8 @@ window.Summary = (() => {
     const lead = ranked[0], [leadWord, leadTone] = word(lead);
     const flat = leadTone === "even", low = leadTone === "down";
     const per = short() ? " per minute" : "";
-    const shown = ranked.slice(0, 3), hidden = stats.filter(s => !shown.includes(s));
+    const exceptional = ranked.filter(s => word(s)[1] !== "even");
+    const shown = (exceptional.length ? exceptional : ranked).slice(0, 3), hidden = stats.filter(s => !shown.includes(s));
     const lines = shown.map(s => {
       const at = pos(s), [w, tone] = word(s);
       return `<div class="hl-sweep-row" ${explain(proof(p, s))}><span class="hl-sweep-label">${esc(s.short || s.label)}</span>
@@ -278,19 +279,23 @@ window.Summary = (() => {
       id: "sweep", go: link("mvp", "MVP"), tone: low ? "bad" : "",
       kicker: vsHero ? `Vs other ${esc(p.hero)} games` : "Vs the lobby",
       big: flat ? `<b class="hl-big hl-word">Typical</b><span class="hl-of">on every stat${per}</span>`
-        : `<b class="hl-big summary-${leadTone}">${esc(leadWord)}</b><span class="hl-of">${esc(leadName)}${per}</span>`,
+        : `<b class="hl-big summary-${leadTone}">${esc(leadWord)}</b><span class="hl-of">${esc(leadName)}${per} · ${short() ? lead.graded.toFixed(lead.graded < 10 ? 2 : 0) : fmtStat(lead.value)}</span>`,
       sub: "",
-      visual: `<div class="hl-sweep">${lines}
-        ${hidden.length ? `<span class="hl-sweep-rest" ${explain(hidden.map(s => `${s.short || s.label}: ${word(s)[0]}.`).join(" "))}>+${hidden.length} more stats${hidden.every(s => word(s)[1] === "even") ? ", all typical" : ""}</span>` : ""}</div>`,
+      visual: `<div class="hl-sweep${vsHero ? "" : " is-lobby"}">${lines}
+        ${hidden.length ? `<span class="hl-sweep-rest" ${explain(hidden.map(s => `${s.short || s.label}: ${word(s)[0]}.`).join(" "))}>+${hidden.length} other stats${hidden.every(s => word(s)[1] === "even") ? ", all typical" : ""}</span>` : ""}</div>`,
       more: "",
       interest: flat ? 0 : 20 + (lead.percentile ? Math.abs(lead.percentile.pct - 50) : 25), // the honest overall read, so it ranks high
-      share: flat || low ? null : { label: vsHero ? `Vs ${p.hero} games` : "Vs the lobby", big: leadWord, sub: `in ${leadName}${per}`, tone: leadTone === "gold" ? "gold" : "good" },
+      share: flat ? null : { label: vsHero ? `Vs ${p.hero} games` : "Vs the lobby", big: leadWord, sub: `in ${leadName}${per}`, tone: low ? "bad" : leadTone === "gold" ? "gold" : "good" },
+      leadLabel: lead.label,
     };
   }
 
   function storyCard(p) {
     const series = leadSeries(p.team);
-    if (series.length < 4) return null; // too few shared snapshots to tell a story
+    // Only tell the story when the shared snapshots cover the match: start, end and no long gaps.
+    const covered = series.length >= 4 && series[1].t <= 420 && series[series.length - 1].t >= match.duration_s - 420 &&
+      series.every((pt, i) => !i || pt.t - series[i - 1].t <= 420);
+    if (!covered) return null;
     const won = Number(match.winning_team) === p.team, dur = match.duration_s;
     let low = series[0], high = series[0], changes = 0, sign = 0;
     for (const pt of series) {
@@ -310,9 +315,9 @@ window.Summary = (() => {
     const total = Math.max(1, series[series.length - 1].t), ahead = aheadTime / total, behind = behindTime / total;
     const trailedLate = series.some(pt => pt.t > 300 && (won ? pt.lead < 0 : pt.lead > 0));
     const final = series[series.length - 1].lead;
-    let word, sub, tone = "", mark;
-    if (won && low.lead <= -5000) { word = "Comeback"; sub = `Won after trailing by ${fmtStat(-low.lead)} at ${fmtTime(low.t)}.`; mark = low; tone = "good"; }
-    else if (!won && high.lead >= 5000) { word = "Thrown"; sub = `Led by ${fmtStat(high.lead)} at ${fmtTime(high.t)}, then lost.`; mark = high; tone = "bad"; }
+    let word, sub, shareSub, tone = "", mark;
+    if (won && low.lead <= -5000) { word = "Comeback"; sub = `Won after trailing by ${fmtStat(-low.lead)} at ${fmtTime(low.t)}.`; shareSub = `From −${fmtStat(-low.lead)} to victory`; mark = low; tone = "good"; }
+    else if (!won && high.lead >= 5000) { word = "Thrown"; sub = `Led by ${fmtStat(high.lead)} at ${fmtTime(high.t)}, then lost.`; shareSub = `From +${fmtStat(high.lead)} to defeat`; mark = high; tone = "bad"; }
     else if (won && !trailedLate && high.lead >= 15000) { word = "Stomp"; sub = `Never trailed after 5:00. Up ${fmtStat(high.lead)} at the peak.`; mark = high; tone = "good"; }
     else if (!won && !trailedLate && low.lead <= -15000) { word = "Steamrolled"; sub = `Never led after 5:00. Down ${fmtStat(-low.lead)} at the worst.`; mark = low; tone = "bad"; }
     else if (changes >= 3) { word = "Back and forth"; sub = `The soul lead changed hands ${changes} times. ${won ? "Won" : "Lost"} in ${fmtTime(dur)}.`; mark = won ? high : low; }
@@ -328,13 +333,11 @@ window.Summary = (() => {
     const area = `${line}L${x(series[series.length - 1].t)},${mid}L0,${mid}Z`;
     const id = `hl${match.match_id}`;
     const mine = TEAMS[p.team].c, theirs = TEAMS[1 - p.team].c;
-    const bosses = (match.mid_boss || []).filter(b => b.destroyed_time_s).map(b =>
-      `<path class="hl-boss" d="M${x(b.destroyed_time_s)},${H - 12}l5,5l-5,5l-5,-5Z"><title>Mid Boss at ${fmtTime(b.destroyed_time_s)}</title></path>`).join("");
     const svg = `<svg class="hl-story-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Team soul lead over the match. Above the line ${esc(TEAMS[p.team].name)} was ahead.">
       <defs><clipPath id="${id}u"><rect width="${W}" height="${mid}"/></clipPath><clipPath id="${id}d"><rect y="${mid}" width="${W}" height="${mid}"/></clipPath></defs>
       <g class="hl-area"><path d="${area}" fill="${mine}" fill-opacity=".42" clip-path="url(#${id}u)"/><path d="${area}" fill="${theirs}" fill-opacity=".42" clip-path="url(#${id}d)"/></g>
       <line class="hl-zero" x1="0" x2="${W}" y1="${mid}" y2="${mid}"/>
-      <path class="hl-story-line" d="${line}" pathLength="1"/>${bosses}</svg>`;
+      <path class="hl-story-line" d="${line}" pathLength="1"/></svg>`;
     const markX = mark.t / dur * 100, markY = y(mark.lead) / H * 100;
     const markText = `${mark.lead >= 0 ? "+" : "−"}${fmtStat(Math.abs(mark.lead))} at ${fmtTime(mark.t)}`;
     const dot = `<i class="hl-mark" style="left:${markX.toFixed(2)}%;top:${markY.toFixed(2)}%"></i>
@@ -349,7 +352,7 @@ window.Summary = (() => {
       visual: `<div class="hl-story">${svg}${dot}${labels}</div>`,
       more: `<span>Biggest lead <b>${fmtStat(Math.max(0, high.lead))}</b></span><span>Biggest deficit <b>${fmtStat(Math.max(0, -low.lead))}</b></span><span>Final gap <b>${fmtStat(Math.abs(final))}</b></span>`,
       interest: tone ? 70 : 15,
-      share: tone || changes >= 3 ? { label: "Match story", big: word, sub, tone, mark: { t: mark.t, text: markText } } : null,
+      share: tone || changes >= 3 ? { label: "Match story", big: word, sub: shareSub || sub, tone, mark: { t: mark.t, text: markText } } : null,
     };
   }
 
@@ -399,7 +402,7 @@ window.Summary = (() => {
         id: "rival", go: link("matchups", "Matchups"), tone: "", rival: top.q, kicker: "Focus target",
         big: `<span class="hl-rival-name">${who(top.q)}</span>`, sub: `Took ${share}% of ${your(p)} hero damage.`,
         visual: columns(damage.map((e, i) => ({ value: e.out, color: TEAMS[e.q.team].c, top: i === 0, foot: coin(e.q), tip: `${fmtStat(e.out)} hero damage to ${name(e.q)}.` }))),
-        more: `<span>No one killed ${you(p)} twice. ${killers} different killers.</span>`, interest: 20, share: null,
+        more: `<span>No one killed ${you(p)} twice. ${killers} different killers.</span>`, interest: share >= 40 ? 20 : 8, share: null,
       };
     }
     return {
@@ -421,8 +424,8 @@ window.Summary = (() => {
     const lane = laneInfo(p);
     if (!lane) return null;
     const gap = lane.gap;
-    // Shown as "how far ahead of the other side": the difference over the smaller total.
-    const pctGap = Math.round(Math.abs(lane.friendlySouls - lane.enemySouls) / Math.max(1, Math.min(lane.friendlySouls, lane.enemySouls)) * 100);
+    // Shown against the other side's total: "28% behind" means 28% fewer souls than them.
+    const pctGap = Math.round(Math.abs(lane.friendlySouls - lane.enemySouls) / Math.max(1, lane.enemySouls) * 100);
     // Over 15% apart is a won or lost lane; never "Even" past that.
     const [word, tone] = gap > 0.15 ? ["Won lane", "good"] : gap < -0.15 ? ["Lost lane", "bad"]
       : gap > 0.05 ? ["Edged lane", ""] : gap < -0.05 ? ["Behind in lane", ""] : ["Even lane", ""];
@@ -499,11 +502,11 @@ window.Summary = (() => {
       visual: `<div class="hl-moments${callout ? " has-callout" : ""}">${callout}${svg}<span class="hl-moments-key"><i class="kill"></i>Kills<i class="death"></i>Deaths${bosses ? '<i class="boss"></i>Mid Boss' : ""}</span>
         ${mismatch ? `<span class="hl-note summary-chart-caption" ${explain("Valve's per-death records and the end screen scoreboard disagree for this player. The headline numbers use the scoreboard.")}>Recorded markers differ from the scoreboard.</span>` : ""}</div>`,
       more: callout ? "" : `<span>Longest life <b>${fmtTime(longest.to - longest.from)}</b></span><span>Time dead <b>${fmtTime(died.reduce((s, e) => s + e.duration, 0))}</b></span>`,
-      interest, share: tone === "good" ? { label: "Big moment", big: word, sub, tone } : null,
+      interest, share: tone ? { label: "Big moment", big: word, sub, tone } : null,
     };
   }
 
-  function bestsCard(p) {
+  function bestsCard(p, sweep) {
     const snap = q => q.stats[q.stats.length - 1] || {};
     const LIST = [
       ["Kills", q => q.raw.kills || 0], ["Assists", q => q.raw.assists || 0], ["Fewest deaths", q => -(q.raw.deaths || 0)],
@@ -518,20 +521,23 @@ window.Summary = (() => {
       // Margin over the runner-up, the size of the lead, so the rows can be ranked and drawn.
       const margin = label === "Fewest deaths" ? read(next) - mine : mine / Math.max(1, read(next));
       return { label, mine, next, nextValue: read(next), margin, led: (mine > 0 || label === "Fewest deaths") && rest.every(q => read(q) < mine) };
-    }).filter(x => x.led).sort((a, b) => (b.label !== "Fewest deaths") - (a.label !== "Fewest deaths") || b.margin - a.margin);
+    }).filter(x => x.led).sort((a, b) => (b.label !== "Fewest deaths") - (a.label !== "Fewest deaths") ||
+      // The stat the sweep card already headlines goes last, so the two cards do not repeat each other.
+      (a.label === sweep?.leadLabel) - (b.label === sweep?.leadLabel) || b.margin - a.margin);
     if (!led.length) return null;
-    const shown = led.slice(0, 6);
+    const [top, ...others] = led, shown = others.slice(0, 3);
+    const topValue = top.label === "Fewest deaths" ? -top.mine : fmtStat(top.mine);
+    const times = top.label === "Fewest deaths" ? "" : `, ${(top.margin).toFixed(1)}× the next best`;
     return {
       id: "bests", go: link("mvp", "MVP"), tone: "gold",
-      kicker: "Lobby bests",
-      big: `<b class="hl-big summary-gold">${led.length}</b><span class="hl-of">lobby ${led.length === 1 ? "stat" : "stats"} led</span>`,
+      kicker: led.length > 1 ? `Lobby bests · ${led.length}` : "Lobby best",
+      big: `<b class="hl-big summary-gold">${topValue}</b><span class="hl-of">${esc(top.label.toLowerCase())}${times}</span>`,
       sub: "",
-      visual: `<ul class="hl-best-list${shown.length <= 3 ? " is-single" : ""}">${shown.map(x => `<li ${explain(`Next best: ${name(x.next)} with ${x.label === "Fewest deaths" ? -x.nextValue : fmtStat(x.nextValue)}.`)}><span>${esc(x.label)}</span><b>${x.label === "Fewest deaths" ? -x.mine : fmtStat(x.mine)}</b>
-        ${x.label === "Fewest deaths" ? "" : `<i class="hl-best-bar"><i style="--w:${(x.nextValue / Math.max(1, x.mine) * 100).toFixed(1)}%"></i></i><small>Next best ${fmtStat(x.nextValue)}, ${esc(name(x.next))}</small>`}</li>`).join("")}${led.length > shown.length ? `<li class="hl-best-more" ${explain(led.slice(shown.length).map(x => x.label).join(", ") + ".")}>+${led.length - shown.length} more</li>` : ""}</ul>`,
+      visual: `<ul class="hl-best-list is-single">${shown.map(x => `<li ${explain(`Next best: ${name(x.next)} with ${x.label === "Fewest deaths" ? -x.nextValue : fmtStat(x.nextValue)}.`)}><span>${esc(x.label)}</span><b>${x.label === "Fewest deaths" ? -x.mine : fmtStat(x.mine)}</b>
+        ${x.label === "Fewest deaths" ? "" : `<i class="hl-best-bar"><i style="--w:${(x.nextValue / Math.max(1, x.mine) * 100).toFixed(1)}%"></i></i><small>Next best ${fmtStat(x.nextValue)}, ${esc(name(x.next))}</small>`}</li>`).join("")}${others.length > shown.length ? `<li class="hl-best-more" ${explain(others.slice(shown.length).map(x => x.label).join(", ") + ".")}>+${others.length - shown.length} more</li>` : ""}</ul>`,
       more: "",
-      foot: led.length > shown.length ? `+${led.length - shown.length} more` : "",
       interest: led.length >= 2 ? 20 + led.length * 12 : 12, // one lobby best is a footnote, not a card
-      share: led.length >= 2 ? { label: "Lobby bests", big: `Led ${led.length} stats`, sub: led.slice(0, 3).map(x => x.label.toLowerCase()).join(", "), tone: "gold" } : null,
+      share: led.length >= 2 ? { label: "Lobby best", big: topValue, sub: `${top.label}${times}`, tone: "gold" } : null,
     };
   }
 
@@ -557,24 +563,26 @@ window.Summary = (() => {
   const MIN_INTEREST = 18;
   function buildCards(p, stats) {
     const place = placeCard(p), story = storyCard(p);
-    const picks = [sweepCard(p, stats), rivalCard(p), momentsCard(p, false), laneCard(p), bestsCard(p)]
+    const sweep = sweepCard(p, stats), bests = bestsCard(p, sweep);
+    const picks = [sweep, rivalCard(p), momentsCard(p, false), laneCard(p), bests]
       .filter(card => card && card.interest >= MIN_INTEREST).sort((a, b) => b.interest - a.interest);
-    // A loss is told with its bad moments, so they all stay; only the two strongest keep the rust edge,
-    // so the page reads as a story rather than a wall of warnings. The placement is the anchor and never counts.
-    [story, ...picks].filter(card => card?.tone === "bad").slice(2).forEach(card => { card.tone = ""; });
-    if (picks.length < 2) picks.push(...[soulsCard(p)].slice(0, 2 - picks.length));
     // The slot beside the placement is short, so it goes to the strongest compact card; the rest keep their ranking.
     const compactIndex = picks.findIndex(card => ["sweep", "bests", "lane"].includes(card.id));
     const beside = compactIndex >= 0 ? picks.splice(compactIndex, 1)[0] : picks.shift();
-    const rows = [[place, beside], [story, picks[0]], picks.slice(1, 4)].map(row => row.filter(Boolean)).filter(row => row.length);
-    const spans = row => row.length === 1 ? [6] : row[0] === place ? [4, 2] : row[0] === story ? [3, 3] : row.length === 2 ? [3, 3] : [2, 2, 2];
-    const cards = [];
+    // Row two holds the story plus one or two cards; a third row only when it can hold two or three.
+    const second = picks.length === 2 ? picks.splice(0, 2) : picks.splice(0, 1);
+    const rows = [[place, beside], [story, ...second], picks.slice(0, 3)].map(row => row.filter(Boolean)).filter(row => row.length);
+    const spans = row => row.length === 1 ? [6] : row.length === 3 ? [2, 2, 2] : row[0] === place ? [4, 2] : [3, 3];
+    let cards = [];
     rows.forEach(row => row.forEach((card, i) => {
       const span = spans(row)[i];
       // The time line is drawn to its card's width.
       const sized = card.id === "moments" && span >= 3 ? momentsCard(p, true) : card;
       cards.push({ ...sized, span });
     }));
+    // A loss is told with its bad moments, so they all stay; only the two strongest keep the rust edge,
+    // so the page reads as a story rather than a wall of warnings.
+    cards.filter(card => card.tone === "bad").sort((a, b) => b.interest - a.interest).slice(2).forEach(card => { card.tone = ""; });
     return { cards, rows: rows.length };
   }
 
@@ -664,11 +672,12 @@ window.Summary = (() => {
     const built = rows.length ? buildCards(p, stats) : { cards: [], rows: 0 }, cards = built.cards;
     current = { p, cards, won: Number(match.winning_team) === p.team, stats };
     view.innerHTML = `<div class="hl-layout">${heroColumn(p, stats)}
-      ${cards.length ? `<div class="hl-grid" style="grid-template-rows:${["1fr", ".9fr 1.1fr", ".84fr 1.08fr 1.08fr"][built.rows - 1]}">${cards.map(cardHtml).join("")}</div>` : basicStats(stats)}
+      ${cards.length ? `<div class="hl-grid" style="grid-template-rows:${["1fr", ".8fr 1.2fr", ".84fr 1.08fr 1.08fr"][built.rows - 1]}">${cards.map(cardHtml).join("")}</div>` : basicStats(stats)}
       ${EMBED ? "" : '<footer class="hl-footer">Unofficial fan project. Not affiliated with or endorsed by Valve. Deadlock art and fonts belong to Valve.</footer>'}</div>`;
     animateIn();
     if (active.summaryFocus) view.querySelector(`[data-summary-focus="${CSS.escape(active.summaryFocus)}"]`)?.focus({ preventScroll: true });
     else if (active.hlCard) view.querySelector(`[data-hl-card="${CSS.escape(active.hlCard)}"]`)?.focus({ preventScroll: true });
+    else if (active.summaryScore) view.querySelector(`.hl-dot[data-summary-score="${CSS.escape(active.summaryScore)}"]`)?.focus({ preventScroll: true });
   }
 
   // Entrance: the column and cards rise in one after another; on the website numbers count up and lines draw too.
@@ -678,13 +687,10 @@ window.Summary = (() => {
     if (elapsed > ENTER_MS || !motion() || !view.animate) return;
     const at = delay => ({ delay: delay - elapsed, fill: "backwards" });
     // One short rise for the column and the cards; numbers and charts are final from the first frame.
-    const rise = (el, delay) => el.animate([{ opacity: 0, transform: "translateY(6px)" }, { opacity: 1, transform: "none" }], { duration: 160, easing: "ease-out", ...at(delay) });
+    const rise = (el, delay) => el.animate([{ opacity: 0, transform: "translateY(6px)" }, { opacity: 1, transform: "none" }], { duration: 150, easing: "ease-out", ...at(delay) });
     const hero = view.querySelector(".hl-hero");
     if (hero) rise(hero, 0);
-    view.querySelectorAll(".hl-card").forEach((card, i) => rise(card, 20 + i * 20));
-    if (EMBED) return;
-    // Website only: the soul lead line draws once, because its shape is the story.
-    view.querySelectorAll(".hl-story-line").forEach(line => line.animate([{ strokeDashoffset: 1 }, { strokeDashoffset: 0 }], { duration: 450, easing: "ease-out", ...at(120) }));
+    view.querySelectorAll(".hl-card").forEach(card => rise(card, 0));
   }
 
   // ---------- tooltips ----------
