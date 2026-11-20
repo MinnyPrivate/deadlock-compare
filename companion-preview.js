@@ -2,6 +2,7 @@
 
 const CompanionPreview = (() => {
   const prefix = "/api/v1/companion";
+  const initialWindowMs = 25_000;
   const form = document.querySelector("#companionPair");
   const button = document.querySelector("#companionLink");
   const code = form.elements.code;
@@ -22,6 +23,7 @@ const CompanionPreview = (() => {
 
   function showPairing() {
     button.textContent = paired ? "Unlink companion" : "Link companion";
+    document.body.classList.toggle("companionLinked", paired);
     form.hidden = true;
   }
 
@@ -104,9 +106,8 @@ const CompanionPreview = (() => {
         if (active !== wait) return;
         if (result?.state === "official" || result?.state === "mismatch") {
           wait.busy = true;
-          const drawn = await handlers.official();
+          await handlers.official(result.state === "mismatch");
           wait.busy = false;
-          if (active === wait && wait.shown && !drawn) handlers.expire();
         } else if (wait.shown && (response?.status === 404 || response?.status === 503)) {
           handlers.expire();
         } else if (!wait.shown && result?.state === "pending" && result.match_info &&
@@ -117,7 +118,7 @@ const CompanionPreview = (() => {
           }, result.expires_at - Date.now());
         }
       }
-      if (active === wait) wait.next = setTimeout(poll, wait.shown || age >= 25_000 ? 30_000 : 5000);
+      if (active === wait) wait.next = setTimeout(poll, wait.shown || age >= initialWindowMs ? 30_000 : 5000);
     }
     wait.poll = poll;
     void poll();
@@ -125,7 +126,7 @@ const CompanionPreview = (() => {
 
   document.addEventListener("visibilitychange", () => { if (!document.hidden) void active?.poll(); });
   return {
-    ready, start, stop, isPaired: () => paired,
+    ready, start, stop, isPaired: () => paired, initialWindowMs,
     onChange(callback) { change = callback; },
   };
 })();

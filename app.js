@@ -302,7 +302,7 @@ const state = {
   lineOv: {}, hiddenGroups: new Set(),
   focus: null, folds: {}, tray: [], // hover focus key ("t3" a line type, "s5" a hero), legend groups opened, overview compare tray
   laneOf: null, laneTime: 540, laneHover: null,
-  leftTeam: 0, me: null, previewSlot: null, previewViewer: null, awaitingValve: false,
+  leftTeam: 0, me: null, previewSlot: null, previewViewer: null, awaitingValve: false, confirmedPreview: false,
   tab: "graphs", requestedTab: entryTab(), mvpPick: null, mvpMode: "valve", summaryPick: null, summaryStat: null,
   muStat: "dmg", muWin: "all", muPair: null,
 };
@@ -387,6 +387,13 @@ function mouseIn(el, ev) {
 let loadSeq = 0;
 let activeMatchId = null;
 let loadRequests = null;
+let appLoadingTimer = null;
+function endAppLoading() {
+  clearTimeout(appLoadingTimer);
+  $("appReading").hidden = true;
+  document.body.classList.remove("appReading");
+}
+
 CompanionPreview.onChange(() => { if (activeMatchId) void loadMatch(activeMatchId); });
 async function loadMatch(id) {
   const my = ++loadSeq; // only the newest request may draw
@@ -407,32 +414,40 @@ async function loadMatch(id) {
     if (!local) await CompanionPreview.ready;
     if (my !== loadSeq) return;
     const paired = !local && CompanionPreview.isPaired();
-    if (paired) CompanionPreview.start(id, {
-      preview(data) {
-        if (my !== loadSeq || !matchesPage(data.match_info, id)) return false;
-        state.previewSlot = data.viewer_slot;
-        setup(data.match_info);
-        return true;
-      },
-      expire() {
-        if (my !== loadSeq || state.previewSlot === null) return;
-        const waiting = state.wait;
-        clearMatch(!waiting?.stopped || !!waiting?.checking);
-        state.wait = waiting;
-        if (waiting) drawWait(waiting, id, my);
-        else setStatus("Waiting for this match’s Valve data.");
-      },
-      async official() {
-        try {
-          const response = await getJson(verifiedUrl, requests.signal);
-          if (response.ok && my === loadSeq && matchesPage(response.body?.match_info || response.body, id)) {
-            show(response.body, my);
-            return true;
-          }
-        } catch (_) { /* Existing match checks still handle upstream availability. */ }
-        return false;
-      },
-    });
+    if (paired) {
+      setStatus("");
+      $("appReading").hidden = false;
+      document.body.classList.add("appReading");
+      appLoadingTimer = setTimeout(() => {
+        endAppLoading();
+        if (state.wait) drawWait(state.wait, id, my);
+      }, CompanionPreview.initialWindowMs);
+      CompanionPreview.start(id, {
+        preview(data) {
+          if (my !== loadSeq || !matchesPage(data.match_info, id)) return false;
+          state.previewSlot = data.viewer_slot;
+          state.awaitingValve = true;
+          setup(data.match_info);
+          return true;
+        },
+        expire() {
+          if (my !== loadSeq || state.previewSlot === null) return;
+          const waiting = state.wait;
+          clearMatch(!waiting?.stopped || !!waiting?.checking);
+          state.wait = waiting;
+          if (waiting) drawWait(waiting, id, my);
+          else setStatus("Waiting for this match’s Valve data.");
+        },
+        async official(mismatch) {
+          try {
+            const response = await getJson(verifiedUrl, requests.signal);
+            if (response.ok && my === loadSeq && matchesPage(response.body?.match_info || response.body, id)) {
+              show(response.body, my, mismatch);
+            }
+          } catch (_) { /* Existing match checks still handle upstream availability. */ }
+        },
+      });
+    }
     const r = await getJson(local ? src : paired ? verifiedUrl : officialUrl, requests.signal);
     if (my !== loadSeq || (state.match && state.previewSlot === null)) return;
     if (r.ok && (local || matchesPage(r.body?.match_info || r.body, id))) return show(r.body, my);
@@ -470,17 +485,26 @@ async function getJson(url, parentSignal) {
     parentSignal?.removeEventListener("abort", cancel);
   }
 }
-function show(data, my) {
+// Compare the same fields as the Worker's core when the normal Valve poll wins the race.
+function companionResult(info) {
+  const roster = [...info.players].sort((a, b) => a.player_slot - b.player_slot).map(p =>
+    [p.player_slot, p.team, p.hero_id, p.kills ?? 0, p.deaths ?? 0, p.assists ?? 0, p.net_worth ?? 0]);
+  return JSON.stringify([info.match_id, info.game_mode, info.match_mode, info.duration_s, info.winning_team,
+    info.match_outcome ?? 0, roster]);
+}
+function show(data, my, mismatch = false) {
   if (my !== loadSeq || (state.match && state.previewSlot === null)) return;
   const mi = data && (data.match_info || data);
   if (!mi || !Array.isArray(mi.players) || !mi.players.length) throw new Error("This match has no player data.");
   const fromPreview = state.previewSlot !== null;
+  const confirmed = fromPreview && !mismatch && companionResult(state.match) === companionResult(mi);
   const picked = fromPreview && state.sel ? state.players.filter(p => state.sel.has(p.slot)) : null;
   const hadGraph = fromPreview && state.showGraph;
   const summary = fromPreview ? {
     picked: state.summaryPick !== null, player: window.Summary.selected(), stat: state.summaryStat,
   } : null;
   const focus = document.activeElement;
+  const scroll = fromPreview ? [window.scrollX, window.scrollY, $("summaryView").scrollLeft, $("summaryView").scrollTop] : null;
   const fromSummary = state.awaitingValve && (
     $("summaryView").contains(focus) || focus?.hasAttribute("data-summary-portrait") || focus === tabs[0]);
   state.previewViewer = fromPreview ? state.players.find(p => p.slot === state.previewSlot) : null;
@@ -489,15 +513,14 @@ function show(data, my) {
   CompanionPreview.stop();
   clearTimeout(checkTimer); clearInterval(waitTimer);
   state.wait = null;
-  setup(mi, picked, hadGraph, summary);
+  setup(mi, picked, hadGraph, summary, confirmed);
   if (fromSummary && (state.tab !== "summary" || !focus.isConnected)) {
-    let replacement;
-    if (state.tab === "summary") {
-      const { summaryPortrait, summaryFocus } = focus.dataset;
-      if (summaryPortrait !== undefined) replacement = document.querySelector(`[data-summary-portrait="${window.Summary.selected().slot}"]`);
-      else if (summaryFocus) replacement = $("summaryView").querySelector(`[data-summary-focus="${CSS.escape(summaryFocus)}"]`);
-    }
-    (replacement || tabs.find(button => button.dataset.tab === state.tab))?.focus({ preventScroll: true });
+    const restored = state.tab === "summary" && window.Summary.restoreFocus(focus);
+    if (!restored) tabs.find(button => button.dataset.tab === state.tab)?.focus({ preventScroll: true });
+  }
+  if (scroll) {
+    window.scrollTo(scroll[0], scroll[1]);
+    $("summaryView").scrollTo(scroll[2], scroll[3]);
   }
 }
 function fail(e, id, my) {
@@ -599,7 +622,7 @@ async function check(w, id, my) {
 }
 function drawWait(w, id, my) {
   if (my !== loadSeq || state.wait !== w) return;
-  if (state.previewSlot !== null) return;
+  if (state.previewSlot !== null || !$("appReading").hidden) return;
   const awaitingValve = !w.stopped || w.checking;
   if (awaitingValve !== state.awaitingValve) {
     state.awaitingValve = awaitingValve;
@@ -650,14 +673,16 @@ function waitMeter(elapsed) {
     `<div class="waitBar${over ? " hold" : ""}" role="progressbar" aria-label="Time waited against the usual range" aria-valuemin="0" aria-valuemax="${TYPICAL_HI_S}" aria-valuenow="${Math.min(TYPICAL_HI_S, Math.round(elapsed))}"><i style="width:${pct}%"></i><span class="tick" style="left:${(TYPICAL_LO_S / TYPICAL_HI_S) * 100}%"></span></div>`;
 }
 function clearMatch(awaitingValve = false) {
+  endAppLoading();
   stopChartHover();
   GraphMarkers.close();
   state.match = null;
   state.previewSlot = null;
   state.previewViewer = null;
+  state.confirmedPreview = false;
   state.awaitingValve = awaitingValve;
   state.wait = null;
-  $("companionSource").hidden = true;
+  $("companionSource").textContent = "";
   document.body.classList.add("noMatch");
   $("tooltip").hidden = true;
   $("summaryView").hidden = $("summaryBackdrop").hidden = true;
@@ -710,6 +735,11 @@ function hasSummaryStats() {
 }
 const samePlayer = (a, b) => a.slot === b.slot && a.heroId === b.heroId && a.team === b.team;
 
+const previewPending = (field, label = field) =>
+  `<span class="valvePending" data-valve-pending="${esc(field)}">${esc(label)} from Valve shortly</span>`;
+const previewNotices = {
+  graphs: "Accurate graphs coming", matchups: "Matchups coming", mvp: "MVP coming",
+};
 function renderTabs() {
   const canSummarize = state.awaitingValve || (state.match && hasSummaryStats());
   $("tabs").hidden = !state.awaitingValve && !state.match;
@@ -718,8 +748,21 @@ function renderTabs() {
     const loading = state.awaitingValve && !summary;
     const active = button.dataset.tab === state.tab;
     button.disabled = summary ? !canSummarize : loading;
-    if (loading) button.setAttribute("aria-describedby", "tabLoading");
-    else button.removeAttribute("aria-describedby");
+    const notice = button.querySelector(".tabNotice");
+    if (loading && state.previewSlot !== null) {
+      if (!notice) {
+        const label = el("span", "tabNotice", previewNotices[button.dataset.tab]);
+        label.id = button.dataset.tab + "Coming";
+        button.append(label);
+      }
+      button.setAttribute("aria-describedby", button.dataset.tab + "Coming");
+      button.setAttribute("aria-label", button.firstChild.textContent);
+    } else {
+      notice?.remove();
+      button.removeAttribute("aria-label");
+      if (loading) button.setAttribute("aria-describedby", "tabLoading");
+      else button.removeAttribute("aria-describedby");
+    }
     if (active) button.setAttribute("aria-current", "true");
     else button.removeAttribute("aria-current");
     button.classList.toggle("on", active);
@@ -741,17 +784,20 @@ function setMatchRoster(mi) {
     left: Number(p.abandon_match_time_s) || 0,
     color: heroColor(p.hero_id),
     stats: scoreboardKda(p),
-    kdaGraphStats: kdaGraphStats(p, Number(mi.duration_s)),
+    kdaGraphStats: state.awaitingValve ? [] : kdaGraphStats(p, Number(mi.duration_s)),
     souls: p.net_worth || 0, mvp: p.mvp_rank || 0,
     badge: brawl ? 0 : Number(p.player_rank_data?.initial_display_rank) || 0,
     raw: p,
   }));
 }
 
-function setup(mi, picked, hadGraph, summary) {
+function setup(mi, picked, hadGraph, summary, confirmed = false) {
+  endAppLoading();
+  state.confirmedPreview = confirmed;
   setMatchRoster(mi);
   const brawl = isStreetBrawl();
-  $("companionSource").hidden = state.previewSlot === null;
+  $("companionSource").textContent = state.previewSlot !== null ? "App copy. Valve data will replace it."
+    : confirmed ? "Updated with official Valve data" : "";
   closeMenu();
   if (!availableGraphs().includes(graphNow())) openGraph("souls");
   if (brawl && state.mode === "lane") state.mode = "value";
@@ -760,7 +806,8 @@ function setup(mi, picked, hadGraph, summary) {
   const stillPresent = old => state.players.some(p => samePlayer(p, old));
   const requested = params.get("pick");
   state.summaryPick = String(mi.match_id) === params.get("match") && /^\d+$/.test(requested || "") ? Number(requested) : null;
-  if (summary?.picked && stillPresent(summary.player)) state.summaryPick = summary.player.slot;
+  if (summary && stillPresent(summary.player) &&
+      (summary.picked || !samePlayer(window.Summary.selected(), summary.player))) state.summaryPick = summary.player.slot;
   state.summaryStat = summary && samePlayer(window.Summary.selected(), summary.player) ? summary.stat : null;
   const canSummarize = hasSummaryStats();
   state.tab = state.awaitingValve ? "summary" : state.requestedTab || (canSummarize ? "summary" : "graphs");
@@ -776,9 +823,9 @@ function setup(mi, picked, hadGraph, summary) {
   state.mvpPick = null;
   state.muPair = null;
   state.lineOv = {}; state.tray = []; state.focus = null; // a new match opens with nothing drawn
-  prepDynamicGraphs(true);
+  if (!state.awaitingValve) prepDynamicGraphs(true);
   // Brawl objective entries reuse standard map IDs, including inactive buildings.
-  state.events = brawl ? [] : buildEvents(mi);
+  state.events = brawl || state.awaitingValve ? [] : buildEvents(mi);
   $("matchInput").value = mi.match_id || "";
   $("clock").textContent = fmtTime(mi.duration_s || 0);
   setStatus("");
@@ -879,7 +926,9 @@ function renderTop(tab = state.tab) {
       const playerName = summary ? window.Summary.name(p) : p.hero;
       const action = summary ? "Click to open this player's Summary." : mvp ? "Click to see why they placed where they did."
         : lanesG ? "Click to see their lane. Hover to see their part." : "Click to add or remove. Ctrl+Click to show only this hero.";
-      d.title = `${playerName}${rk ? " (" + rk.name + " going into the match)" : ""}${p.left ? "\nLeft the match at " + fmtTime(p.left) : ""}\n${action}`;
+      const rankTitle = rk ? " (" + rk.name + " going into the match)" :
+        state.previewSlot !== null && !isStreetBrawl() ? "\nPlayer rank from Valve shortly." : "";
+      d.title = `${playerName}${rankTitle}${p.left ? "\nLeft the match at " + fmtTime(p.left) : ""}\n${action}`;
       if (summary) {
         d.dataset.summaryPortrait = p.slot;
         d.setAttribute("aria-label", `${playerName}${playerName !== p.hero ? " on " + p.hero : ""}${p === state.me ? ", you" : ""}`);
@@ -893,6 +942,10 @@ function renderTop(tab = state.tab) {
       hi.append(img);
       const souls = el("div", "souls");
       if (!state.awaitingValve || Number.isFinite(p.raw.net_worth)) souls.innerHTML = fmtSouls(p.souls);
+      else {
+        souls.textContent = "Pending";
+        d.title += "\nSouls from Valve shortly.";
+      }
       d.append(hi, souls, el("div", "pcolor"));
       if (p.mvp === 1) d.append(el("div", "badge", "MVP"));
       else if (p.mvp > 1) d.append(el("div", "badge key", "KEY"));
@@ -916,12 +969,16 @@ function renderTop(tab = state.tab) {
     const total = ps.reduce((a, p) => a + p.souls, 0);
     sc.style.setProperty("--tc", T.c);
     const hasTotal = !state.awaitingValve || ps.every(p => Number.isFinite(p.raw.net_worth));
-    sc.innerHTML = `<span>${hasTotal ? fmtSouls(total) : "–"}</span><span class="icon" style="background-image:url(${T.icon})"></span>`;
-    const tb = isStreetBrawl() ? 0
-      : (team === 0 ? state.match.average_badge_team0 : state.match.average_badge_team1) || avgBadge(ps.map(p => p.badge));
+    sc.classList.toggle("soulsPending", !hasTotal);
+    sc.innerHTML = `<span>${hasTotal ? fmtSouls(total) : "Pending"}</span><span class="icon" style="background-image:url(${T.icon})"></span>`;
+    const teamBadge = team === 0 ? state.match.average_badge_team0 : state.match.average_badge_team1;
+    const rankPending = !isStreetBrawl() && state.previewSlot !== null && !teamBadge && ps.some(p => !p.badge);
+    const tb = isStreetBrawl() || rankPending ? 0 : teamBadge || avgBadge(ps.map(p => p.badge));
     const ta = $("avg" + side);
-    ta.innerHTML = tb ? `<span class="lbl">Avg</span>${rankHtml(tb, "", true)}` : "";
+    ta.innerHTML = tb ? `<span class="lbl">Avg</span>${rankHtml(tb, "", true)}`
+      : rankPending ? previewPending("Team rank") : "";
     sc.title = summary ? T.name : `${T.name}\nClick to show only this team. Click again to show everyone.`;
+    if (!hasTotal) sc.title += "\nTeam souls from Valve shortly.";
     const onlyThis = ps.length && ps.every(p => sel.has(p.slot)) && [...sel].every(s => ps.some(p => p.slot === s));
     sc.classList.toggle("dim", sel.size > 0 && !ps.some(p => sel.has(p.slot)));
     sc.onclick = () => { if (mvp || leadG || lanesG) return; setSel(onlyThis ? new Set(state.players.map(p => p.slot)) : new Set(ps.map(p => p.slot))); renderAll(); };
@@ -1223,8 +1280,8 @@ function valueAt(pts, t) {
 
 // ---------- chart ----------
 function renderAll() {
-  if (state.match) prepDynamicGraphs();
   if (!state.match) return;
+  if (!state.awaitingValve) prepDynamicGraphs();
   stopChartHover();
   const ctn = $("graphCtn"), overview = $("overview");
   if (ctn.parentElement === overview) overview.before(ctn);
@@ -1241,8 +1298,10 @@ function renderAll() {
   $("summaryView").hidden = !summary;
   $("summaryBackdrop").hidden = EMBED || !summary;
   if (!summary) window.Summary?.hideTip();
-  const lb = avgBadge(state.players.map(p => p.badge));
-  $("lobbyRank").innerHTML = lb ? `<span class="lbl">Lobby</span>${rankHtml(lb, "", true)}` : "";
+  const lobbyPending = state.previewSlot !== null && !isStreetBrawl() && state.players.some(p => !p.badge);
+  const lb = lobbyPending ? 0 : avgBadge(state.players.map(p => p.badge));
+  $("lobbyRank").innerHTML = lb ? `<span class="lbl">Lobby</span>${rankHtml(lb, "", true)}`
+    : lobbyPending ? previewPending("Lobby rank") : "";
   renderTop(activeTab);
   if (activeTab !== "graphs") {
     GraphMarkers.close();
