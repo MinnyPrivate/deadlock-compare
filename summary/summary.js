@@ -15,7 +15,6 @@ window.Summary = (() => {
   ];
   const DAY = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
   const num = n => n.toLocaleString("en-US", { maximumFractionDigits: 1 });
-  const SHORT_GAME_S = 1200; // under 20:00 every percentile uses the per minute table
   const ENTER_MS = 300;
   const lookups = new Map();
   let names = new Map(), art = {}, match, rows, deaths, percentiles, shownTip, tipTimer;
@@ -36,7 +35,7 @@ window.Summary = (() => {
   const You = p => isMe(p) ? "You" : esc(name(p));
   const you = p => isMe(p) ? "you" : esc(name(p));
   const your = p => isMe(p) ? "your" : `${esc(name(p))}'s`;
-  const short = () => match.duration_s < SHORT_GAME_S;
+  const gameLength = () => window.PM_SCORE.lengthLabel(match.duration_s);
   const link = (go, text) => {
     const tab = go === "mvp" || go === "matchups" ? go : "graphs";
     const pending = preview() ? ` disabled aria-describedby="${tab}Coming"` : "";
@@ -68,7 +67,7 @@ window.Summary = (() => {
 
   function prepareMatchData() {
     match = state.match;
-    rows = canGrade() ? valveRows() : [];
+    rows = canGrade() ? valveRows(false) : [];
     deaths = deathEvents();
     names = new Map();
   }
@@ -134,36 +133,32 @@ window.Summary = (() => {
       const values = availableValues(p);
       return STATS.map((stat, index) => ({ ...stat, value: values[index] }));
     }
-    const values = finalValues(p), lobby = state.players.map(finalValues), minutes = match.duration_s / 60;
+    const values = finalValues(p), lobby = state.players.map(finalValues);
     return STATS.map((stat, index) => {
       const value = values[index];
-      const key = short() ? stat.key + "_per_min" : stat.key, graded = short() ? value / minutes : value;
-      const bounds = SummaryPercentiles.bounds(p.heroId, key, graded);
-      const percentile = SummaryPercentiles.pct(p.heroId, key, graded);
+      const bounds = SummaryPercentiles.bounds(p.heroId, stat.key, value, match.duration_s);
+      const percentile = SummaryPercentiles.percentile(bounds);
       const place = 1 + lobby.filter(other => stat.low ? other[index] < value : other[index] > value).length;
-      return { ...stat, value, graded, bounds, percentile, place, size: lobby.length };
+      return { ...stat, value, bounds, percentile, place, size: lobby.length };
     });
   }
 
   function proof(p, stat) {
     const rank = `${ordinal(stat.place)} of ${stat.size} in the lobby.`;
     if (!stat.percentile) return `${num(stat.value)} ${stat.label.toLowerCase()}. ${rank}`;
-    const sample = SummaryPercentiles.sample();
-    const dates = `${DAY.format(new Date(sample.window_start_utc))} to ${DAY.format(new Date(sample.window_end_utc))}`;
-    const per = short() ? " per minute" : "";
-    const show = v => short() ? v.toFixed(2) : num(v);
-    const comparison = stat.bounds.better
-      ? `Better than ${stat.bounds.better}% of ${num(stat.percentile.n)} ranked ${p.hero} games, ${dates}.`
-      : `At or below the lowest measured value in ${num(stat.percentile.n)} ranked ${p.hero} games, ${dates}.`;
-    return `${show(stat.graded)} ${stat.label.toLowerCase()}${per}. A typical ${p.hero} gets ${show(stat.percentile.p50)}. ${comparison} ${rank}${short() ? " Games under 20 minutes are compared per minute." : ""}`;
+    const { ref, better } = stat.bounds;
+    const evidence = ref.fallback
+      ? `Thin samples use the per-minute rate from ${num(ref.rateRows)} ${p.hero} games.`
+      : `Based on nearby game lengths (${ref.counts.map(num).join(" and ")} ${p.hero} games).`;
+    return `${num(stat.value)} ${stat.label.toLowerCase()}. Avg ${p.hero} in ${gameLength()}: ${num(ref.mean)}. Median: ${num(stat.percentile.p50)}. Better than about ${better}% at this length. ${evidence} ${rank}`;
   }
 
   function scoreWhy(r) {
     const { p, v } = r;
-    const baseline = v.inTable ? (window.HERO_NAMES[v.graded_hero] || p.hero) + "'s average" : "the all-hero average";
+    const baseline = v.knownHero ? p.hero + "'s average" : "the all-hero average";
     const parts = VALVE_ROWS.slice().sort(([, a], [, b]) => Math.abs(v.points[b]) - Math.abs(v.points[a]));
     return `<b class="summary-tip-heading">${esc(name(p))} · ${ordinal(r.place)} of ${rows.length} · ${r.score.toFixed(1)} pts</b>
-      <p>Estimated Valve score. Each stat is compared with ${esc(baseline)} and weighted.</p>
+      <p>Estimated Valve score. Each stat is compared with ${esc(baseline)} in ${gameLength()} and weighted.</p>
       <dl>${parts.map(([part, i]) => `<dt>${part} <small>×${window.PM_SCORE.W_VALVE[i]}</small></dt><dd>${signed(v.points[i], 2)}</dd>`).join("")}
         ${Math.abs(v.offset) >= 0.005 ? `<dt>Hero adjustment</dt><dd>${signed(v.offset, 2)}</dd>` : ""}</dl>`;
   }
@@ -281,7 +276,6 @@ window.Summary = (() => {
     const ranked = stats.filter(s => pos(s) != null).sort((a, b) => strength(b) - strength(a) || STATS.indexOf(a) - STATS.indexOf(b));
     const lead = ranked[0], [leadWord, leadTone] = word(lead);
     const flat = leadTone === "even", low = leadTone === "down";
-    const per = short() ? " per minute" : "";
     const exceptional = ranked.filter(s => word(s)[1] !== "even");
     const shown = (exceptional.length ? exceptional : ranked).slice(0, 3), hidden = stats.filter(s => !shown.includes(s));
     const lines = shown.map(s => {
@@ -293,15 +287,15 @@ window.Summary = (() => {
     const leadName = (lead.short || lead.label).toLowerCase();
     return {
       id: "sweep", go: link("mvp", "MVP"), tone: low ? "bad" : "",
-      kicker: vsHero ? `Vs other ${esc(p.hero)} games` : "Vs the lobby",
-      big: flat ? `<b class="hl-big hl-word">Typical</b><span class="hl-of">on every stat${per}</span>`
-        : `<b class="hl-big summary-${leadTone}">${esc(leadWord)}</b><span class="hl-of">${esc(leadName)}${per} · ${short() ? lead.graded.toFixed(lead.graded < 10 ? 2 : 0) : fmtStat(lead.value)}</span>`,
+      kicker: vsHero ? `${esc(p.hero)} in ${gameLength()}` : "Vs the lobby",
+      big: flat ? `<b class="hl-big hl-word">Typical</b><span class="hl-of">on every stat</span>`
+        : `<b class="hl-big summary-${leadTone}">${esc(leadWord)}</b><span class="hl-of">${esc(leadName)} · ${fmtStat(lead.value)}</span>`,
       sub: "",
       visual: `<div class="hl-sweep${vsHero ? "" : " is-lobby"}">${lines}
         ${hidden.length ? `<span class="hl-sweep-rest" ${explain(hidden.map(s => `${s.short || s.label}: ${word(s)[0]}.`).join(" "))}>+${hidden.length} other stats${hidden.every(s => word(s)[1] === "even") ? ", all typical" : ""}</span>` : ""}</div>`,
       more: "",
       interest: flat ? 0 : 20 + (lead.percentile ? Math.abs(lead.percentile.pct - 50) : 25), // the honest overall read, so it ranks high
-      share: flat ? null : { label: vsHero ? `Vs ${p.hero} games` : "Vs the lobby", big: leadWord, sub: `in ${leadName}${per}`, tone: low ? "bad" : leadTone === "gold" ? "gold" : "good" },
+      share: flat ? null : { label: vsHero ? `${p.hero} in ${gameLength()}` : "Vs the lobby", big: leadWord, sub: `in ${leadName}`, tone: low ? "bad" : leadTone === "gold" ? "gold" : "good" },
       leadLabel: lead.label,
     };
   }

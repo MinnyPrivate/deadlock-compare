@@ -21,8 +21,10 @@ for (const id of MATCHES) {
     const g = bySlot[e.slot];
     if (!g) { errs.push(`slot ${e.slot} missing`); continue; }
     if (g.graded_hero !== e.graded_hero) errs.push(`slot ${e.slot} graded ${g.graded_hero} want ${e.graded_hero}`);
-    if (!near(g.score, e.score)) errs.push(`slot ${e.slot} score ${g.score.toFixed(4)} want ${e.score}`);
-    e.points.forEach((v, i) => { if (!near(g.points[i], v)) errs.push(`slot ${e.slot} points[${i}] ${g.points[i].toFixed(4)} want ${v}`); });
+    if (!near(g.flatScore, e.score)) errs.push(`slot ${e.slot} award score ${g.flatScore.toFixed(4)} want ${e.score}`);
+    if (!near(g.score, g.points.reduce((sum, x) => sum + x, g.offset))) errs.push("Displayed points do not add up");
+    if (!near(g.means[0], S.expected(g.hero_id, "kills", mi.duration_s).mean)) errs.push("Wrong hero or duration");
+    e.points.forEach((v, i) => { if (!near(g.flatPoints[i], v)) errs.push(`slot ${e.slot} award points[${i}] ${g.flatPoints[i].toFixed(4)} want ${v}`); });
   }
   if (JSON.stringify(r.picks) !== JSON.stringify(exp.picks)) errs.push(`picks ${r.picks} want ${exp.picks}`);
   const phase = S.phaseScores(mi, norms), bySlotP = {}; phase.forEach(p => { bySlotP[p.slot] = p; });

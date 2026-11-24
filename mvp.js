@@ -1,7 +1,6 @@
 "use strict";
 // MVP tab: rank the match roster and show the stats behind each place.
-// Every stat is scaled against the best value in this lobby (best = 1.0), so scores only compare players in the same match.
-// Deaths count the other way: fewest deaths = 1.0, most deaths = 0.
+// Standard games use the hero's expected stat at this duration. Brawl uses its own lobby.
 
 const MVP_CATS = {
   fight: { name: "Fighting", c: "#E8604C" },
@@ -47,9 +46,16 @@ const MVP_MERGED = [
   { id: "dmg", cat: "fight", w: 1.7, label: "Hero damage", get: (f) => f.player_damage },
   { id: "ast", cat: "team", w: 1.4, label: "Assists", get: (f) => f.assists },
 ];
+const MVP_NORM = {
+  kills: "kills", deaths: "deaths", assists: "assists", ast: "assists", dmg: "player_damage",
+  obj: "objective_damage", souls: "snapshot_souls", heal: "ally_heal", antiheal: "heal_prevented",
+  barrier: "barriers", lane: "trooper_souls", jungle: "neutral_souls", denies: "denies",
+  taken: "damage_per_death", mitig: "mitigated", dmgE: "at900_player_damage", dmgL: "late_player_damage",
+  astE: "at900_assists", astL: "late_scoreboard_assists",
+};
 const SURV_IDS = new Set(["deaths", "taken", "mitig"]);
 const MVP_MODES = {
-  valve: { name: "Valve", sub: "Estimated points from Valve's six stats, each compared with the average for that hero" },
+  valve: { name: "Valve", sub: "Estimated points from Valve's six stats, each compared with the average for that hero in games of this length" },
   impact: { name: "Impact", sub: "Weighted toward what wins fights and games" },
   raw: { name: "Raw", sub: "The scoreboard: every stat counts the same" },
 };
@@ -71,6 +77,7 @@ function mvpDefs(mode) {
 }
 function mvpScores(mode) {
   const defs = mvpDefs(mode);
+  const compareHero = !isStreetBrawl() && state.match.duration_s > 0;
   const rows = state.players.map(p => {
     const st = p.stats;
     // Kills, deaths and assists from the scoreboard: the last stats snapshot can be a few seconds early.
@@ -86,16 +93,23 @@ function mvpScores(mode) {
     const vs = pool.map(r => r.vals[i]);
     const max = Math.max(...vs), min = Math.min(...vs);
     const best = pool[vs.indexOf(d.low ? min : max)].p;
-    return { d, i, max, min, best, on: d.low ? max > min : max > 0 };
+    return { d, i, max, min, best, on: d.low && !compareHero ? max > min : max > 0 };
   });
   const wSum = used.filter(u => u.on).reduce((a, u) => a + u.d.w, 0) || 1;
   for (const r of rows) {
     r.parts = used.map(u => {
       const v = r.vals[u.i];
       let n = !u.on ? 0 : u.d.low ? (u.max - v) / (u.max - u.min) : v / u.max;
-      n = Math.max(0, Math.min(1, n));
+      const ref = compareHero && window.PM_SCORE.expected(r.p.heroId, MVP_NORM[u.d.id], state.match.duration_s);
+      if (ref) {
+        // The average earns half of the stat's weight. Zero-inflated role stats use max(mean, sd) so tiny values never spike to 100%.
+        const denom = u.d.role ? Math.max(ref.mean, ref.sd) : ref.mean;
+        const share = v + denom > 0 ? v / (v + denom) : (u.d.low ? 0.5 : 0);
+        n = u.d.low ? 1 - share : share;
+      }
+      n = u.on ? Math.max(0, Math.min(1, n)) : 0;
       if (r.p.left && SURV_IDS.has(u.d.id)) n = 0; // leaving the match is not "staying alive"
-      return { def: u.d, v, n, pts: u.on ? (u.d.w * n * 100) / wSum : 0, maxPts: u.on ? (u.d.w * 100) / wSum : 0, best: u.best, bestV: u.d.low ? u.min : u.max, on: u.on };
+      return { def: u.d, v, n, ref, pts: u.on ? (u.d.w * n * 100) / wSum : 0, maxPts: u.on ? (u.d.w * 100) / wSum : 0, best: u.best, bestV: u.d.low ? u.min : u.max, on: u.on };
     });
     r.score = r.parts.reduce((a, x) => a + x.pts, 0);
     r.cats = {};
@@ -143,7 +157,7 @@ window.renderMvp = function renderMvp() {
   let h = `<div class="mvpHead">
     <div class="graphOption"><span class="optionLabel">Score:</span>${modes.map(m =>
       `<button class="graphOptionButton${m === mode ? " on" : ""}" data-mode="${m}">${MVP_MODES[m].name}</button>`).join("")}</div>
-    ${valve ? "" : `<span class="expTag" title="Our own formula, not Valve's. Valve's MVP and Key Player picks are shown as tags.">Experimental</span>`}<span class="mvpSub">${esc(MVP_MODES[mode].sub)}.${valve ? "" : " Scored against the best player in this match on each stat."}${valve && valveStale() ? ` <span class="staleNote">Hero averages may be out of date. Scores can be off until the table is refreshed.</span>` : ""}</span>
+    ${valve ? "" : `<span class="expTag" title="Our own formula, not Valve's. Valve's MVP and Key Player picks are shown as tags.">Experimental</span>`}<span class="mvpSub">${esc(MVP_MODES[mode].sub)}.${valve ? "" : brawl ? " Scored against the best player in this match on each stat." : ` Compared with each hero in ${window.PM_SCORE.lengthLabel(state.match.duration_s)}.`}${valve && valveStale() ? ` <span class="staleNote">Hero averages may be out of date. Scores can be off until the table is refreshed.</span>` : ""}</span>
     ${valve ? "" : `<div class="legend">${Object.values(MVP_CATS).map(c => `<span><b style="background:${c.c}"></b>${c.name}</span>`).join("")}</div>`}
   </div>`;
 
@@ -157,7 +171,7 @@ window.renderMvp = function renderMvp() {
       ${cardFace(p, "row")}
       <span class="who"><span class="hn">${esc(heroName(p))}${p.left ? ` <span class="leftTag" title="Left the match at ${fmtTime(p.left)}">LEFT</span>` : ""}</span>${brawl ? "" : rankHtml(p.badge) || `<span class="rank none">Unranked</span>`}</span>
       ${valve ? divBar(r.score, top, "") : catBar(r, top)}
-      <span class="score ${valve ? dvClass(r.score, 1) : ""}"${valve ? ` title="Estimated points. ${dvWord(r.score)} for the hero."` : ""}>${valve ? `${dv(r.score, 1)} <small>est.</small>` : Math.round(r.score)}</span>
+      <span class="score ${valve ? dvClass(r.score, 1) : ""}"${valve ? ` title="Length-adjusted points. ${dvWord(r.score)} for this hero in ${window.PM_SCORE.lengthLabel(state.match.duration_s)}. Place uses the award estimate."` : ""}>${valve ? `${dv(r.score, 1)} <small>est.</small>` : Math.round(r.score)}</span>
       <span class="valve">${v ? `<span class="badge${p.mvp > 1 ? " key" : ""}" title="Valve's recorded ${p.mvp === 1 ? "MVP" : "Key Player"}">${p.mvp === 1 ? "MVP" : "KEY"}</span>` : ""}</span>
     </button>`;
   }
@@ -249,23 +263,24 @@ function whyScaled(rows, pick, mode) {
     </div>
     <p class="summary">${esc(summary)}${valveLine ? `<br><span class="vl">${esc(valveLine)}</span>` : ""}</p>
     <div class="whyTable${state.mvpAll ? "" : " compact"}">
-      <div class="wr th"><span>${state.mvpAll ? "Stat" : "Best at"}</span><span class="r">Value</span><span class="r">Lobby best</span><span>Points</span></div>`;
+      <div class="wr th"><span>${state.mvpAll ? "Stat" : "Best at"}</span><span class="r">Value</span><span class="r">${isStreetBrawl() ? "Lobby best" : `${pick.parts.some(x => x.ref?.knownHero) ? `Avg ${esc(p.hero)}` : "All-hero avg"} <br>in ${window.PM_SCORE.lengthLabel(state.match.duration_s)}`}</span><span>Points</span></div>`;
   const shown = state.mvpAll ? pick.parts : [...topParts, "lost", ...lostParts];
   for (const x of shown) {
     if (x === "lost") { h += `<div class="wr th sec"><span>Largest score gaps</span><span></span><span></span><span></span></div>`; continue; }
     const c = MVP_CATS[x.def.cat].c;
     const isBest = x.on && x.v === x.bestV;
-    h += `<div class="wr${x.on ? "" : " off"}" title="${x.on ? `Weight ${x.def.w}. Worth up to ${x.maxPts.toFixed(1)} points.` : "Nobody in this match had any, so it doesn't count."}">
+    const refNote = x.ref?.fixed ? " Compared with this hero at 15:00." : "";
+    h += `<div class="wr${x.on ? "" : " off"}" title="${x.on ? `Weight ${x.def.w}. Worth up to ${x.maxPts.toFixed(1)} points.${refNote}` : "Nobody in this match had any, so it doesn't count."}">
       <span class="sn"><b style="background:${c}"></b>${esc(x.def.label)}</span>
       <span class="r v${isBest ? " best" : ""}">${fmtStat(x.v)}</span>
-      <span class="r lb">${x.on ? `${fmtStat(x.bestV)}${portrait(x.best, "mini")}` : "–"}</span>
+      <span class="r lb">${x.ref ? fmtStat(x.ref.mean) : x.on ? `${fmtStat(x.bestV)}${portrait(x.best, "mini")}` : "–"}</span>
       <span class="pb"><span class="track" style="width:${(x.maxPts / maxOf(pick.parts)) * 100}%"><i style="width:${x.maxPts ? (x.pts / x.maxPts) * 100 : 0}%;background:${c}"></i></span><em>${x.on ? x.pts.toFixed(1) : ""}</em></span>
     </div>`;
   }
   h += `</div>`;
   h += whenHtml(p);
   if (!state.mvpAll) h += accoladesHtml(p);
-  h += `<button class="graphOptionButton allBtn" id="mvpAll">${state.mvpAll ? "Show fewer" : `Show all stats (${pick.parts.length})`}</button><div class="whyFoot">${mode === "impact" ? `Deaths count in reverse: fewest deaths in the match gets full points.${mvpSplit() ? "" : " This game was too short to split early and late, so damage and assists count once."}` : "Raw counts each scoreboard stat the same. Deaths count in reverse."} Crowd control isn't scored; see it on the Matchups tab.</div></div>`;
+  h += `<button class="graphOptionButton allBtn" id="mvpAll">${state.mvpAll ? "Show fewer" : `Show all stats (${pick.parts.length})`}</button><div class="whyFoot">${mode === "impact" ? `Fewer deaths earn more points.${mvpSplit() ? "" : " This game was too short to split early and late, so damage and assists count once."}` : "Raw counts each scoreboard stat the same. Deaths count in reverse."} ${isStreetBrawl() ? "" : "An average performance for this hero at this length earns half the available points. "}Crowd control isn't scored; see it on the Matchups tab.</div></div>`;
   return h;
 }
 
@@ -300,11 +315,11 @@ function valveCache() {
   return valveCache;
 }
 function valveStale() { return valveCache().health.stale; }
-function valveRows() {
+function valveRows(awardOrder = true) {
   const c = valveCache(), bySlot = {};
   c.scored.players.forEach(r => { bySlot[r.slot] = r; });
   const rows = state.players.map(p => ({ p, v: bySlot[p.slot], score: bySlot[p.slot].score }));
-  rows.sort((a, b) => b.score - a.score);
+  rows.sort(awardOrder ? (a, b) => b.v.flatScore - a.v.flatScore : (a, b) => b.score - a.score);
   rows.forEach((r, i) => { r.place = i + 1; });
   return rows;
 }
@@ -316,14 +331,12 @@ const VALVE_SAY = { 0: "kills", 1: "assists", 5: "hero damage and healing", 4: "
 function whyValve(rows, pick) {
   const p = pick.p, T = TEAMS[p.team], v = pick.v;
   const won = state.match.winning_team === p.team;
-  const table = window.HERO_TABLE;
-  const gradedRow = v.inTable ? table.heroes[String(v.graded_hero)] : table.fallback;
   const gname = (window.HERO_NAMES || {})[v.graded_hero] || "Hero " + v.graded_hero;
-  const pts = VALVE_ROWS.map(([label, i]) => ({ label, i, v: v.values[i], avg: gradedRow.mean[i], pts: v.points[i] }));
+  const pts = VALVE_ROWS.map(([label, i]) => ({ label, i, v: v.values[i], avg: v.means[i], pts: v.points[i] }));
   const maxAbs = Math.max(0.5, ...pts.map(x => Math.abs(x.pts)));
   const byPts = pts.slice().sort((a, b) => b.pts - a.pts);
   const best = byPts.filter(x => x.pts > 0).slice(0, 2), worst = byPts.filter(x => x.pts < -0.15 && !best.includes(x)).reverse().slice(0, 2);
-  let summary = `${ordinal(pick.place)} of ${rows.length} with ${pick.score.toFixed(2)} estimated points`;
+  let summary = `${ordinal(pick.place)} of ${rows.length} with ${pick.score.toFixed(2)} length-adjusted points`;
   summary += best.length ? `, carried by ${listJoin(best.map(x => VALVE_SAY[x.i]))}.` : ".";
   if (worst.length) summary += ` Biggest gaps: ${listJoin(worst.map(x => VALVE_SAY[x.i]))}.`;
 
@@ -337,14 +350,14 @@ function whyValve(rows, pick) {
       const winners = rows.filter(r => r.p.team === win);
       const idx = winners.findIndex(r => r.p.slot === valveMvp.slot);
       if (idx >= 0) {
-        const gap = winners[0].score - winners[idx].score;
-        valveLine = `Valve's MVP was ${valveMvp.hero}. Our points put ${valveMvp.hero} ${ordinal(idx + 1)} on the winning team, ${gap.toFixed(2)} points behind.${gap < 0.15 ? " A near tie." : ""}`;
+        const gap = winners[0].v.flatScore - winners[idx].v.flatScore;
+        valveLine = `Valve's MVP was ${valveMvp.hero}. Our award estimate ranks ${valveMvp.hero} ${ordinal(idx + 1)} on the winning team, ${gap.toFixed(2)} points behind.${gap < 0.15 ? " A near tie." : ""}`;
       }
     }
   }
   const notes = [];
-  if (String(v.graded_hero) !== String(p.heroId)) notes.push(`Valve graded this player against ${gname}'s averages, most likely the hero they held before a pre-game swap.`);
-  if (!v.inTable) notes.push("No averages for this hero yet. Graded against the all-hero average.");
+  if (String(v.graded_hero) !== String(p.heroId)) notes.push(`Valve's award estimate uses ${gname}'s averages after an apparent pre-game swap. The stats below compare ${p.hero} in ${window.PM_SCORE.lengthLabel(state.match.duration_s)}.`);
+  if (!v.knownHero) notes.push(`No averages for this hero yet. Graded against the all-hero average for ${window.PM_SCORE.lengthLabel(state.match.duration_s)}.`);
 
   let h = `<div class="mvpWhy" style="--tc:${T.c}">
     <div class="whyHead">
@@ -358,7 +371,7 @@ function whyValve(rows, pick) {
     </div>
     <p class="summary">${esc(summary)}${valveLine ? `<br><span class="vl">${esc(valveLine)}</span>` : ""}</p>
     <div class="whyTable valve">
-      <div class="wr th"><span>Stat</span><span class="r">Value</span><span class="r">${v.inTable ? `Avg ${esc(gname)}` : "All-hero avg"}</span><span>Points</span></div>`;
+      <div class="wr th"><span>Stat</span><span class="r">Value</span><span class="r">${v.knownHero ? `Avg ${esc(p.hero)}` : "All-hero avg"} <br>in ${window.PM_SCORE.lengthLabel(state.match.duration_s)}</span><span>Points</span></div>`;
   for (const x of pts) {
     h += `<div class="wr" title="${x.i === 2 ? "More deaths than average gives negative points." : ""}">
       <span class="sn">${esc(x.label)}</span>
@@ -371,7 +384,7 @@ function whyValve(rows, pick) {
   if (Math.abs(v.offset) >= 0.05) h += `<div class="vNote">Includes a hero adjustment of ${signed(v.offset, 2)}.</div>`;
   for (const n of notes) h += `<div class="vNote">${esc(n)}</div>`;
   h += whenHtml(p);
-  h += `<div class="whyFoot">Six stats, each compared with the average for that hero over about 24,000 recent matches. Matches Valve's MVP in about 98 of 100 matches. Kills, assists and hero damage plus ally healing count fully, objective damage half, deaths minus half, souls one fifth.</div></div>`;
+  h += `<div class="whyFoot">Six stats compared with this hero in games of this length. Places and award estimates use Valve's all-length model (492 of 500 ranked matches; 99 of 100 on the fixed check). Kills, assists and hero damage plus ally healing count fully, objective damage half, deaths minus half, souls one fifth.</div></div>`;
   return h;
 }
 
