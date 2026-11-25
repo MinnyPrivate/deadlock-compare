@@ -113,7 +113,7 @@ FAMILY = {
  'OB-01':'obj','OB-03':'obj','OB-06':'obj',
  'CB-24':'control','CB-26':'control','CB-23':'melee','CB-29':'melee','CB-30':'melee','CB-36':'melee','CB-32':'fight','CB-45':'fight',
 }
-DEFAULT_OPTS = dict(detail_cap='epic', family=False, joker_max=2, joker_maxfreq=.25, size_rule='bible', detail_shift=False, hero_guard=False)
+DEFAULT_OPTS = dict(detail_cap='epic', family=False, joker_max=2, joker_maxfreq=.25, size_rule='bible', detail_shift=False, hero_guard=False, silver_lining=False)
 TIERS = ['common', 'rare', 'epic', 'legendary', 'mythical']
 CUT = {'common': .40, 'rare': .25, 'epic': .10, 'legendary': .01, 'mythical': .001}
 TPTS = {'common': 1, 'rare': 3, 'epic': 9, 'legendary': 27, 'mythical': 81}
@@ -283,7 +283,7 @@ def deal_all(pop, norms, p3=True, by_rank=False, rich=True, joker_set=None, seed
     evfreq = {}; evarr = {}
     for e in EVENTS:
         if (rich or e[3] in WIDE_EVENTS) and e[3] in pop:
-            a = pop[e[3]].fillna(False).astype(bool).values; evarr[e[3]] = a; evfreq[e[3]] = a.mean()
+            a = pop[e[3]].fillna(False).astype(bool).values; evarr[e[3]] = a; evfreq[e[3]] = a.mean(); jhero[e[3]] = pd.Series(a).groupby(pop.hero.values).transform('mean').values
     # crown
     crown_t = [None] * n
     mvpm = []
@@ -309,7 +309,7 @@ def deal_all(pop, norms, p3=True, by_rank=False, rich=True, joker_set=None, seed
                 c['tier'] = TIERS[min(k, 2)] if k >= 0 else None
         L[:] = [c for c in L if c['tier']]
         for e in EVENTS:
-            if e[3] in evarr and evarr[e[3]][i]:
+            if e[3] in evarr and evarr[e[3]][i] and not (o['hero_guard'] and jhero[e[3]][i] > .40):
                 t = freq_tier(evfreq[e[3]], allow_common=True)
                 if t: L.append(dict(id=e[0], title=e[1], suit=e[2], side=e[4], tier=t, raw_tier=t, head=0, g=evfreq[e[3]], gfine=evfreq[e[3]], kind='event'))
         for j in jcols:
@@ -350,7 +350,12 @@ def deal_all(pop, norms, p3=True, by_rank=False, rich=True, joker_set=None, seed
         if len(must) > 13: must = must[:13]
         size = max(target, len(must)); size = min(size, 13)
         rest = [c for c in L if c not in must and c['kind'] != 'joker' and c['tier'] in ('rare', 'epic')]
-        if atro: rest = [c for c in rest if c['side'] == 'bad' or c['tier'] == 'epic']
+        if atro:
+            keep_g = [c for c in rest if c['side'] == 'good' and c['tier'] == 'epic']
+            if o['silver_lining'] and not keep_g and not any(c['side'] == 'good' for c in must):
+                gg = sorted([c for c in rest if c['side'] == 'good'], key=lambda c: -c['interest'])[:1]
+                keep_g = gg
+            rest = [c for c in rest if c['side'] == 'bad'] + keep_g
         open_ = size - len(must)
         gstr, bstr = gs[i], bs[i]
         nbad = round(open_ * bstr / (gstr + bstr)) if gstr + bstr > 0 else 0
@@ -359,7 +364,7 @@ def deal_all(pop, norms, p3=True, by_rank=False, rich=True, joker_set=None, seed
         pick_b = bads[:nbad]; pick_g = goods[:open_ - len(pick_b)]
         if len(pick_g) < open_ - len(pick_b): pick_b = bads[:open_ - len(pick_g)]
         # positive rule
-        if not atro and not any(c['side'] == 'good' for c in must + pick_g) and goods:
+        if (not atro or o['silver_lining']) and not any(c['side'] == 'good' for c in must + pick_g) and goods:
             if pick_b: pick_b = pick_b[:-1]
             pick_g = [goods[0]]
         chosen = pick_g + pick_b
