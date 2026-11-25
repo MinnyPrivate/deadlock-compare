@@ -171,7 +171,7 @@ window.renderMvp = function renderMvp() {
       ${cardFace(p, "row")}
       <span class="who"><span class="hn">${esc(heroName(p))}${p.left ? ` <span class="leftTag" title="Left the match at ${fmtTime(p.left)}">LEFT</span>` : ""}</span>${brawl ? "" : rankHtml(p.badge) || `<span class="rank none">Unranked</span>`}</span>
       ${valve ? divBar(r.score, top, "") : catBar(r, top)}
-      <span class="score ${valve ? dvClass(r.score, 1) : ""}"${valve ? ` title="Length-adjusted points. ${dvWord(r.score)} for this hero in ${window.PM_SCORE.lengthLabel(state.match.duration_s)}. Place uses the award estimate."` : ""}>${valve ? `${dv(r.score, 1)} <small>est.</small>` : Math.round(r.score)}</span>
+      <span class="score ${valve ? dvClass(r.score, 1) : ""}"${valve ? ` title="Place follows Valve's own all-length scoring, while points are adjusted for ${window.PM_SCORE.lengthLabel(state.match.duration_s)} (${dvWord(r.score).toLowerCase()} for this hero)."` : ""}>${valve ? `${dv(r.score, 1)} <small>est.</small>` : Math.round(r.score)}</span>
       <span class="valve">${v ? `<span class="badge${p.mvp > 1 ? " key" : ""}" title="Valve's recorded ${p.mvp === 1 ? "MVP" : "Key Player"}">${p.mvp === 1 ? "MVP" : "KEY"}</span>` : ""}</span>
     </button>`;
   }
@@ -280,7 +280,7 @@ function whyScaled(rows, pick, mode) {
   h += `</div>`;
   h += whenHtml(p);
   if (!state.mvpAll) h += accoladesHtml(p);
-  h += `<button class="graphOptionButton allBtn" id="mvpAll">${state.mvpAll ? "Show fewer" : `Show all stats (${pick.parts.length})`}</button><div class="whyFoot">${mode === "impact" ? `Fewer deaths earn more points.${mvpSplit() ? "" : " This game was too short to split early and late, so damage and assists count once."}` : "Raw counts each scoreboard stat the same. Deaths count in reverse."} ${isStreetBrawl() ? "" : "An average performance for this hero at this length earns half the available points. "}Crowd control isn't scored; see it on the Matchups tab.</div></div>`;
+  h += `<button class="graphOptionButton allBtn" id="mvpAll">${state.mvpAll ? "Show fewer" : `Show all stats (${pick.parts.length})`}</button><div class="whyFoot">${mode === "impact" ? `Fewer deaths earn more points.${mvpSplit() ? "" : " This game was too short to split early and late, so damage and assists count once."}` : "Raw counts each scoreboard stat the same. Deaths count in reverse."} ${isStreetBrawl() ? "" : mode === "impact" ? "On regular stats, an average game for this hero at this length earns half the available points; role stats (ally healing, barriers and healing prevented) also account for spread so small numbers stay modest. " : "On regular stats, an average game for this hero at this length earns half the available points; ally healing also accounts for spread so small numbers stay modest. "}Crowd control isn't scored; see it on the Matchups tab.</div></div>`;
   return h;
 }
 
@@ -315,13 +315,11 @@ function valveCache() {
   return valveCache;
 }
 function valveStale() { return valveCache().health.stale; }
-function valveRows(awardOrder = true) {
-  const c = valveCache(), bySlot = {};
-  c.scored.players.forEach(r => { bySlot[r.slot] = r; });
-  const rows = state.players.map(p => ({ p, v: bySlot[p.slot], score: bySlot[p.slot].score }));
-  rows.sort(awardOrder ? (a, b) => b.v.flatScore - a.v.flatScore : (a, b) => b.score - a.score);
-  rows.forEach((r, i) => { r.place = i + 1; });
-  return rows;
+function valveRows() {
+  const c = valveCache(), byPlayer = new Map(state.players.map(p => [p.slot, p]));
+  return window.PM_SCORE.rankValve(c.scored.players)
+    .filter(v => byPlayer.has(v.slot))
+    .map((v, i) => ({ p: byPlayer.get(v.slot), v, score: v.score, place: i + 1 }));
 }
 
 // Table rows in display order: [label, index into the scoring arrays, kind]
@@ -384,7 +382,7 @@ function whyValve(rows, pick) {
   if (Math.abs(v.offset) >= 0.05) h += `<div class="vNote">Includes a hero adjustment of ${signed(v.offset, 2)}.</div>`;
   for (const n of notes) h += `<div class="vNote">${esc(n)}</div>`;
   h += whenHtml(p);
-  h += `<div class="whyFoot">Six stats compared with this hero in games of this length. Places and award estimates use Valve's all-length model (492 of 500 ranked matches; 99 of 100 on the fixed check). Kills, assists and hero damage plus ally healing count fully, objective damage half, deaths minus half, souls one fifth.</div></div>`;
+  h += `<div class="whyFoot">Six stats compared with this hero in games of this length. Place follows Valve's own all-length scoring while points are length-adjusted, so a lower place can show more points (matches Valve's MVP in 492 of 500 ranked matches; 99 of 100 on the fixed check). Kills, assists and hero damage plus ally healing count fully, objective damage half, deaths minus half, souls one fifth.</div></div>`;
   return h;
 }
 

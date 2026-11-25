@@ -67,7 +67,7 @@ window.Summary = (() => {
 
   function prepareMatchData() {
     match = state.match;
-    rows = canGrade() ? valveRows(false) : [];
+    rows = canGrade() ? valveRows() : [];
     deaths = deathEvents();
     names = new Map();
   }
@@ -148,7 +148,7 @@ window.Summary = (() => {
     if (!stat.percentile) return `${num(stat.value)} ${stat.label.toLowerCase()}. ${rank}`;
     const { ref, better } = stat.bounds;
     const evidence = ref.fallback
-      ? `Thin samples use the per-minute rate from ${num(ref.rateRows)} ${p.hero} games.`
+      ? `Thin samples scale ${num(ref.rateRows)} ${p.hero} games by the all-hero length curve.`
       : `Based on nearby game lengths (${ref.counts.map(num).join(" and ")} ${p.hero} games).`;
     return `${num(stat.value)} ${stat.label.toLowerCase()}. Avg ${p.hero} in ${gameLength()}: ${num(ref.mean)}. Median: ${num(stat.percentile.p50)}. Better than about ${better}% at this length. ${evidence} ${rank}`;
   }
@@ -158,7 +158,7 @@ window.Summary = (() => {
     const baseline = v.knownHero ? p.hero + "'s average" : "the all-hero average";
     const parts = VALVE_ROWS.slice().sort(([, a], [, b]) => Math.abs(v.points[b]) - Math.abs(v.points[a]));
     return `<b class="summary-tip-heading">${esc(name(p))} · ${ordinal(r.place)} of ${rows.length} · ${r.score.toFixed(1)} pts</b>
-      <p>Estimated Valve score. Each stat is compared with ${esc(baseline)} in ${gameLength()} and weighted.</p>
+      <p>Place follows Valve's own all-length scoring. Points compare each stat with ${esc(baseline)} in ${gameLength()} and are weighted.</p>
       <dl>${parts.map(([part, i]) => `<dt>${part} <small>×${window.PM_SCORE.W_VALVE[i]}</small></dt><dd>${signed(v.points[i], 2)}</dd>`).join("")}
         ${Math.abs(v.offset) >= 0.005 ? `<dt>Hero adjustment</dt><dd>${signed(v.offset, 2)}</dd>` : ""}</dl>`;
   }
@@ -223,14 +223,15 @@ window.Summary = (() => {
   // Each builder returns { id, area, kicker, big, sub, visual, more, go, tone, interest, share }, or null when it has nothing to say.
   function placeCard(p) {
     const r = rowOf(p), n = rows.length;
-    const scores = rows.map(x => x.score), min = Math.min(...scores), max = Math.max(...scores);
+    const rankScore = x => x.v.flatScore;
+    const scores = rows.map(rankScore), min = Math.min(...scores), max = Math.max(...scores);
     // Lay the coins on three rows so close scores never overlap. The selected player always sits on the axis.
     const span = Math.max(0.5, max - min), placed = [[], [], []];
     const other = rows[r.place === 1 ? 1 : r.place - 2];
     const room = (a, b) => Math.abs(a.pos - b.pos) >= (a.x === r || b.x === r ? 0.1 : 0.068);
-    const order = [r, ...rows.filter(x => x !== r)], youPos = (r.score - min) / span;
+    const order = [r, ...rows.filter(x => x !== r)], youPos = (rankScore(r) - min) / span;
     const dots = order.map(x => {
-      const dot = { x, pos: (x.score - min) / span };
+      const dot = { x, pos: (rankScore(x) - min) / span };
       const gapIn = row => Math.min(1, ...placed[row].map(o => Math.abs(o.pos - dot.pos)));
       dot.row = x === r ? 0 : [0, 1, 2].find(row => placed[row].every(o => room(o, dot)) && !(row === 1 && Math.abs(dot.pos - youPos) < 0.09)) ?? [0, 1, 2].sort((a, b) => gapIn(b) - gapIn(a))[0];
       for (let tries = 0; tries < 6 && placed[dot.row].some(o => !room(o, dot)); tries++) dot.pos = Math.min(1, dot.pos + 0.03);
@@ -243,7 +244,7 @@ window.Summary = (() => {
         style="--x:${(pos * 100).toFixed(2)}%;--dy:${[0, -50, 50][row]}px" data-summary-slot="${x.p.slot}" data-summary-score="${x.p.slot}"
         aria-label="${esc(fullName(x.p))}, ${ordinal(x.place)}, ${x.score.toFixed(1)} points">
         ${coin(x.p)}${x.place <= 3 ? `<b class="hl-rank">${x.place}</b>` : ""}${x.p === p ? `<span class="hl-you-pin">${isMe(p) ? "You" : esc(name(p))}</span>` : ""}${x === other ? `<span class="hl-dot-name${row === 1 ? " up" : ""}">${esc(name(x.p))}</span>` : ""}</button>`).join("")}</div></div>`;
-    const gapText = other ? `${Math.abs(other.score - r.score).toFixed(1)} est. pts ${r.place === 1 ? "ahead of" : "behind"} ${name(other.p)}` : "";
+    const gapText = other ? `${Math.abs(rankScore(other) - rankScore(r)).toFixed(1)} est. pts ${r.place === 1 ? "ahead of" : "behind"} ${name(other.p)}` : "";
     // Valve's own award is a fact; the place is our estimate of Valve's score, so it says so.
     const kicker = p.mvp === 1 ? "Valve MVP" : p.mvp > 1 ? "Valve key player" : "Estimated lobby place";
     const awardsPending = preview() && !state.players.some(q => Number.isFinite(q.raw.mvp_rank));
@@ -267,10 +268,11 @@ window.Summary = (() => {
   }
 
   function sweepCard(p, stats) {
-    const vsHero = stats.filter(s => s.percentile).length >= 3;
+    const versionMismatch = Boolean(SummaryPercentiles.versionMismatch?.());
+    const vsHero = !versionMismatch && stats.filter(s => s.percentile).length >= 3;
     const pos = s => vsHero ? (s.percentile ? s.percentile.pct / 100 : null) : 1 - (s.place - 1) / Math.max(1, s.size - 1);
     // Green and red mean "against the hero average" (DESIGN.md). Against the lobby only a first place gets gold.
-    const word = s => vsHero ? (s.bounds ? bucket(s.bounds) : ["No data", "even"]) : [ordinal(s.place), s.place === 1 ? "gold" : "even"];
+    const word = s => vsHero ? (s.bounds ? bucket(s.bounds) : [versionMismatch ? "Version mismatch" : "No data", "even"]) : [ordinal(s.place), s.place === 1 ? "gold" : "even"];
     // Rank by how unusual each stat is, either direction, so a Bottom 1% outranks a Top 10%.
     const strength = s => pos(s) == null ? -1 : Math.abs(pos(s) - 0.5) - (word(s)[1] === "even" ? 1 : 0);
     const ranked = stats.filter(s => pos(s) != null).sort((a, b) => strength(b) - strength(a) || STATS.indexOf(a) - STATS.indexOf(b));
@@ -287,10 +289,10 @@ window.Summary = (() => {
     const leadName = (lead.short || lead.label).toLowerCase();
     return {
       id: "sweep", go: link("mvp", "MVP"), tone: low ? "bad" : "",
-      kicker: vsHero ? `${esc(p.hero)} in ${gameLength()}` : "Vs the lobby",
+      kicker: vsHero ? `${esc(p.hero)} in ${gameLength()}` : versionMismatch ? "Vs the lobby · stale percentiles" : "Vs the lobby",
       big: flat ? `<b class="hl-big hl-word">Typical</b><span class="hl-of">on every stat</span>`
         : `<b class="hl-big summary-${leadTone}">${esc(leadWord)}</b><span class="hl-of">${esc(leadName)} · ${fmtStat(lead.value)}</span>`,
-      sub: "",
+      sub: versionMismatch ? "Hero percentiles do not match hero averages. Showing lobby rank." : "",
       visual: `<div class="hl-sweep${vsHero ? "" : " is-lobby"}">${lines}
         ${hidden.length ? `<span class="hl-sweep-rest" ${explain(hidden.map(s => `${s.short || s.label}: ${word(s)[0]}.`).join(" "))}>+${hidden.length} other stats${hidden.every(s => word(s)[1] === "even") ? ", all typical" : ""}</span>` : ""}</div>`,
       more: "",
