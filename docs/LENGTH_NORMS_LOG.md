@@ -323,3 +323,213 @@ Note: `lanes.js` was audited and intentionally left unchanged because it already
 - **`test/card-layout-check.mjs` full gallery sweep**: Not re-run as a gate because it is an opt-in diagnostic that writes to the tracked `docs/handoffs/2026-11-20-card-gallery-failures.md` report (known pre-existing 120 failures tracked separately on `codex/card-gallery`); visual layout of our modified Summary, Highlights, and MVP screens was verified directly on the 6 1920x1080 screenshots and `fast-match.test.mjs`'s `.hl-sweep .hl-of` overflow check passed.
 - **Live `api.deadlock-api.com` refresh**: Re-used the frozen farming dataset (`tools/data/length_farm.csv.gz`, verified 216,624/216,624 exact match with the 18,052 training matches and 0 negative/null rows) rather than re-querying the public SQL API.
 - **Live match / production deploy**: No push, merge, PR, or Cloudflare Worker deploy was run (so `PILOT_ENABLED` in production was not touched).
+
+---
+
+# Fix round 2
+
+Date: November 24, 2026
+Branch: `codex/length-norms` (worktree `C:\Users\zacha\pm-length-norms`)
+New norm table version: **`2026-11-24.2`** (bumped from `2026-11-24.1`; regenerated reproducibly from the same 18,052 training matches and 216,624 player rows with 0 overlap against Sets A, B, and C)
+
+## Summary of fixes
+
+1. **Problem 1 (games under 20 minutes and thin 20-25 minute buckets skewed by per-minute rate fallback)**:
+   - Replaced the thin-bucket `hero_rate_all_length * minutes` fallback in `scoring.js` (`PM_SCORE.expected()`) and `tools/build_length_norms.py` with **pooled duration-shape scaling**:
+     - Fallback mean at bucket center `i`: `hero_all_mean * (pooled_bucket_mean[i] / pooled_all_mean)`
+     - Fallback spread (SD) at bucket center `i`: `hero_all_sd * (pooled_bucket_sd[i] / pooled_all_sd)`
+     - Fallback percentile cutoff `p` (`p1..p99`) at bucket center `i`: `hero_all_cut[p] * (pooled_bucket_cut[p] / pooled_all_cut[p])` when `pooled_all_cut[p] > 0`, else `pooled_bucket_cut[p] * (hero_all_mean / pooled_all_mean)`, enforced non-decreasing across `p1..p99`.
+   - Outside the outer bucket centers (`< 922.74 s` or `> 3292.63 s`), both real and fallback cells scale linearly from the endpoint bucket center (`durationS / center`). Inside the centers, values interpolate linearly with no jump at bucket boundaries.
+   - Kept the shared `PM_SCORE.expected(heroId, key, durationS, distributions)` signature and kept `minRows = 150`. Internal 2-fold cross-validation on the training matches confirmed `minRows = 150` matches or beats lower thresholds on `<20` (`kills` 14.12% vs 15.80% at 100; `souls` 4.43% vs 4.58% at 100) while keeping 1% tail cutoffs valid.
+   - Monotonicity check re-run on `2026-11-24.2`: `assists`, `souls`, `valve_souls`, `player_damage`, and `dmg_and_ally_heal` still have **0 adjacent drops** across all 308 hero-transitions; `kills` has the same 5 tiny noise dips and `deaths` the same 2; `objective_damage` has 21 late/thin plateaus (0 drops from `<20` to `20-25`).
+   - Updated the Summary thin-sample tooltip in `summary/summary.js` from "use the per-minute rate from ..." to "scale ... games by the all-hero length curve."
+2. **Problem 2 (Summary "lobby place" disagreed with the MVP Valve tab)**:
+   - Added a single canonical ordering helper `PM_SCORE.rankValve(players)` in `scoring.js` (sorting by `flatScore`, highest first).
+   - Removed the `awardOrder` flag from `valveRows()` in `mvp.js` so `valveRows()` always uses `PM_SCORE.rankValve()`.
+   - Updated `summary/summary.js` line 70 from `valveRows(false)` to `valveRows()`, so Summary and the MVP Valve tab share one ordering path and cannot drift apart.
+   - Updated `placeCard()` in `summary/summary.js` so dot placement on the left-to-right rank strip and the `"ahead of" / "behind"` gap text follow the same `flatScore` ranking (so rank badges 1, 2, 3 always sit in order and gap direction never inverts), while keeping length-aware score size, per-stat points, boost/drag, and tooltip breakdowns.
+3. **Minor items**:
+   - **`whyScaled` footer text (`mvp.js`)**: Reworded so it no longer claims every stat earns half at average. Impact now says: `"On regular stats, an average game for this hero at this length earns half the available points; role stats (ally healing, barriers and healing prevented) also account for spread so small numbers stay modest."` Raw uses the matching wording for ally healing. Scoring math was not changed.
+   - **Visible percentile version mismatch (`scoring.js`, `summary/percentile.js`, `summary/summary.js`)**: When `hero_percentiles.json` and `heronorms.js` have different versions, `scoring.js` now logs a `console.warn` (once per mismatched version pair) and marks `versionMismatch: true`, `SummaryPercentiles.versionMismatch()` exposes it, and the Summary Highlights card displays `"Vs the lobby · stale percentiles"` with `"Hero percentiles do not match hero averages. Showing lobby rank."` instead of silently hiding hero percentiles. Normal behavior when versions match is unchanged. Verified both in unit tests and in live Chromium (`staleCheck`).
+   - **Valve tab place vs length-adjusted points explanation (`mvp.js`, `summary/summary.js`)**: Updated the Valve tab score tooltip, the Valve tab footer (`"Place follows Valve's own all-length scoring while points are length-adjusted, so a lower place can show more points"`), and the Summary place-card tooltip so users clearly understand why a lower place can show more length-adjusted points.
+
+## R2.1 Problem 1 hold-out proof: old rate fallback vs new pooled-shape fallback
+
+Re-measured with `python -B tools/check_short_fallback.py "C:\Users\zacha\OneDrive\Desktop\Deadlock Mods\Compare overlay\Data\mvp_fit"` on the 18,052 training matches (0 overlap with Sets A, B, and C). Every hold-out row hides the tested hero's target bucket AND excludes that hero from the pooled `"all"` curve (leave-one-hero-out) so there is no leakage.
+
+### Pooled `<20` check (re-measured at bucket center `922.74 s`, `n = 3,672` rows)
+
+| Stat | Real `<20` mean | Old fallback mean | Old mean error | Real `<20` SD | Old fallback SD | Old SD error |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `kills` | 2.75 | 2.85 | +3.5% | 2.97 | 2.04 | -31.4% |
+| `assists` | 3.47 | 5.16 | +48.6% | 3.63 | 2.64 | -27.4% |
+| `deaths` | 2.80 | 2.86 | +2.1% | 2.45 | 1.50 | -38.7% |
+| `souls` | 13,035.14 | 17,461.43 | +34.0% | 5,038.38 | 3,139.58 | -37.7% |
+| `valve_souls` | 12,814.68 | 17,421.68 | +36.0% | 5,243.33 | 3,199.37 | -39.0% |
+| `objective_damage` | 2,746.33 | 2,586.64 | -5.8% | 3,469.42 | 2,477.47 | -28.6% |
+| `player_damage` | 7,641.12 | 13,986.77 | +83.0% | 5,065.37 | 5,899.01 | +16.5% |
+| `dmg_and_ally_heal` | 7,875.88 | 14,531.03 | +84.5% | 5,175.63 | 5,888.23 | +13.8% |
+
+### Hold-out Mean and SD MAPE at `<20` (`922.74 s`)
+
+Note on hero counts in `<20`: at `minRows = 150`, only 1 hero (Drifter, `n = 154`) clears 150 rows; 15 heroes have `n >= 100` (`102..154` rows); all 44 heroes have `24..154` rows. All three hero slices are reported below.
+
+| Stat | `<20` `n >= 100` (15 heroes) Mean MAPE Old -> New | `<20` `n >= 100` (15 heroes) SD MAPE Old -> New | `<20` `n >= 150` (1 hero: Drifter) Mean MAPE Old -> New | `<20` all 44 heroes Mean MAPE Old -> New | `<20` all 44 heroes SD MAPE Old -> New |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `kills` | 7.3% -> **6.9%** | 35.5% -> **10.7%** | 0.9% -> 3.6% | 12.9% -> **12.3%** | 32.0% -> **14.8%** |
+| `assists` | 46.8% -> **8.1%** | 28.5% -> **12.9%** | 46.8% -> **2.0%** | 50.2% -> **10.6%** | 26.2% -> **15.4%** |
+| `deaths` | 8.8% -> **8.7%** | 38.1% -> **10.4%** | 14.5% -> **12.3%** | 9.6% -> **9.5%** | 37.8% -> **10.8%** |
+| `souls` | 32.9% -> **2.2%** | 40.1% -> **7.0%** | 32.6% -> **1.6%** | 34.1% -> **2.9%** | 37.8% -> **8.1%** |
+| `valve_souls` | 34.9% -> **2.2%** | 41.3% -> **7.5%** | 33.8% -> **2.2%** | 36.1% -> **3.0%** | 39.0% -> **8.3%** |
+| `objective_damage` | 9.8% -> **8.4%** | 32.5% -> **8.0%** | 0.8% -> 5.6% | 15.2% -> **14.6%** | 30.9% -> **16.4%** |
+| `player_damage` | 85.4% -> **5.9%** | 9.4% -> **9.4%** | 69.0% -> **9.1%** | 82.8% -> **7.7%** | 21.6% -> **16.2%** |
+| `dmg_and_ally_heal` | 85.4% -> **5.9%** | 9.4% -> **9.0%** | 69.0% -> **9.8%** | 84.8% -> **7.6%** | 20.2% -> **15.9%** |
+
+### Hold-out Mean and SD MAPE at `20-25` (`1350 s`) and `50+` (`3292.63 s`)
+
+In `20-25`, 25 heroes have a real `>= 150` bucket (`161..257` rows) and 19 heroes have thin `< 150` data (`53..147` rows). In `50+`, 42 heroes have `>= 150` rows and 2 heroes (Baba, Sinclair) have `< 150` rows.
+
+| Stat | `20-25` real `>= 150` (25 heroes) Mean MAPE Old -> New | `20-25` thin `< 150` (19 heroes) Mean MAPE Old -> New | `20-25` all 44 heroes Mean MAPE Old -> New | `20-25` all 44 heroes SD MAPE Old -> New | `50+` real `>= 150` (42 heroes) Mean MAPE Old -> New |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `kills` | 13.8% -> **8.8%** | 9.7% -> 11.1% | 12.0% -> **9.8%** | 28.4% -> **10.5%** | 7.9% -> **2.7%** |
+| `assists` | 6.6% -> 6.7% | 9.7% -> **8.7%** | 7.9% -> **7.6%** | 29.5% -> **5.9%** | 3.2% -> **2.7%** |
+| `deaths` | 10.0% -> **6.1%** | 14.0% -> **6.6%** | 11.7% -> **6.3%** | 33.1% -> **5.6%** | 9.4% -> **3.4%** |
+| `souls` | 11.5% -> **2.3%** | 14.4% -> **4.3%** | 12.7% -> **3.2%** | 16.2% -> **11.9%** | 11.3% -> **1.1%** |
+| `valve_souls` | 12.1% -> **2.3%** | 15.0% -> **4.3%** | 13.4% -> **3.2%** | 18.7% -> **12.0%** | 11.4% -> **1.1%** |
+| `objective_damage` | 17.1% -> **8.1%** | 13.8% -> 15.1% | 15.7% -> **11.1%** | 24.5% -> **9.8%** | 21.7% -> **5.1%** |
+| `player_damage` | 25.0% -> **4.7%** | 30.7% -> **6.7%** | 27.5% -> **5.6%** | 13.0% -> 14.2% | 19.8% -> **3.2%** |
+| `dmg_and_ally_heal` | 25.8% -> **4.4%** | 31.0% -> **6.9%** | 28.1% -> **5.5%** | 12.6% -> 14.7% | 19.8% -> **3.3%** |
+
+### Hold-out percentile cutoff accuracy and tail calibration (Summary/Highlights stats, LOHO)
+
+Average error across 7 cutoffs (`p10, p25, p50, p75, p90, p95, p99`, normalized by the real bucket mean) plus empirical Top 5% rate (target ~5%) and Bottom 25% rate (target ~25%) on actual hero rows in each bucket:
+
+| Bucket (heroes) | Stat | 7-cutoff error Old -> New | Empirical Top 5% rate (~5%) Old -> New | Empirical Bottom 25% rate (~25%) Old -> New |
+| --- | --- | ---: | ---: | ---: |
+| `<20` `n >= 100` (15) | `kills` | 52.6% -> **25.8%** | 10.6% -> **4.8%** | 41.1% -> **33.4%** |
+| `<20` `n >= 100` (15) | `assists` | 59.3% -> **23.9%** | 6.0% -> **4.8%** | 59.6% -> **25.7%** |
+| `<20` `n >= 100` (15) | `deaths` | 44.7% -> **22.0%** | 12.7% -> **4.8%** | 37.9% -> **24.8%** |
+| `<20` `n >= 100` (15) | `souls` | 26.6% -> **5.3%** | 3.7% -> **6.2%** | 66.7% -> **25.6%** |
+| `<20` `n >= 100` (15) | `objective_damage` | 53.6% -> **22.4%** | 12.3% -> **6.9%** | 37.3% -> **24.3%** |
+| `<20` `n >= 100` (15) | `dmg_and_ally_heal` | 86.0% -> **15.3%** | 1.6% -> **5.5%** | 76.4% -> **27.2%** |
+| `20-25` real `>= 150` (25) | `souls` | 10.7% -> **5.2%** | 4.0% -> **5.5%** | 50.3% -> **24.8%** |
+| `20-25` real `>= 150` (25) | `dmg_and_ally_heal` | 26.9% -> **11.5%** | 2.7% -> **5.4%** | 48.7% -> **24.8%** |
+| `20-25` thin `< 150` (19) | `kills` | 32.1% -> **27.6%** | 11.1% -> **3.8%** | 32.5% -> 32.5% |
+| `20-25` thin `< 150` (19) | `assists` | 31.7% -> **15.9%** | 11.5% -> **3.5%** | 43.6% -> **27.3%** |
+| `20-25` thin `< 150` (19) | `deaths` | 34.1% -> **13.3%** | 15.6% -> **3.8%** | 28.8% -> **22.4%** |
+| `20-25` thin `< 150` (19) | `souls` | 13.7% -> **7.3%** | 3.2% -> **3.5%** | 54.8% -> **26.1%** |
+| `20-25` thin `< 150` (19) | `objective_damage` | 37.2% -> **31.2%** | 9.8% -> **4.2%** | 29.9% -> **26.7%** |
+| `20-25` thin `< 150` (19) | `dmg_and_ally_heal` | 34.8% -> **16.3%** | 1.7% -> **4.0%** | 50.9% -> **25.1%** |
+
+Under the old per-minute rate fallback, 76.4% of `<20` players were flagged Bottom 25% on damage+healing and 66.7% on souls. Under the pooled-shape fallback, those rates land at **27.2%** and **25.6%** (right on target ~25%).
+
+## R2.2 Five real short-game examples under 20 minutes (Old `0b3306c` vs New `2026-11-24.2`)
+
+Set A (`mvp_matches.zip`) contains 10 matches under 20 minutes. Five real players across five distinct under-20 matches were captured directly from live Chromium renders of `0b3306c` (old rate fallback + old Summary place) vs the updated working tree via `node tools/check_short_round2.cjs tools/.length-work/short-round2`:
+
+| Match (Slot) | Hero | Length | Line (`K/D/A`, Souls, Dmg+Heal) | Old expected Dmg+Heal (pct) | New expected Dmg+Heal (pct) | Old Valve score -> New | Old Summary place (MVP tab) -> New | Old Highlights card | New Highlights card |
+| --- | --- | ---: | --- | ---: | ---: | ---: | --- | --- | --- |
+| `137022293` (slot 6) | Seven | 13:47 | 4/2/2, 10.5k souls, 7,956 d+h | 13,245 (p13 / Bottom 25%) | **7,255 (p66 / Typical)** | -1.77 -> **+0.23** | 7th (MVP: 8th) -> **8th (MVP: 8th)** | `Seven in 14 min games`: **Bottom 5%** `souls · 10.5k` | `Seven in 14 min games`: **Top 25%** `kills · 4` (`+5 other stats, all typical`) |
+| `137035207` (slot 10) | Yamato | 14:23 | 2/2/3, 14.2k souls, 6,768 d+h | 13,012 (p9 / Bottom 10%) | **7,008 (p57 / Typical)** | -2.38 -> **-0.18** | 6th (MVP: 6th) -> **6th (MVP: 6th)** | `Yamato in 14 min games`: **Bottom 10%** `damage + healing · 6,768` | `Yamato in 14 min games`: **Typical** `on every stat` |
+| `137047216` (slot 9) | Haze | 13:17 | 6/1/1, 19.7k souls, 8,238 d+h | 13,016 (p19 / Bottom 25%) | **6,999 (p69 / Typical)** | -0.03 -> **+1.42** | 5th (MVP: 5th) -> **5th (MVP: 5th)** | `Haze in 13 min games`: **Bottom 10%** `assists · 1` | `Haze in 13 min games`: **Top 10%** `souls · 19.7k` |
+| `137027801` (slot 11) | Holliday | 16:18 | 3/0/3, 17.0k souls, 11,120 d+h | 14,179 (p29 / Typical) | **8,252 (p80 / Top 25%)** | -0.67 -> **+1.03** | 2nd (MVP: 3rd) -> **3rd (MVP: 3rd)** | `Holliday in 16 min games`: **Top 5%** `deaths · 0` (plus `Bottom 25%` assists) | `Holliday in 16 min games`: **Top 10%** `deaths · 0` (plus `Top 25%` damage + healing) |
+| `137019499` (slot 8) | Mirage | 18:29 | 3/3/9, 19.8k souls, 6,209 d+h | 14,345 (p5 / Bottom 5%) | **9,808 (p28 / Typical)** | +2.01 -> **+1.87** | 2nd (MVP: 2nd) -> **2nd (MVP: 2nd)** | `Mirage in 18 min games`: **Top 1%** `objective damage · 13.4k` (with `Bottom 5%` damage + healing) | `Mirage in 18 min games`: **Top 5%** `objective damage · 13.4k` (damage + healing now `Typical`) |
+
+### Detailed Highlights card text before and after (`137022293`, 13:47, Seven slot 6)
+
+- **Before (`0b3306c`, old per-minute rate fallback)**:
+  - Kicker / Headline: `Seven in 14 min games` / `Bottom 5% souls · 10.5k`
+  - Shown rows: `Souls: ▼ Bottom 5%`, `Kills: ▲ Top 25%`, `Assists: ▼ Bottom 25%`, `+3 other stats`
+  - Lead tooltip: `"10,488 souls. Avg Seven in 14 min games: 16,465. Median: 16,335.3. Better than about 2% at this length. Thin samples use the per-minute rate from 6,043 Seven games. 9th of 12 in the lobby."`
+  - Summary place card: `7th of 12` (`1.7 est. pts behind Bebop`), disagreeing with MVP Valve tab `8th of 12`.
+- **After (working tree, pooled-shape fallback `2026-11-24.2` + unified Valve place)**:
+  - Kicker / Headline: `Seven in 14 min games` / `Top 25% kills · 4`
+  - Shown rows: `Kills: ▲ Top 25%`, `+5 other stats, all typical`
+  - Lead tooltip: `"4 kills. Avg Seven in 14 min games: 2.1. Median: 1.8. Better than about 83% at this length. Thin samples scale 6,043 Seven games by the all-hero length curve. 1st of 12 in the lobby."`
+  - Summary place card: `8th of 12` (`0.1 est. pts behind Infernus`), matching MVP Valve tab `8th of 12` exactly.
+
+## R2.3 Re-verified Valve-tab MVP agreement (`2026-11-24.2`)
+
+Re-run now with `python -B tools/check_length_mvp.py "C:\Users\zacha\OneDrive\Desktop\Deadlock Mods\Compare overlay\Data\mvp_fit"`:
+
+| Evaluation set | Matches | Deployed Valve-tab MVP | Deployed All 3 in order | Pure length-aware MVP | Pure length-aware All 3 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Set A (500 ranked, `mvp_matches.zip`) | 500 | **492/500 (98.40%)** | **468/500 (93.60%)** | 445/500 (89.00%) | 300/500 (60.00%) |
+| Set B (100 fixed, `mvp_check_100.txt`) | 100 | **99/100** | **97/100** | 89/100 | 62/100 |
+| Set C Unranked (held-out) | 4,596 | **4,577/4,596 (99.59%)** | **4,492/4,596 (97.74%)** | 4,295/4,596 (93.45%) | 3,467/4,596 (75.44%) |
+| Set C Ranked (held-out) | 1,269 | **1,253/1,269 (98.74%)** | **1,201/1,269 (94.64%)** | 1,121/1,269 (88.34%) | 810/1,269 (63.83%) |
+| Set C Combined (held-out) | 5,865 | **5,830/5,865 (99.40%)** | **5,693/5,865 (97.07%)** | 5,416/5,865 (92.34%) | 4,277/5,865 (72.92%) |
+
+All Valve-tab targets remain unchanged at exact baseline (`98.40%` Set A, `99/100` Set B, `99.40%` Set C combined, with all-three-in-order unchanged on every set).
+
+## R2.4 Summary vs MVP Valve-tab place agreement proof
+
+Command: `python -B tools/check_place_agreement.py "C:\Users\zacha\OneDrive\Desktop\Deadlock Mods\Compare overlay\Data\mvp_fit"`
+
+Executes the real `mvp.js` (`renderMvp()`) and `summary/summary.js` (`Summary.inspectCards()`) files in isolated Node VM harnesses across all 500 Set A matches x 12 players (6,000 player rows), comparing commit `0b3306c` against the updated working tree:
+
+| Build | Matches | Players checked | Place mismatches | Mismatch rate | Matches with any mismatch | MVP tab puts Valve MVP 1st | Summary puts Valve MVP 1st |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Old (`0b3306c`) | 500 | 6,000 | 1,845 | 30.75% | 443 / 500 | 469 / 500 | 423 / 500 |
+| New (working tree) | 500 | 6,000 | **0** | **0.00%** | **0 / 500** | **469 / 500** | **469 / 500** |
+
+The same real-page agreement check was also added to `test/summary.test.js` across all 5 tracked match fixtures (`136950036`, `136941488`, `137019499`, `137022293`, `137018749`, 60 players total, verifying 0 mismatches even when flat and length-adjusted rankings differ).
+
+## R2.5 Regenerated tables and test results
+
+### Regenerated assets (table version `2026-11-24.2`)
+
+Commands:
+- `python -B tools/build_length_norms.py "C:\Users\zacha\OneDrive\Desktop\Deadlock Mods\Compare overlay\Data\mvp_fit"`
+- `python -B tools/build_heronorms_js.py tools/data/hero_table.json tools/data/snap_norms.json heronorms.js tools/data/length_norms.json`
+
+Outputs:
+- `tools/data/length_norms.json`: `238,257` bytes (`version: "2026-11-24.2"`)
+- `data/hero_percentiles.json`: `828,180` bytes (`version: "2026-11-24.2"`, down from `1.01 MB` because all-length cutoffs replace floating-point rate cutoffs)
+- `heronorms.js`: `335,407` bytes (`window.LENGTH_NORMS.version === "2026-11-24.2"`)
+
+### Full test suite results (verified after final code edit)
+
+1. `node test/score_test.js`: **5 / 5 PASS** (`136950036`, `136941488`, `137019499`, `137022293`, `137018749`).
+2. `node --test test/summary.test.js test/app-download.test.mjs test/app-download-route.integration.mjs test/fast-match.test.mjs test/prelaunch-audit.test.js` (with `PM_FAST_PLAYWRIGHT`, `PM_AUDIT_CHROME`, `PM_AUDIT_MATCHES`, and `PM_AUDIT_MONDAY` set): **38 passed, 0 failed, 2 skipped**:
+   - `test/summary.test.js`: **13 / 13 PASS** (includes updated pooled-shape thin-bucket fallback unit test, new percentile version-mismatch warning test, and new real-page Summary vs MVP Valve-tab place agreement + footer copy test across all 5 match fixtures / 60 players).
+   - `test/app-download.test.mjs`: **1 / 1 PASS**.
+   - `test/fast-match.test.mjs`: **2 / 2 PASS** (`website` and `embed` companion swap + mismatched upload fallback).
+   - `test/prelaunch-audit.test.js`: **22 / 22 PASS** (including all 20 audit matches + Monday `136949669`: 180 Summary portraits, 575 graphs, 5,100 Matchups pairs, 620 MVP rows).
+   - `test/app-download-route.integration.mjs`: **2 skipped** (Wrangler is not installed locally).
+3. Live Chromium browser check (`node tools/check_short_round2.cjs tools/.length-work/short-round2`): **0 page errors** across all 5 under-20 matches, plus live stale-version test confirmed single `console.warn` and visible `"Vs the lobby · stale percentiles"` / `"Hero percentiles do not match hero averages. Showing lobby rank."` card text.
+
+## R2.6 Fresh 1920x1080 screenshots (under-20 match `137022293`, 13:47, Seven slot 6)
+
+Saved under `docs/length-norms-screens/` with new file names (none of the 6 Round 1 screenshots were overwritten) and visually inspected:
+
+- [short-r2-summary.png](length-norms-screens/short-r2-summary.png): Summary tab showing `ESTIMATED LOBBY PLACE: 8th of 12` (`0.1 est. pts behind Infernus`, matching MVP Valve tab `8th`) with rank dots 1, 2, 3 in strict left-to-right order, and `SEVEN IN 14 MIN GAMES: Top 25% kills · 4` (`+5 other stats, all typical`).
+- [short-r2-highlight.png](length-norms-screens/short-r2-highlight.png): Focused Highlights stat row showing the new pooled-shape tooltip (`4 kills. Avg Seven in 14 min games: 2.1. Median: 1.8. Better than about 83% at this length. Thin samples scale 6,043 Seven games by the all-hero length curve. 1st of 12 in the lobby.`).
+- [short-r2-mvp.png](length-norms-screens/short-r2-mvp.png): MVP Valve tab showing Seven in `8th of 12` (`+0.23` length-adjusted points) matching Summary, `AVG SEVEN IN 14 MIN GAMES` (`7,254` dmg+heal, `12.1k` souls), and the updated footer explaining why a lower place (such as Paige at 6th with `+2.2` vs Bebop at 5th with `+1.3`) can show more length-adjusted points.
+
+## R2.7 Files changed in Fix round 2 and why
+
+| File | Status | Why |
+| --- | --- | --- |
+| `tools/build_length_norms.py` | Modified | Bumped norm table version to `2026-11-24.2` and stored all-length moments and cutoffs (`all`) instead of all-length per-minute rates (`rate`) to power pooled duration-shape fallback. |
+| `tools/data/length_norms.json` | Regenerated | Regenerated at version `2026-11-24.2` (`238,257` bytes) with `all` moments for pooled-shape fallback. |
+| `data/hero_percentiles.json` | Regenerated | Regenerated at version `2026-11-24.2` (`828,180` bytes) with `all` p1..p99 cutoffs for pooled-shape fallback. |
+| `heronorms.js` | Regenerated | Rebuilt via `tools/build_heronorms_js.py` (`335,407` bytes, `window.LENGTH_NORMS.version = "2026-11-24.2"`). |
+| `scoring.js` | Modified | Switched thin-bucket fallback in `PM_SCORE.expected()` to pooled duration-shape scaling for mean, SD, and percentile cutoffs; added `PM_SCORE.rankValve()` for shared Valve-tab ordering; added `percentileVersionMismatch()` and deduplicated `console.warn` on version mismatch. |
+| `mvp.js` | Modified | Removed `awardOrder` flag from `valveRows()` and routed it through `PM_SCORE.rankValve()`; made `whyScaled` footer accurate for role stats; added plain explanation to Valve tab tooltip and footer that place follows Valve's all-length scoring while points are length-adjusted. |
+| `summary/percentile.js` | Modified | Exposed `versionMismatch()`, logged mismatch warning on `load()`, and accepted an optional table argument on `bounds()`/`pct()` for testing without changing normal calls. |
+| `summary/summary.js` | Modified | Changed `valveRows(false)` to `valveRows()` so Summary and MVP Valve tab share one ordering path; aligned `placeCard()` dot positions and gap text with `flatScore` while keeping length-aware score size/points; updated thin-sample tooltip wording; added visible stale-percentile card text on version mismatch. |
+| `test/summary.test.js` | Modified | Updated thin-bucket fallback unit test for pooled-shape scaling; added tests for percentile version-mismatch warning and real-page Summary vs MVP Valve-tab place agreement across 5 match fixtures (60 players) plus footer copy checks. |
+| `tools/check_short_fallback.py` | New | Reproducible leave-one-hero-out hold-out benchmark comparing old rate fallback vs new pooled-shape fallback across `<20`, `20-25`, and `50+` buckets (means, SDs, and percentile cutoffs). |
+| `tools/check_place_agreement.py`, `tools/check_place_agreement.js` | New | Reproducible 500-match (6,000-player) verification script running real `mvp.js` and `summary/summary.js` code on `0b3306c` vs working tree. |
+| `tools/check_short_round2.cjs` | New | Live Chromium capture harness comparing `0b3306c` vs working tree on 5 under-20 matches, testing the stale-percentile browser warning, and saving the 3 new 1920x1080 screenshots. |
+| `docs/length-norms-screens/short-r2-*.png` | New | Three fresh 1920x1080 screenshots (`short-r2-summary.png`, `short-r2-highlight.png`, `short-r2-mvp.png`) for under-20 match `137022293` (13:47, Seven slot 6). |
+| `docs/LENGTH_NORMS_LOG.md` | Modified | Appended this Fix round 2 proof section. |
+
+## R2.8 What could not be checked
+
+- **Live Wrangler Worker integration (`test/app-download-route.integration.mjs`)**: Skipped (2 tests) because Wrangler is not installed locally.
+- **Live Deadlock in-game Panorama browser**: All Chromium checks and screenshots ran in desktop headless Chrome at 1920x1080 (`website` and `embed` modes), not inside the live game client.
+- **`test/card-layout-check.mjs` full gallery sweep**: Not run as a gate because it overwrites the tracked `docs/handoffs/2026-11-20-card-gallery-failures.md` report (pre-existing 120 layout failures tracked separately on `codex/card-gallery`); our modified Summary, Highlights, and MVP views were visually verified at 1920x1080 and `fast-match.test.mjs`'s `.hl-sweep .hl-of` overflow check passed.
+- **Live `api.deadlock-api.com` refresh**: Re-used the verified frozen `tools/data/length_farm.csv.gz` (216,624/216,624 rows exact match) rather than re-querying the public SQL API.
+- **Production deploy / `PILOT_ENABLED` check**: No push, merge, PR, or deploy was run.
