@@ -166,7 +166,7 @@ def build(data):
     ]
 
     meta = {
-        "version": "2026-11-24.1",
+        "version": "2026-11-24.2",
         "source": f"{len(train):,} standard matches from November 13 and 14, 2026",
         "edges": EDGES,
         "centers": centers,
@@ -197,7 +197,7 @@ def build(data):
             is_late = stat in LATE_STATS
             want_cuts = stat in SUMMARY_STATS
             buckets = [[] for _ in range(8)]
-            rates = []
+            all_vals = []
             for i in indices:
                 v = col[i]
                 if v is None:
@@ -207,11 +207,11 @@ def build(data):
                 if mins <= 0:
                     continue
                 buckets[bins[i]].append(v)
-                rates.append(v / mins)
-            if len(rates) < 2:
-                raise ValueError(f"No usable all-length rate for {hkey} {stat}")
+                all_vals.append(v)
+            if len(all_vals) < 2:
+                raise ValueError(f"No usable all-length rows for {hkey} {stat}")
 
-            rate_m, rate_c = distribution(rates, with_cutoffs=want_cuts)
+            all_m, all_c = distribution(all_vals, with_cutoffs=want_cuts)
             counts = [len(b) for b in buckets]
             cells, cut_cells = [], []
             for b_vals in buckets:
@@ -224,9 +224,9 @@ def build(data):
                     cells.append(cm)
                     if want_cuts:
                         cut_cells.append(cc)
-            moments[stat] = {"n": counts, "rate": rate_m, "b": cells}
+            moments[stat] = {"n": counts, "all": all_m, "b": cells}
             if want_cuts:
-                cuts[stat] = {"rate": rate_c, "b": cut_cells}
+                cuts[stat] = {"all": all_c, "b": cut_cells}
         table["heroes"][hkey] = moments
         quantiles["heroes"][hkey] = cuts
 

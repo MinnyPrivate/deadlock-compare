@@ -12,6 +12,24 @@
   const lengthTable = typeof module !== "undefined" && module.exports
     ? require("./tools/data/length_norms.json") : window.LENGTH_NORMS;
   const valveStats = ["kills", "assists", "deaths", "valve_souls", "objective_damage", "dmg_and_ally_heal"];
+  const warnedVersionMismatches = new Set();
+
+  function percentileVersionMismatch(distributions) {
+    return Boolean(distributions && lengthTable && distributions.version !== lengthTable.version);
+  }
+
+  function warnPercentileMismatch(distributions) {
+    if (!percentileVersionMismatch(distributions)) return false;
+    const got = distributions.version == null ? "missing" : String(distributions.version);
+    const key = `${got}!=${lengthTable.version}`;
+    if (!warnedVersionMismatches.has(key)) {
+      warnedVersionMismatches.add(key);
+      console.warn(
+        `Postmortem: hero_percentiles.json version (${got}) does not match heronorms.js (${lengthTable.version}); Highlights percentiles are hidden until both tables are rebuilt together.`
+      );
+    }
+    return true;
+  }
 
   function lengthLabel(seconds) {
     if (!Number.isFinite(seconds) || seconds <= 0) return "games of this length";
@@ -24,8 +42,9 @@
   }
 
   // Shared hero expectation at a match duration (seconds).
-  // Interpolates smoothly between duration bucket centers; falls back to the hero's all-length per-minute rate
-  // when a bucket has fewer than minRows samples. Optional distributions provide p1 through p99 cutoffs.
+  // Interpolates smoothly between duration bucket centers; when a hero bucket has fewer than minRows samples,
+  // scales the hero's all-length mean, spread and percentile cutoffs by the pooled all-hero duration shape.
+  // Optional distributions provide p1 through p99 cutoffs.
   function expected(heroId, key, durationS, distributions) {
     if (typeof key !== "string" || !Number.isFinite(durationS) || durationS <= 0 || !lengthTable) return null;
     const perMinute = key.endsWith("_per_min");
@@ -51,11 +70,14 @@
       };
     }
 
-    if (!Object.hasOwn(row, "rate")) return null;
+    const allRow = lengthTable.heroes.all?.[stat];
+    if (!Object.hasOwn(row, "all") || !allRow || !Object.hasOwn(allRow, "all")) return null;
     const isLate = stat.startsWith("late_");
     if (isLate && durationS <= 900) return null;
 
-    const cuts = distributions?.version === lengthTable.version ? distributions.heroes[hero]?.[stat] : null;
+    const versionMismatch = warnPercentileMismatch(distributions);
+    const cuts = !versionMismatch && distributions ? distributions.heroes?.[hero]?.[stat] : null;
+    const allCuts = !versionMismatch && distributions ? distributions.heroes?.all?.[stat] : null;
     const centers = lengthTable.centers, first = isLate ? 1 : 0, last = centers.length - 1;
     let hi = first;
     while (hi < last && centers[hi] < durationS) hi++;
@@ -63,28 +85,53 @@
     const mix = lo === hi ? 0 : (durationS - centers[lo]) / (centers[hi] - centers[lo]);
     const period = minutesFor(stat, durationS);
 
+    function fallbackCutoffs(i) {
+      if (!cuts || !allCuts) return undefined;
+      const poolBucket = allCuts.b?.[i], poolAll = allCuts.all, heroAll = cuts.all;
+      if (!poolBucket || !poolAll || !heroAll) return undefined;
+      const heroRel = allRow.all[0] > 0 ? row.all[0] / allRow.all[0] : 0;
+      const out = new Array(poolBucket.length);
+      for (let p = 0; p < poolBucket.length; p++) {
+        let v = poolAll[p] > 0 ? heroAll[p] * (poolBucket[p] / poolAll[p]) : poolBucket[p] * heroRel;
+        if (p > 0 && v < out[p - 1]) v = out[p - 1];
+        out[p] = v;
+      }
+      return out;
+    }
+
     function node(i) {
       const cell = row.b[i], at = minutesFor(stat, centers[i]);
-      // Outside the bucket centers, scale smoothly along the endpoint rate; inside, blend bucket centers.
+      // Outside the bucket centers, scale smoothly along the endpoint bucket's rate; inside, blend bucket centers.
       const clock = lo === hi ? period : at;
-      const scale = cell ? (at > 0 ? clock / at : 1) : clock;
+      const scale = at > 0 ? clock / at : 1;
+      let moments = cell;
+      if (!moments) {
+        const poolCell = allRow.b[i];
+        if (!poolCell) return null;
+        const meanScale = allRow.all[0] > 0 ? poolCell[0] / allRow.all[0] : 0;
+        const sdScale = allRow.all[1] > 0 ? poolCell[1] / allRow.all[1] : 0;
+        moments = [row.all[0] * meanScale, row.all[1] * sdScale];
+      }
       return {
-        moments: cell || row.rate,
-        cuts: cuts && (cuts.b[i] || cuts.rate),
+        moments,
+        cuts: cuts ? (cuts.b[i] || fallbackCutoffs(i)) : undefined,
         scale: perMinute ? scale / period : scale,
       };
     }
 
     const left = node(lo), right = lo === hi ? left : node(hi);
+    if (!left || !right) return null;
     const blend = (a, b) => a * left.scale * (1 - mix) + b * right.scale * mix;
+    const hasCuts = Boolean(cuts && left.cuts && right.cuts);
     return {
       mean: blend(left.moments[0], right.moments[0]),
       sd: blend(left.moments[1], right.moments[1]),
-      cutoffs: cuts ? left.cuts.map((v, i) => blend(v, right.cuts[i])) : undefined,
+      cutoffs: hasCuts ? left.cuts.map((v, i) => blend(v, right.cuts[i])) : undefined,
       knownHero,
       fallback: !row.b[lo] || !row.b[hi],
       counts: lo === hi ? [row.n[lo]] : [row.n[lo], row.n[hi]],
       rateRows: row.n.reduce((sum, n) => sum + n, 0),
+      ...(versionMismatch ? { versionMismatch: true } : {}),
     };
   }
 
@@ -163,6 +210,15 @@
     const flatPicks = awardPicks(out, mi.winning_team, "flatScore");
     const lengthPicks = awardPicks(out, mi.winning_team, "score");
     return { players: out, picks: flatPicks, flatPicks, lengthPicks };
+  }
+
+  // Canonical Valve-tab lobby ordering: flat all-length award score, highest first.
+  // Both the MVP Valve tab and the Summary lobby-place card call this shared path so places never disagree.
+  function rankValve(players) {
+    return players
+      .slice()
+      .sort((a, b) => b.flatScore - a.flatScore)
+      .map((player, index) => ({ ...player, place: index + 1 }));
   }
 
   function awardPicks(out, win, key) {
@@ -275,7 +331,7 @@
   }
   function laneScore(p, norms, T) { return dot(earlyZ(p, norms, T === undefined ? 540 : T), W_VALVE); }
 
-  const api = { expected, lengthLabel, W_VALVE, SNAP_TIMES, gradedHero, statValues, scoreMatch, tableHealth, snapAt, timeDead, values, interp,
+  const api = { expected, lengthLabel, percentileVersionMismatch, warnPercentileMismatch, rankValve, W_VALVE, SNAP_TIMES, gradedHero, statValues, scoreMatch, tableHealth, snapAt, timeDead, values, interp,
     earlyZ, lateZ, dot, earlyTime, phaseScores, laneScore };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (typeof window !== "undefined") window.PM_SCORE = api;

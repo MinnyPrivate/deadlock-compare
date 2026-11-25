@@ -5,22 +5,29 @@
   const scoring = typeof module !== "undefined" ? require("../scoring.js") : window.PM_SCORE;
   let loading;
 
+  function versionMismatch(customTable = table) {
+    return scoring.percentileVersionMismatch ? scoring.percentileVersionMismatch(customTable) : false;
+  }
+
   function load() {
     if (!loading) {
       loading = fetch("data/hero_percentiles.json").then(response => {
         if (!response.ok) throw new Error("Could not load hero percentiles.");
         return response.json();
-      }).then(data => { table = data; }).catch(() => { loading = null; });
+      }).then(data => {
+        table = data;
+        if (scoring.warnPercentileMismatch) scoring.warnPercentileMismatch(table);
+      }).catch(() => { loading = null; });
     }
     return loading;
   }
 
-  function bounds(heroId, stat, value, durationS) {
-    if (!Number.isFinite(value) || !table) return null;
-    const ref = scoring.expected(heroId, stat, durationS, table);
+  function bounds(heroId, stat, value, durationS, customTable = table) {
+    if (!Number.isFinite(value) || !customTable) return null;
+    const ref = scoring.expected(heroId, stat, durationS, customTable);
     if (!ref?.knownHero || !ref.cutoffs) return null;
     const { cutoffs } = ref;
-    // Scaling per-minute cutoffs back to totals can add floating-point noise to ties.
+    // Scaling cutoffs across game lengths can add floating-point noise to ties.
     const epsilon = Math.max(1, Math.abs(value)) * 1e-10;
     // Cutoffs are nearest ranks. A repeated cutoff can lie anywhere inside a tie.
     // Use the midpoint for the percentile estimate and the strict tails for claims.
@@ -37,10 +44,10 @@
     return { pct: Math.min(99, Math.max(1, estimate)), p50: cutoffs[49] };
   }
 
-  function pct(heroId, stat, value, durationS) {
-    return percentile(bounds(heroId, stat, value, durationS));
+  function pct(heroId, stat, value, durationS, customTable = table) {
+    return percentile(bounds(heroId, stat, value, durationS, customTable));
   }
-  const api = { pct, percentile, bounds, load };
+  const api = { pct, percentile, bounds, load, versionMismatch };
   if (typeof module !== "undefined") module.exports = api;
   if (typeof window !== "undefined") window.SummaryPercentiles = api;
 })();
