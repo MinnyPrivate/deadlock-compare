@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'none'">
+  <title>Card lab</title>
+  <link rel="stylesheet" href="card/card.css">
+  <link rel="stylesheet" href="card/card-lab.css">
+  <script src="card/art.js" defer></script>
+  <script src="card/card.js" defer></script>
+  <script src="card/card-lab.js" defer></script>
+</head>
+<body>
+  <header class="lab-head">
+    <h1>Postmortem card lab</h1>
+    <p>One card, five rarities, six suits. The suit sets the ink and the pip; the rarity sets the frame and the paper. Hover any card to tilt it.</p>
+    <nav>
+      <button data-toggle="gray">Grayscale</button>
+      <button data-toggle="hover">Force hover</button>
+      <button data-deal>Deal the hand</button>
+    </nav>
+  </header>
+  <main id="lab"></main>
+</body>
+</html>
