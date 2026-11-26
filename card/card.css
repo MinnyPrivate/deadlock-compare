@@ -65,11 +65,6 @@
     url('../assets/card/grain-dark.png'),
     radial-gradient(120% 90% at 50% 40%, transparent 55%, rgba(60, 40, 20, .16) 100%);
   background-size: 16em 16em, 100% 100%;
-  box-shadow:
-    0 0 0 .06em rgba(0, 0, 0, .35),
-    0 .15em .3em rgba(0, 0, 0, .35),
-    0 1.2em 2em -1em rgba(0, 0, 0, .7);
-  transition: box-shadow .45s;
 }
 .r-mythical .pm-face,
 .pm-back .pm-face {
@@ -77,13 +72,30 @@
     url('../assets/card/grain-light.png'),
     radial-gradient(120% 90% at 50% 40%, transparent 50%, rgba(0, 0, 0, .45) 100%);
 }
-.pm-card.is-live .pm-face,
-.pm-card.is-hover .pm-face {
+/* Shadows sit on the card, not on the tilting face, so a pointer move never
+   repaints a blurred shadow. The lifted shadow is a second layer that fades in. */
+.pm-card::before,
+.pm-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 1.15em;
+  pointer-events: none;
+}
+.pm-card::before {
   box-shadow:
     0 0 0 .06em rgba(0, 0, 0, .35),
-    0 .3em .6em rgba(0, 0, 0, .35),
-    0 2.4em 3.2em -1.4em rgba(0, 0, 0, .85);
+    0 .15em .3em rgba(0, 0, 0, .35),
+    0 1.2em 2em -1em rgba(0, 0, 0, .7);
 }
+.pm-card::after {
+  opacity: 0;
+  transform: translateY(.6em) scale(.98);
+  box-shadow: 0 2.2em 3em -1.2em rgba(0, 0, 0, .85);
+  transition: opacity .35s;
+}
+.pm-card.is-live::after,
+.pm-card.is-hover::after { opacity: 1; }
 
 /* ---------- engraving ---------- */
 .pm-engr, .pm-portrait, .pm-dmg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
@@ -148,7 +160,7 @@
 .pm-head {
   position: absolute;
   left: 0; right: 0;
-  top: 2.95em;
+  top: 3.12em;
   text-align: center;
   font: 700 .72em/1 'VALVE Pulp', sans-serif;
   letter-spacing: .24em;
@@ -174,7 +186,7 @@
 .pm-stat {
   position: absolute;
   left: 0; right: 0;
-  top: 4.1em;
+  top: 4.2em;
   text-align: center;
 }
 .pm-num {
@@ -193,9 +205,9 @@
 }
 
 /* colour-shifting ink (Legendary and up): oxblood that turns toward black as the card tilts */
-.r-legendary { --ovi: color-mix(in oklab, var(--oxblood) calc(100% - var(--shift, .35) * 100%), #2a0d0b); }
+.r-legendary :is(.pm-num, .pm-rank) { --ovi: color-mix(in oklab, var(--oxblood) calc(100% - var(--shift, .35) * 100%), #2a0d0b); }
 .r-legendary .pm-num { color: var(--ovi); }
-.r-mythical { --ovi: color-mix(in oklab, #efe3c8 calc(100% - var(--shift, .3) * 100%), #c4a467); }
+.r-mythical :is(.pm-num, .pm-rank) { --ovi: color-mix(in oklab, #efe3c8 calc(100% - var(--shift, .3) * 100%), #c4a467); }
 .r-mythical .pm-num { color: var(--ovi); }
 
 .pm-foot {
@@ -239,9 +251,9 @@
 .pm-seal { width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 .07em 0 rgba(0, 0, 0, .45)) drop-shadow(0 -.04em 0 rgba(255, 240, 220, .25)); }
 .s-rim { fill: var(--oxblood); }
 .s-line { fill: none; stroke: var(--bone-hi); stroke-width: .9; opacity: .75; }
-.s-text { font: 700 6.6px 'VALVE Pulp', sans-serif; letter-spacing: 1.05px; fill: var(--bone-hi); }
+.s-text { font: 700 6.2px 'VALVE Pulp', sans-serif; fill: var(--bone-hi); }
 .s-suit { color: var(--bone-hi); }
-.s-rank { font: 800 17px 'PM Bodoni', serif; fill: var(--bone-hi); }
+.s-rank { font: 800 15px 'PM Bodoni', serif; font-variation-settings: 'opsz' 11; fill: var(--bone-hi); }
 .r-mythical .s-rim { fill: #8e2a22; }
 .r-mythical .s-line { stroke: var(--brass); opacity: 1; }
 

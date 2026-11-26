@@ -224,7 +224,7 @@
 
     // Wave band behind the stat number: Rare up.
     if (t >= 1) {
-      el('path', { d: waveBand(30, 220, 61, t >= 3 ? 15 : 13, t >= 2 ? 2.5 : 2, t >= 3 ? 9 : 7), class: 'e-band' }, g);
+      el('path', { d: waveBand(50, 200, 61, t >= 3 ? 15 : 13, t >= 2 ? 2.5 : 2, t >= 3 ? 9 : 7), class: 'e-band' }, g);
     }
 
     // Frame.
@@ -251,7 +251,7 @@
       el('rect', { x: 7.5, y: 7.5, width: W - 15, height: H - 15, rx: 7, class: 'e-rule e-rule--outer' }, g);
       el('rect', { x: 19.5, y: 19.5, width: W - 39, height: H - 39, rx: 4, class: 'e-rule e-rule--inner' }, g);
       // microtext rule just inside the border
-      const mp = el('path', { id: 'pm-micro-' + r, d: `M24 23.2H${W - 24}`, fill: 'none' }, g);
+      const mp = el('path', { id: 'pm-micro-' + r, d: `M24 22.6H${W - 24}`, fill: 'none' }, g);
       const tx = el('text', { class: 'e-micro' }, g);
       const tp = el('textPath', { href: '#pm-micro-' + r }, tx);
       tp.textContent = 'POSTMORTEM · CERTIFIED TRUE RECORD OF THE MATCH · '.repeat(3);
@@ -323,10 +323,11 @@
     el('circle', { r: 27, class: 's-line' }, s);
     el('path', { id: 'pm-seal-arc', d: 'M-33.5 0a33.5 33.5 0 1 1 67 0a33.5 33.5 0 1 1 -67 0', fill: 'none' }, s);
     const tx = el('text', { class: 's-text' }, s);
-    const tp = el('textPath', { href: '#pm-seal-arc', startOffset: '0' }, tx);
-    tp.textContent = 'CERTIFIED · POSTMORTEM · CERTIFIED · POSTMORTEM ·';
-    el('use', { href: '#pm-suit-' + suit, x: -12, y: -18, width: 24, height: 24, class: 's-suit' }, s);
-    const rk = el('text', { y: 19, class: 's-rank', 'text-anchor': 'middle' }, s);
+    // textLength pins the words to exactly one lap, so the seam never overlaps
+    const tp = el('textPath', { href: '#pm-seal-arc', startOffset: '0', textLength: '208', lengthAdjust: 'spacing' }, tx);
+    tp.textContent = 'CERTIFIED · POSTMORTEM · CERTIFIED · POSTMORTEM · ';
+    el('use', { href: '#pm-suit-' + suit, x: -10.5, y: -21, width: 21, height: 21, class: 's-suit' }, s);
+    const rk = el('text', { y: 18.5, class: 's-rank', 'text-anchor': 'middle' }, s);
     rk.textContent = rank;
     return s;
   }
@@ -551,6 +552,9 @@
   function enableTilt(root) {
     const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     let active = null, raf = 0, px = 0, py = 0;
+    // Live path writes only to leaf elements and to the tilt layer's own transform,
+    // so a pointer move never restyles the engraving under the card.
+    let parts = null;
     function apply() {
       raf = 0;
       if (!active) return;
@@ -558,18 +562,20 @@
       const x = Math.min(1, Math.max(0, (px - b.left) / b.width));
       const y = Math.min(1, Math.max(0, (py - b.top) / b.height));
       const k = reduce ? 0 : 1;
-      active.style.setProperty('--rx', f1((0.5 - y) * 14 * k) + 'deg');
-      active.style.setProperty('--ry', f1((x - 0.5) * 18 * k) + 'deg');
-      active.style.setProperty('--lx', f1(x * 100) + '%');
-      active.style.setProperty('--ly', f1(y * 100) + '%');
-      active.style.setProperty('--shift', f1(x * 0.6 + y * 0.4));
+      parts.tilt.style.transform = `rotateX(${f1((0.5 - y) * 14 * k)}deg) rotateY(${f1((x - 0.5) * 18 * k)}deg) translateZ(1.6em)`;
+      const lx = f1(x * 100) + '%', ly = f1(y * 100) + '%', sh = f1(x * 0.6 + y * 0.4);
+      for (const l of parts.light) { l.style.setProperty('--lx', lx); l.style.setProperty('--ly', ly); }
+      for (const n of parts.ink) n.style.setProperty('--shift', sh);
     }
     root.addEventListener('pointermove', e => {
       const c = e.target.closest && e.target.closest('.pm-card');
       if (c !== active) {
         if (active) leave(active);
         active = c;
-        if (c) c.classList.add('is-live');
+        if (c) {
+          c.classList.add('is-live');
+          parts = { tilt: c.querySelector('.pm-tilt'), light: c.querySelectorAll('.pm-light'), ink: c.querySelectorAll('.pm-num, .pm-rank') };
+        }
       }
       px = e.clientX; py = e.clientY;
       if (active && !raf) raf = requestAnimationFrame(apply);
@@ -577,7 +583,12 @@
     root.addEventListener('pointerleave', () => { if (active) leave(active); active = null; });
     function leave(c) {
       c.classList.remove('is-live');
-      for (const p of ['--rx', '--ry', '--lx', '--ly', '--shift']) c.style.removeProperty(p);
+      if (parts) {
+        parts.tilt.style.removeProperty('transform');
+        for (const l of parts.light) { l.style.removeProperty('--lx'); l.style.removeProperty('--ly'); }
+        for (const n of parts.ink) n.style.removeProperty('--shift');
+      }
+      parts = null;
     }
   }
 
