@@ -694,6 +694,7 @@ function clearMatch(awaitingValve = false) {
   renderTabs();
   document.body.classList.remove("tabSummary");
   window.Summary?.hideTip();
+  window.Summary?.hideHand();
 }
 
 // Viewer hints from the game (friendly team, local hero). They come in the query, or in the #hash: the mod preloads the
@@ -1301,7 +1302,10 @@ function renderAll() {
   document.body.classList.toggle("tabPick", activeTab !== "graphs");
   $("summaryView").hidden = !summary;
   $("summaryBackdrop").hidden = EMBED || !summary;
-  if (!summary) window.Summary?.hideTip();
+  if (!summary) {
+    window.Summary?.hideTip();
+    window.Summary?.hideHand();
+  }
   const lobbyPending = state.previewSlot !== null && !isStreetBrawl() && state.players.some(p => !p.badge);
   const lb = lobbyPending ? 0 : avgBadge(state.players.map(p => p.badge));
   $("lobbyRank").innerHTML = lb ? `<span class="lbl">Lobby</span>${rankHtml(lb, "", true)}`

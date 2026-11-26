@@ -163,7 +163,14 @@
 
   <main id="summaryView" aria-label="Match summary" hidden>
     <section id="highlightsHand" class="hl-hand" aria-labelledby="highlightsHandTitle" hidden>
-      <h2 id="highlightsHandTitle"></h2>
+      <div class="hl-hand-heading">
+        <h2 id="highlightsHandTitle"></h2>
+        <div id="highlightsHandControls" class="hl-hand-controls" hidden>
+          <button type="button" id="highlightsDealSkip">Skip</button>
+          <button type="button" id="highlightsDealReplay">Replay</button>
+          <button type="button" id="highlightsDealSound" aria-label="Deal sound" aria-pressed="false">Sound off</button>
+        </div>
+      </div>
       <p id="highlightsHandStatus" role="status"></p>
       <div id="highlightsHandCards" class="hl-hand-cards"></div>
     </section>
@@ -198,6 +205,13 @@
   <div id="perf" class="perf" hidden></div>
 </div>
 
+<dialog id="highlightsCardDialog" class="hl-card-dialog">
+  <div class="hl-card-dialog-card">
+    <div id="highlightsCardDetail" aria-hidden="true" inert></div>
+    <button type="button" id="highlightsCardClose" class="hl-deal-activate" aria-label="Return to hand" title="Return to hand" autofocus></button>
+  </div>
+</dialog>
+
 <script src="session-storage.js"></script>
 <script src="heroes.js"></script>
 <script src="gamedata.js"></script>
@@ -223,6 +237,7 @@
 <script src="card/art.js"></script>
 <script src="card/card.js"></script>
 <script src="summary/hand.js"></script>
+<script src="deal-animation.js"></script>
 <script src="summary/summary.js"></script>
 <script src="dust.js"></script>
 </body>

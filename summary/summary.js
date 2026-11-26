@@ -6,7 +6,8 @@
 window.Summary = (() => {
   const view = $("summaryView"), tooltip = $("summaryTip");
   const layout = view.querySelector(".hl-layout");
-  const handView = $("highlightsHand"), handCards = $("highlightsHandCards"), handStatus = $("highlightsHandStatus");
+  const handView = $("highlightsHand"), handStatus = $("highlightsHandStatus");
+  const handAnimation = EMBED ? null : window.DealAnimation.create();
   const STATS = [
     { key: "kills", index: 0, label: "Kills", read: s => s.kills },
     { key: "deaths", index: 2, label: "Deaths", read: s => s.deaths, low: true },
@@ -22,7 +23,7 @@ window.Summary = (() => {
   const lookups = new Map();
   let names = new Map(), art = {}, match, rows, deaths, percentiles, shownTip, tipTimer;
   let enteredMatch, enterStart = 0, renderedBackdrop, current, previewPlan;
-  let handPlayer = null;
+  let handRequest = null;
 
   const preview = () => state.previewSlot !== null;
   const name = p => names.get(Number(p.raw.account_id)) || p.hero;
@@ -719,26 +720,28 @@ window.Summary = (() => {
       </div></section>`;
   }
 
+  function hideHand() {
+    if (handView.hidden) return;
+    handRequest = null;
+    handView.hidden = true;
+    handAnimation?.clear();
+  }
+
   async function renderHand(player) {
-    if (EMBED || state.awaitingValve) {
-      handPlayer = null;
-      handView.hidden = true;
-      handCards.replaceChildren();
-      return;
-    }
+    if (!handAnimation || state.awaitingValve) return hideHand();
     $("highlightsHandTitle").textContent = isMe(player) ? "Your dealt hand" : `${player.hero}'s dealt hand`;
-    if (handPlayer === player) return;
-    handPlayer = player;
     const source = state.match;
-    const stillViewing = () => state.match === source && handPlayer === player;
+    if (handRequest?.player === player && handRequest.source === source) return;
+    const request = handRequest = { source, player };
+    const stillViewing = () => state.match === source && handRequest === request;
+    handAnimation.clear();
     handView.hidden = false;
-    handCards.replaceChildren();
     handStatus.textContent = "Dealing cards…";
     try {
       const hand = await window.HighlightsHand.deal(source, player);
       if (!stillViewing()) return;
       if (hand.status === "dealt") {
-        handCards.append(...hand.cards.map(card => window.PMCard.render(window.HighlightsHand.cardInput(card, player))));
+        handAnimation.show(`${source.match_id}/${player.slot}`, hand.cards.map(card => window.HighlightsHand.cardInput(card, player)));
         handStatus.textContent = "";
       } else {
         handStatus.textContent = hand.message;
@@ -975,5 +978,5 @@ window.Summary = (() => {
     };
   }
 
-  return { selected, select, render, name, hideTip, dismissTip, restoreFocus, inspectCards };
+  return { selected, select, render, name, hideTip, hideHand, dismissTip, restoreFocus, inspectCards };
 })();

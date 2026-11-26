@@ -19,6 +19,7 @@
 !/app.js
 !/companion-download.js
 !/companion-preview.js
+!/deal-animation.js
 !/dust.js
 !/gamedata.js
 !/graph-markers.js

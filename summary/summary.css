@@ -61,10 +61,65 @@ body.standalone #summaryView:has(.hl-hand:not([hidden])) {
   padding-inline: 6px;
 }
 .hl-hand { margin-bottom: 24px; padding-block: 6px 8px; }
-#summaryView .hl-hand h2 { margin-bottom: 12px; font: 600 26px/1.15 var(--sans); }
+.hl-hand-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 18px; margin-bottom: 12px; }
+#summaryView .hl-hand h2 { font: 600 26px/1.15 var(--sans); }
+.hl-hand-controls { display: flex; gap: 8px; }
+.hl-hand-controls[hidden] { display: none; }
+.hl-hand-controls button {
+  min-height: 36px;
+  min-width: 68px;
+  padding: 5px 10px;
+  border: 1px solid rgba(255, 239, 215, .35);
+  border-radius: 4px;
+  background: #1d1a16;
+  color: var(--offWhite);
+  font: 600 15px/1 var(--sans);
+  cursor: pointer;
+}
+.hl-hand-controls button:hover, .hl-hand-controls button[aria-pressed="true"] { background: #3a3124; }
+#highlightsDealSound { min-width: 88px; }
 .hl-hand p:empty, .hl-hand-cards:empty { display: none; }
-.hl-hand-cards { display: flex; flex-wrap: wrap; gap: 16px; }
+.hl-hand-cards { display: flex; flex-wrap: wrap; gap: 16px; padding: 12px 4px 24px; }
+.hl-deal-slot, .hl-deal-visual, .hl-card-dialog-card { transition-property: none; }
+.hl-deal-slot { position: relative; }
+.hl-deal-visual { display: grid; }
+.hl-deal-side { grid-area: 1 / 1; display: grid; }
+.hl-deal-slot[data-face="back"] .hl-deal-front,
+.hl-deal-slot[data-face="front"] .hl-deal-back,
+.hl-deal-slot[data-lifted] .hl-deal-visual { visibility: hidden; }
+.hl-deal-activate {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  cursor: zoom-in;
+}
+.hl-deal-activate:focus-visible { outline: 2px solid var(--offWhite); outline-offset: 3px; }
+.hl-card-dialog {
+  position: fixed;
+  inset: 50% auto auto 50%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  transform: translate(-50%, -50%);
+  overflow: visible;
+  background: transparent;
+  color: inherit;
+}
+.hl-card-dialog::backdrop { background: rgba(9, 8, 7, .8); }
+.hl-card-dialog-card { position: relative; display: grid; }
+#highlightsCardDetail { display: grid; }
+.hl-card-dialog .hl-deal-activate { cursor: zoom-out; }
+
+/* Size the current card component here. The deal motion measures its rendered bounds. */
 .hl-hand-cards .pm-card { --w: 186px; }
+.hl-card-dialog .pm-card { --w: 354px; }
 .hl-hand:not([hidden]) + .hl-layout { position: relative; height: 854px; margin-bottom: 38px; }
 
 /* The match shell scales as a whole. Keep the hand readable at phone widths. */
@@ -75,7 +130,8 @@ body.standalone #summaryView:has(.hl-hand:not([hidden])) {
   }
   .hl-hand { zoom: calc(1 / var(--match-scale, 1)); padding-inline: 4px; }
   .hl-hand-cards { gap: 12px; }
-  .hl-hand-cards .pm-card { --w: min(186px, calc((100vw - 46px) / 2)); }
+  .hl-hand-controls button { min-height: 42px; }
+  .hl-hand-cards .pm-card { --w: min(186px, calc((100vw - 56px) / 2)); }
   body.standalone.tabSummary:has(.hl-hand:not([hidden])) .companionControls { top: 22px; bottom: auto; }
 }
 

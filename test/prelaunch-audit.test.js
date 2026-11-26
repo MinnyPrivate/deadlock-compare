@@ -18,11 +18,13 @@ const profile = require("./profile_fixture.json");
 const routes = new Map();
 const staticFiles = new Map();
 const mime = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json",
-  ".png": "image/png", ".webp": "image/webp", ".svg": "image/svg+xml", ".woff2": "font/woff2" };
+  ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp", ".svg": "image/svg+xml", ".woff2": "font/woff2" };
 const json = (res, body, status = 200) => {
   res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" }).end(JSON.stringify(body));
 };
 let browser, socket, server, origin, send, browserExit, userData, debugPort, playwrightContext, playwrightPage;
+let protocolListener;
+const protocolEvents = ["Page.screencastFrame", "Log.entryAdded", "Runtime.consoleAPICalled", "Runtime.exceptionThrown"];
 const isFixtureRoute = pathname => pathname.startsWith("/api/v1/companion/") || pathname.startsWith("/__fixture/");
 
 function staticFile(pathname) {
@@ -46,6 +48,7 @@ async function until(read, label, ms = playwrightContext ? 12_000 : 4000) {
 }
 
 before(async () => {
+  const policy = /^\/index\.html\r?\n  Content-Security-Policy: (.+)$/m.exec(await readFile(join(site, "_headers"), "utf8"))[1];
   server = createServer(async (req, res) => {
     const url = new URL(req.url, "http://127.0.0.1");
     if (isFixtureRoute(url.pathname)) {
@@ -54,7 +57,10 @@ before(async () => {
       return route ? route(res) : json(res, [], 404);
     }
     const file = await staticFile(url.pathname);
-    if (file) res.writeHead(200, { "Content-Type": file.contentType }).end(file.body);
+    if (file) {
+      if (url.searchParams.has("dealQa")) res.setHeader("Content-Security-Policy", policy);
+      res.writeHead(200, { "Content-Type": file.contentType }).end(file.body);
+    }
     else res.writeHead(404).end();
   });
   server.listen(0, "127.0.0.1");
@@ -77,6 +83,7 @@ async function startBrowser() {
     return;
   }
   browser = spawn(chrome, ["--headless=new", "--no-first-run", "--disable-background-networking", "--disable-extensions",
+    ...(process.env.PM_AUDIT_CHROME_NO_SANDBOX === "1" ? ["--no-sandbox", "--disable-crash-reporter", "--disable-breakpad"] : []),
     "--remote-debugging-port=0", `--user-data-dir=${userData}`, "about:blank"], { stdio: "ignore", windowsHide: true });
   browserExit = once(browser, "exit").catch(() => {});
   await once(browser, "spawn");
@@ -101,6 +108,7 @@ async function connectPage(targetId, portFile) {
   const pending = new Map();
   connection.addEventListener("message", ({ data }) => {
     const message = JSON.parse(data);
+    if (message.method) protocolListener?.(message.method, message.params);
     const callback = pending.get(message.id);
     if (!callback) return;
     pending.delete(message.id);
@@ -117,6 +125,7 @@ async function connectPage(targetId, portFile) {
 async function connectPlaywrightPage(page) {
   playwrightPage = page;
   const session = await playwrightContext.newCDPSession(page);
+  for (const event of protocolEvents) session.on(event, params => protocolListener?.(event, params));
   send = (method, params) => session.send(method, params);
   await initializePage();
 }
@@ -169,6 +178,12 @@ after(async () => {
   await stopBrowser();
   server?.closeAllConnections();
   await new Promise(done => server ? server.close(done) : done());
+});
+
+require("./support/deal-animation.cjs")({
+  site, routes, json, page, navigate, waitPage, loaded,
+  send: (...args) => send(...args),
+  listen: listener => { protocolListener = listener; },
 });
 
 async function page(expression) {
@@ -603,6 +618,7 @@ test("Highlights shows dealMatch's hand in order for the viewed player", async (
     assert.equal(expected.status, "dealt");
     await waitPage(`Summary.selected().slot === ${player.player_slot} &&
       !!document.querySelector('#highlightsHandCards [data-card-id]')`);
+    await page("if (!document.querySelector('#highlightsDealSkip').hidden) document.querySelector('#highlightsDealSkip').click()");
     assert.deepEqual(await page(`[...document.querySelectorAll('#highlightsHandCards [data-card-id]')]
       .map(card => [card.dataset.cardId, ...['title', 'num:not(.pm-num--ghost)', 'label', 'serial', 'rank']
         .map(part => card.querySelector('.pm-' + part).textContent)])`),
@@ -983,6 +999,8 @@ test("audit match corpus: all 20 matches and Monday's K/D reproduction", {
   skip: !process.env.PM_AUDIT_MATCHES && "Set PM_AUDIT_MATCHES and PM_AUDIT_MONDAY to the saved audit fixtures",
   timeout: 480_000,
 }, async t => {
+  await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
+  t.after(() => send("Emulation.setEmulatedMedia", { features: [] }));
   const count = { portraits: 0, pairs: 0, graphs: 0, mvpRows: 0 };
   for (const id of audited) {
     const data = JSON.parse(await readFile(join(process.env.PM_AUDIT_MATCHES, `${id}.json`), "utf8"));
