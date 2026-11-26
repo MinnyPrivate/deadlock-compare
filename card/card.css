@@ -88,86 +88,98 @@
 /* ---------- engraving ---------- */
 .pm-engr, .pm-portrait, .pm-dmg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .pm-engr * { vector-effect: none; }
+/* Engraving lives in shared <symbol>s, so rarity styling must reach it through
+   inherited custom properties (selectors like .r-epic .e-x do not cross <use>). */
+.pm-card {
+  --e-lathe-a: var(--ink2); --e-lathe-b: var(--ink); --e-lathe-op: .8;
+  --e-ground: none; --e-hatch-ink: var(--ink);
+  --e-ring: var(--ink2); --e-field: var(--ink2); --e-field-op: .28;
+  --e-band-fill: var(--ink2); --e-sil: var(--lamp); --e-eyes: var(--bone-hi);
+}
+.pm-card.r-legendary { --e-lathe-a: var(--bone-hi); --e-lathe-b: var(--bone-hi); --e-lathe-op: .78; }
+.pm-card.r-mythical {
+  --e-lathe-a: var(--ink); --e-lathe-b: var(--ink); --e-lathe-op: .62;
+  --e-band-fill: #6a1b17; --e-ground: #d8caae; --e-hatch-ink: #3a2418;
+  --e-ring: var(--brass); --e-field: var(--ink); --e-field-op: .15; --e-sil: #0c0a08;
+}
 .e-rule { fill: none; stroke: var(--frame); }
 .e-rule--outer { stroke-width: 1.1; }
 .e-rule--inner { stroke-width: .45; }
-.e-rule--oval { stroke-width: 1.1; stroke: var(--frame); }
-.e-rule--oval2 { stroke-width: .4; stroke: var(--frame); }
-.e-rule--ring { stroke-width: .5; }
+.e-rule--heavy { stroke-width: 3.4; }
+.e-rule--oval { stroke-width: 1.1; }
+.e-rule--oval2 { stroke-width: .4; }
+.e-rule--ring { stroke-width: .5; stroke: var(--e-ring); }
 .e-band { fill: none; stroke: var(--ink2); stroke-width: .3; opacity: .55; }
-.e-hatch path { stroke: var(--ink); opacity: var(--hatch); fill: none; }
-.e-ring { fill: none; stroke: var(--ink2); stroke-width: .28; }
-.e-lathe { fill: none; stroke-width: .3; }
-.e-lathe--a { stroke: var(--ink2); }
-.e-lathe--b { stroke: var(--ink); opacity: .8; }
-.e-field { fill: none; stroke: var(--ink2); stroke-width: .22; opacity: .28; }
+.e-bandfill { fill: var(--e-band-fill); }
+.e-ground { fill: var(--e-ground); }
+.e-hatch path { stroke: var(--e-hatch-ink); opacity: var(--hatch); fill: none; }
+.e-ring { fill: none; stroke: var(--e-ring); stroke-width: .28; }
+.e-lathe { fill: none; stroke-width: .3; opacity: var(--e-lathe-op); }
+.e-lathe--a { stroke: var(--e-lathe-a); }
+.e-lathe--b { stroke: var(--e-lathe-b); }
+.e-field { fill: none; stroke: var(--e-field); stroke-width: .22; opacity: var(--e-field-op); }
 .e-boss { fill: var(--paper); stroke: var(--frame); stroke-width: .7; }
-.e-rose { fill: none; stroke: var(--ink2); stroke-width: .25; }
+.e-rose { fill: none; stroke: var(--e-ring); stroke-width: .25; }
 .e-micro { font: 700 2.05px 'VALVE Pulp', sans-serif; letter-spacing: .34px; fill: var(--ink); opacity: .75; }
-
-.r-mythical .e-lathe--a { stroke: var(--ink2); opacity: 1; }
-.r-mythical .e-lathe--b { stroke: var(--ink); opacity: .7; }
-.r-mythical .e-field { stroke: var(--ink); opacity: .16; }
-.r-mythical .e-ring { stroke: var(--brass); }
-.r-mythical .e-rose { stroke: var(--brass); }
-.r-mythical .e-rule--ring { stroke: var(--brass); }
-
-.pm-sil { fill: var(--lamp); }
-.r-mythical .pm-sil { fill: #0c0a08; }
-.pm-eyes { fill: var(--bone-hi); }
-.r-mythical .pm-eyes { fill: var(--bone-hi); }
+.pm-sil { fill: var(--e-sil); }
+.pm-eyes { fill: var(--e-eyes); }
 
 /* ---------- type ---------- */
 .pm-idx {
   position: absolute;
-  left: 2.55em;
-  top: 2.45em;
-  width: 2.8em;
+  left: 2.35em;
+  top: 2.4em;
+  width: 2.6em;
   display: flex;
   flex-direction: column;
   align-items: center;
   color: var(--frame);
 }
-.pm-idx--br { left: auto; top: auto; right: 2.55em; bottom: 2.45em; transform: rotate(180deg); }
+.pm-idx--br { left: auto; top: auto; right: 2.35em; bottom: 2.4em; transform: rotate(180deg); }
 .pm-rank {
-  font: 800 2.7em/0.86 'PM Bodoni', serif;
-  font-variation-settings: 'opsz' 96;
+  font: 800 2.3em/0.86 'PM Bodoni', serif;
+  font-variation-settings: 'opsz' 11;
   letter-spacing: -.02em;
 }
-.pm-rank.is-ten { letter-spacing: -.08em; font-size: 2.25em; margin-left: -.08em; }
-.pm-suit { width: 1.45em; height: 1.45em; margin-top: .35em; color: var(--frame); }
+.pm-rank.is-ten { letter-spacing: -.06em; font-size: 1.95em; margin-left: -.06em; }
+.pm-suit { width: 1.3em; height: 1.3em; margin-top: .3em; color: var(--frame); }
 .r-legendary .pm-rank, .r-mythical .pm-rank { color: var(--ovi); }
 
 .pm-head {
   position: absolute;
   left: 0; right: 0;
-  top: 2.75em;
+  top: 2.95em;
   text-align: center;
-  font: 700 .74em/1 'VALVE Pulp', sans-serif;
+  font: 700 .72em/1 'VALVE Pulp', sans-serif;
   letter-spacing: .24em;
   text-transform: uppercase;
   color: var(--frame);
 }
 .pm-head > * + *::before { content: '·'; margin: 0 .5em 0 .3em; }
-.pm-serial-corner {
+.pm-serial {
   position: absolute;
-  right: 2.6em;
-  top: 2.7em;
-  font: 600 .95em/1 'PM Bodoni', serif;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: .02em;
+  right: 2.45em;
+  top: 2.55em;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: .15em;
   color: var(--ink2);
 }
+.pm-serial--bl { right: auto; top: auto; left: 2.45em; bottom: 2.55em; transform: rotate(180deg); }
+.pm-serial__no { font: 700 .92em/1 'PM Bodoni', serif; font-variation-settings: 'opsz' 14; letter-spacing: .02em; }
+.pm-serial__of { font: 700 .5em/1 'VALVE Pulp', sans-serif; letter-spacing: .16em; text-transform: uppercase; opacity: .85; }
+.r-mythical .pm-serial { color: var(--brass); }
 
 .pm-stat {
   position: absolute;
   left: 0; right: 0;
-  top: 3.7em;
+  top: 4.1em;
   text-align: center;
 }
 .pm-num {
-  font: 800 4.5em/1 'PM Bodoni', serif;
-  font-variation-settings: 'opsz' 96;
+  font: 800 3.95em/1 'PM Bodoni', serif;
+  font-variation-settings: 'opsz' 11;
   font-variant-numeric: lining-nums;
   letter-spacing: -.01em;
   color: var(--ink);
@@ -188,8 +200,8 @@
 
 .pm-foot {
   position: absolute;
-  left: 4.6em; right: 4.6em;
-  top: 27.75em;
+  left: 5.4em; right: 5.4em;
+  top: 27.7em;
   text-align: center;
 }
 .pm-title {
@@ -201,7 +213,7 @@
 }
 .pm-line {
   margin-top: .45em;
-  font: 600 1.06em/1.1 'PM Bodoni', serif;
+  font: 600 1em/1.1 'PM Bodoni', serif;
   font-variation-settings: 'opsz' 14;
 }
 .pm-flavor {
@@ -213,6 +225,7 @@
   text-wrap: balance;
 }
 .r-common .pm-flavor { opacity: .78; }
+.r-mythical .pm-flavor { color: #c86a5b; }
 
 /* ---------- seal (Legendary up) ---------- */
 .pm-sealwrap {
@@ -251,15 +264,17 @@
 .b-field { fill: none; stroke: #e9dcc0; stroke-width: .22; opacity: .13; }
 .b-lathe { fill: none; stroke: var(--brass); stroke-width: .32; opacity: .9; }
 .b-rule { fill: none; stroke: var(--brass); stroke-width: .7; }
-.b-rose { fill: none; stroke: #e9dcc0; stroke-width: .28; opacity: .55; }
+.b-rose { fill: none; stroke: #e9dcc0; stroke-width: .28; opacity: .5; }
+.b-rose2 { fill: none; stroke: var(--oxblood); stroke-width: .5; opacity: .9; }
+.b-micro { font: 700 4.1px 'VALVE Pulp', sans-serif; letter-spacing: 1.15px; fill: var(--brass); opacity: .9; }
 .b-well { fill: #120f0c; stroke: var(--brass); stroke-width: .8; }
 .b-boss { fill: #16120f; stroke: var(--brass); stroke-width: .7; }
 .b-roseS { fill: none; stroke: var(--brass); stroke-width: .25; }
 .pm-coin {
   position: absolute;
   left: 50%; top: 50%;
-  width: 8.6em; height: 8.6em;
-  margin: -4.3em 0 0 -4.3em;
+  width: 10.2em; height: 10.2em;
+  margin: -5.1em 0 0 -5.1em;
   color: var(--brass);
 }
 .pm-backword {
@@ -277,23 +292,28 @@
 
 /* ---------- bad cards: the same card, damaged ---------- */
 .pm-dmg { pointer-events: none; }
-.d-scuff { fill: var(--paper-hi); opacity: .9; }
-.d-grime ellipse { fill: rgba(70, 48, 26, .05); }
-.d-crease-dk { stroke: rgba(40, 25, 12, .32); stroke-width: .7; fill: none; }
-.d-crease-lt { stroke: rgba(255, 250, 238, .7); stroke-width: .9; fill: none; }
-.d-stain { fill: none; stroke: rgba(110, 60, 30, .22); stroke-width: 2.2; }
-.d-stain--2 { stroke-width: .7; stroke: rgba(110, 60, 30, .3); }
+.d-scuff { fill: var(--paper-hi); opacity: .85; }
+.r-mythical .d-scuff { fill: #6b5f4f; }
+.d-crease-dk { stroke: rgba(40, 25, 12, .28); stroke-width: .6; fill: none; }
+.d-crease-lt { stroke: rgba(255, 250, 238, .65); stroke-width: .8; fill: none; }
+.r-mythical .d-crease-lt { stroke: rgba(255, 245, 225, .22); }
+.d-stain { fill: none; stroke: rgba(105, 58, 28, .2); stroke-width: 2.4; }
+.d-stain--2 { stroke-width: .6; stroke: rgba(105, 58, 28, .34); }
+.r-mythical .d-stain { stroke: rgba(200, 170, 120, .14); }
+.d-tear-fibre { fill: none; stroke: #f3ead6; stroke-width: 1.5; stroke-linejoin: round; opacity: .95; }
+.d-tear-shadow { fill: none; stroke: rgba(0, 0, 0, .35); stroke-width: 1.2; stroke-linejoin: round; }
+.r-mythical .d-tear-fibre { stroke: #cbbd9f; }
 .is-bad .pm-line { color: var(--oxblood); }
-.is-bad .pm-num { color: color-mix(in oklab, var(--ink) 85%, var(--paper)); }
-.pm-piece { box-shadow: none; }
+.r-mythical.is-bad .pm-line { color: #c86a5b; }
 .pm-tape {
   position: absolute;
   background:
-    linear-gradient(100deg, rgba(255, 255, 255, .22), rgba(255, 255, 255, 0) 40%),
-    rgba(226, 214, 180, .55);
-  box-shadow: 0 .05em .15em rgba(0, 0, 0, .18);
-  clip-path: polygon(0% 8%, 2% 0%, 4% 10%, 6% 0%, 8% 6%, 92% 0%, 94% 9%, 96% 2%, 98% 10%, 100% 4%, 100% 96%, 98% 88%, 96% 100%, 94% 92%, 92% 100%, 8% 94%, 6% 100%, 4% 90%, 2% 100%, 0% 92%);
-  mix-blend-mode: multiply;
+    linear-gradient(180deg, rgba(255, 255, 255, .34), rgba(255, 255, 255, .08) 28%, rgba(255, 255, 255, 0) 70%, rgba(255, 255, 255, .14)),
+    rgba(226, 210, 165, .62);
+  border-top: .05em solid rgba(120, 96, 50, .28);
+  border-bottom: .05em solid rgba(120, 96, 50, .28);
+  box-shadow: 0 .06em .14em rgba(0, 0, 0, .25);
+  clip-path: polygon(3% 0%, 97% 0%, 100% 12%, 97.5% 25%, 100% 38%, 97.5% 50%, 100% 63%, 97.5% 75%, 100% 88%, 97% 100%, 3% 100%, 0% 88%, 2.5% 75%, 0% 63%, 2.5% 50%, 0% 38%, 2.5% 25%, 0% 12%);
   pointer-events: none;
 }
 

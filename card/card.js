@@ -224,17 +224,28 @@
 
     // Wave band behind the stat number: Rare up.
     if (t >= 1) {
-      el('path', { d: waveBand(30, 220, 56, t >= 3 ? 15 : 13, t >= 2 ? 2.5 : 2, t >= 3 ? 9 : 7), class: 'e-band' }, g);
+      el('path', { d: waveBand(30, 220, 61, t >= 3 ? 15 : 13, t >= 2 ? 2.5 : 2, t >= 3 ? 9 : 7), class: 'e-band' }, g);
     }
 
     // Frame.
-    if (t <= 1) {
-      // Common and Rare: a plain double rule.
+    if (t === 0) {
+      // Common: a plain double rule in black.
       el('rect', { x: 9, y: 9, width: W - 18, height: H - 18, rx: 6, class: 'e-rule e-rule--outer' }, g);
       el('rect', { x: 13, y: 13, width: W - 26, height: H - 26, rx: 3.5, class: 'e-rule e-rule--inner' }, g);
+    } else if (t === 1) {
+      // Rare: a heavy oxblood rule with a hairline inside it.
+      el('rect', { x: 10.5, y: 10.5, width: W - 21, height: H - 21, rx: 5.5, class: 'e-rule e-rule--heavy' }, g);
+      el('rect', { x: 16, y: 16, width: W - 32, height: H - 32, rx: 3, class: 'e-rule e-rule--inner' }, g);
     } else {
       // Epic up: lathe-work ribbon between two rules, rosettes on the corners.
       const waves = t >= 3 ? 96 : 72;
+      if (t >= 3) {
+        // Legendary up: the border band is printed solid in the second ink, engraved through in bone
+        const o = 7.5, i = 19.5;
+        el('path', { d: `M${o + 7} ${o}H${W - o - 7}A7 7 0 0 1 ${W - o} ${o + 7}V${H - o - 7}A7 7 0 0 1 ${W - o - 7} ${H - o}H${o + 7}A7 7 0 0 1 ${o} ${H - o - 7}V${o + 7}A7 7 0 0 1 ${o + 7} ${o}Z` +
+          `M${i + 4} ${i}H${W - i - 4}A4 4 0 0 1 ${W - i} ${i + 4}V${H - i - 4}A4 4 0 0 1 ${W - i - 4} ${H - i}H${i + 4}A4 4 0 0 1 ${i} ${H - i - 4}V${i + 4}A4 4 0 0 1 ${i + 4} ${i}Z`,
+          class: 'e-bandfill', 'fill-rule': 'evenodd' }, g);
+      }
       el('path', { d: latheBorder(8.5, 10, 6, waves, t >= 3 ? 5 : 4, 1), class: 'e-lathe e-lathe--a' }, g);
       el('path', { d: latheBorder(8.5, 10, 6, waves, t >= 3 ? 5 : 4, -1), class: 'e-lathe e-lathe--b' }, g);
       el('rect', { x: 7.5, y: 7.5, width: W - 15, height: H - 15, rx: 7, class: 'e-rule e-rule--outer' }, g);
@@ -253,6 +264,7 @@
     }
 
     // Portrait: engraved ground, then rings.
+    el('ellipse', { cx: OVAL.cx, cy: OVAL.cy, rx: OVAL.rx, ry: OVAL.ry, class: 'e-ground' }, g);
     const hg = el('g', { 'clip-path': 'url(#pm-oval-clip)', class: 'e-hatch' }, g);
     for (const l of hatch(OVAL.cx, OVAL.cy, OVAL.rx, OVAL.ry, t === 4 ? 1.7 : 2.1)) {
       el('path', { d: l.d, 'stroke-width': f1(l.w) }, hg);
@@ -281,9 +293,15 @@
     el('path', { d: latheBorder(8.5, 10, 6, 84, 4, -1), class: 'b-lathe' }, g);
     el('rect', { x: 7.5, y: 7.5, width: W - 15, height: H - 15, rx: 7, class: 'b-rule' }, g);
     el('rect', { x: 19.5, y: 19.5, width: W - 39, height: H - 39, rx: 4, class: 'b-rule' }, g);
-    // big rosette that the coin sits on
-    el('path', { d: rosette(W / 2, H / 2, 58, 58, 3.2, 24, 4, 3, 5.5), class: 'b-rose' }, g);
-    el('circle', { cx: W / 2, cy: H / 2, r: 54, class: 'b-well' }, g);
+    // big rosette that the coin sits on, a ring of microtext, then the well
+    el('path', { d: rosette(W / 2, H / 2, 76, 76, 3.4, 30, 4, 3, 6), class: 'b-rose' }, g);
+    el('path', { d: rosette(W / 2, H / 2, 70, 70, 2.2, 22, 3, 1, 0), class: 'b-rose2' }, g);
+    el('circle', { cx: W / 2, cy: H / 2, r: 66, class: 'b-well' }, g);
+    el('path', { id: 'pm-back-arc', d: `M${W / 2 - 61} ${H / 2}a61 61 0 1 1 122 0a61 61 0 1 1 -122 0`, fill: 'none' }, g);
+    const tx = el('text', { class: 'b-micro' }, g);
+    const tp = el('textPath', { href: '#pm-back-arc' }, tx);
+    tp.textContent = 'POSTMORTEM · EVERY MATCH LEAVES A RECORD · '.repeat(2);
+    el('circle', { cx: W / 2, cy: H / 2, r: 57, class: 'b-rule' }, g);
     for (const [x, y] of [[13, 13], [W - 13, 13], [13, H - 13], [W - 13, H - 13]]) {
       el('circle', { cx: x, cy: y, r: 8.2, class: 'b-boss' }, g);
       el('path', { d: rosette(x, y, 3.4, 3.4, 1.6, 9, 3, 2, 2.1), class: 'b-roseS' }, g);
@@ -317,43 +335,53 @@
   function damage(level, seed) {
     const R = rng(seed);
     const s = el('svg', { viewBox: `0 0 ${W} ${H}`, class: 'pm-dmg', preserveAspectRatio: 'none', 'aria-hidden': 'true' });
-    // scuffs: rubbed-off ink near the edges and corners
+    const gid = 'pm-grime-' + seed;
+    const defs = el('defs', {}, s);
+    const rg = el('radialGradient', { id: gid }, defs);
+    el('stop', { offset: '0', 'stop-color': '#4a3018', 'stop-opacity': '.14' }, rg);
+    el('stop', { offset: '.6', 'stop-color': '#4a3018', 'stop-opacity': '.06' }, rg);
+    el('stop', { offset: '1', 'stop-color': '#4a3018', 'stop-opacity': '0' }, rg);
+    // grime: soft handling marks, more of them the worse it was
+    for (let i = 0; i < 2 + level * 2; i++) {
+      el('ellipse', { cx: f1(R() * W), cy: f1(R() * H), rx: f1(20 + R() * 45), ry: f1(16 + R() * 34), fill: `url(#${gid})` }, s);
+    }
+    // scuffs: ink rubbed off along the edges and corners
     let scuff = '';
-    const nScuff = 40 + level * 26;
-    for (let i = 0; i < nScuff; i++) {
-      const edge = R() * 4 | 0, u = R();
-      let x = edge % 2 ? (edge === 1 ? W - 3 - R() * 16 : 3 + R() * 16) : u * W;
-      let y = edge % 2 ? u * H : (edge === 0 ? 3 + R() * 16 : H - 3 - R() * 16);
-      const rx = 0.4 + R() * (1.2 + level * 0.5), ry = rx * (0.3 + R() * 0.6), a = R() * 180;
+    for (let i = 0; i < 22 + level * 14; i++) {
+      const edge = R() * 4 | 0, u = R(), d = Math.pow(R(), 2) * 15;
+      const x = edge % 2 ? (edge === 1 ? W - 3 - d : 3 + d) : 6 + u * (W - 12);
+      const y = edge % 2 ? 6 + u * (H - 12) : (edge === 0 ? 3 + d : H - 3 - d);
+      const rx = 0.3 + R() * (0.8 + level * 0.35), ry = rx * (0.25 + R() * 0.5), a = edge % 2 ? 80 + R() * 20 : R() * 20 - 10;
       scuff += `<ellipse cx="${f1(x)}" cy="${f1(y)}" rx="${f1(rx)}" ry="${f1(ry)}" transform="rotate(${f1(a)} ${f1(x)} ${f1(y)})"/>`;
     }
-    for (const [cx, cy] of [[6, 6], [W - 6, 6], [6, H - 6], [W - 6, H - 6]]) {
-      for (let i = 0; i < 5 + level * 3; i++) {
-        const x = cx + (R() - 0.5) * 16, y = cy + (R() - 0.5) * 16, r = 0.5 + R() * 2.4;
+    for (const [cx, cy] of [[5, 5], [W - 5, 5], [5, H - 5], [W - 5, H - 5]]) {
+      for (let i = 0; i < 3 + level * 2; i++) {
+        const x = cx + (R() - 0.5) * 12, y = cy + (R() - 0.5) * 12, r = 0.4 + R() * 1.8;
         scuff += `<circle cx="${f1(x)}" cy="${f1(y)}" r="${f1(r)}"/>`;
       }
     }
-    const sg = el('g', { class: 'd-scuff' }, s);
-    sg.innerHTML = scuff;
-    // grime
-    if (level >= 1) {
-      const grime = el('g', { class: 'd-grime' }, s);
-      for (let i = 0; i < 3 + level * 2; i++) {
-        el('ellipse', { cx: f1(R() * W), cy: f1(R() * H), rx: f1(14 + R() * 40), ry: f1(10 + R() * 30) }, grime);
-      }
-    }
+    el('g', { class: 'd-scuff' }, s).innerHTML = scuff;
     // crease: a fold line, light on one side and dark on the other
     if (level >= 2) {
-      const y0 = 60 + R() * 60, y1 = y0 + 120 + R() * 80;
+      const y0 = 50 + R() * 50, y1 = y0 + 150 + R() * 60;
       el('path', { d: `M-2 ${f1(y0)}L${W + 2} ${f1(y1)}`, class: 'd-crease-dk' }, s);
-      el('path', { d: `M-2 ${f1(y0 + 1.1)}L${W + 2} ${f1(y1 + 1.1)}`, class: 'd-crease-lt' }, s);
+      el('path', { d: `M-2 ${f1(y0 + 0.9)}L${W + 2} ${f1(y1 + 0.9)}`, class: 'd-crease-lt' }, s);
     }
-    // stain ring
+    // a ring left by a glass
     if (level >= 5) {
-      const cx = 60 + R() * 130, cy = 210 + R() * 80, r = 30 + R() * 8;
+      const cx = 70 + R() * 110, cy = 225 + R() * 50, r = 28 + R() * 6;
       el('circle', { cx: f1(cx), cy: f1(cy), r: f1(r), class: 'd-stain' }, s);
-      el('circle', { cx: f1(cx + 2), cy: f1(cy - 1), r: f1(r - 2.5), class: 'd-stain d-stain--2' }, s);
+      el('circle', { cx: f1(cx + 1.5), cy: f1(cy - 1), r: f1(r - 2), class: 'd-stain d-stain--2' }, s);
     }
+    return s;
+  }
+
+  // The torn edge: pale paper fibres showing along the tear.
+  function tearEdge(line, side) {
+    const s = el('svg', { viewBox: `0 0 ${W} ${H}`, class: 'pm-dmg', preserveAspectRatio: 'none', 'aria-hidden': 'true' });
+    const d = poly(line);
+    el('path', { d, class: 'd-tear-shadow', transform: `translate(${side * 0.5} ${side * 0.7})` }, s);
+    el('path', { d, class: 'd-tear-fibre' }, s);
     return s;
   }
 
@@ -402,8 +430,8 @@
     const pg = el('g', { 'clip-path': 'url(#pm-oval-clip)' }, por);
     const hv = (window.PM_CARD_ART.heroes[o.hero] || {}).viewBox || '0 0 280 380';
     const [, , vw, vh] = hv.split(' ').map(Number);
-    const sw = OVAL.rx * 2 * 1.08, shh = sw * vh / vw;
-    el('use', { href: '#pm-hero-' + o.hero, x: f1(OVAL.cx - sw / 2 + 4), y: f1(OVAL.cy - OVAL.ry + 4), width: f1(sw), height: f1(shh) }, pg);
+    const sw = OVAL.rx * 2 * 0.98, shh = sw * vh / vw;
+    el('use', { href: '#pm-hero-' + o.hero, x: f1(OVAL.cx - sw / 2 + 2), y: f1(OVAL.cy - OVAL.ry + 9), width: f1(sw), height: f1(shh) }, pg);
     face.appendChild(por);
 
     // corner indices
@@ -419,7 +447,15 @@
     head.appendChild(h('span', 'pm-rarity', R.name));
     face.appendChild(head);
     // Epic up: a banknote serial in the second ink, which is the real rank of this game
-    if (t >= 2 && o.serial) face.appendChild(h('div', 'pm-serial-corner', 'No. ' + o.serial));
+    if (t >= 2 && o.serial) {
+      const [no, of] = o.serial.split(/\s+of\s+/);
+      for (const pos of ['tr']) {
+        const sc = h('div', 'pm-serial pm-serial--' + pos);
+        sc.appendChild(h('span', 'pm-serial__no', 'No. ' + no));
+        if (of) sc.appendChild(h('span', 'pm-serial__of', 'of ' + of));
+        face.appendChild(sc);
+      }
+    }
 
     const stat = h('div', 'pm-stat');
     stat.appendChild(h('div', 'pm-num', o.value));
@@ -452,37 +488,41 @@
     const R = rng(seed ^ 0x9e3779b9);
     if (level === 3) {
       // top right corner torn off and taped back on, slightly askew
-      const a = [W - 82, -2], b = [W + 2, 92];
-      const line = tearLine(R, a[0], a[1], b[0], b[1], 18, 7);
+      const line = tearLine(R, W - 84, -2, W + 2, 94, 22, 6);
       face.style.clipPath = `polygon(0% 0%, ${pc(line)}, 100% 100%, 0% 100%)`;
+      face.appendChild(tearEdge(line, 1));
       const piece = face.cloneNode(true);
       piece.classList.add('pm-piece');
       piece.style.clipPath = `polygon(${pc(line)}, 100% 0%)`;
-      piece.style.transform = 'translate(1.6%, -1.1%) rotate(2.2deg)';
+      piece.style.transform = 'translate(.5%, -.3%) rotate(.9deg)';
       piece.style.transformOrigin = '100% 0%';
+      piece.appendChild(tearEdge(line, -1));
       tilt.appendChild(piece);
-      tilt.appendChild(tape(62, 23, 66, 18, 38));
-      tilt.appendChild(tape(78, 32, 70, 14, 52));
+      tilt.appendChild(tape(196, 30, 54, 15, -44));
+      tilt.appendChild(tape(232, 72, 44, 15, -38));
     } else if (level >= 4) {
-      // torn across, halves offset, taped
-      const line = tearLine(R, -2, 150 + R() * 30, W + 2, 170 + R() * 30, 26, 9);
+      // torn across, the halves a little out of line, taped
+      const line = tearLine(R, -2, 158 + R() * 20, W + 2, 176 + R() * 20, 34, 8);
       face.style.clipPath = `polygon(0% 0%, 100% 0%, ${pc(line.slice().reverse())})`;
+      face.appendChild(tearEdge(line, 1));
       const piece = face.cloneNode(true);
       piece.classList.add('pm-piece');
       piece.style.clipPath = `polygon(${pc(line)}, 100% 100%, 0% 100%)`;
-      piece.style.transform = 'translate(-1.2%, 1.4%) rotate(-1.6deg)';
+      piece.style.transform = 'translate(-.5%, .45%) rotate(-.8deg)';
+      piece.appendChild(tearEdge(line, -1));
       tilt.appendChild(piece);
-      tilt.appendChild(tape(22, 47, 34, 15, 84));
-      tilt.appendChild(tape(77, 52, 36, 15, 97));
-      if (level >= 5) tilt.appendChild(tape(50, 48, 26, 13, 80));
+      tilt.appendChild(tape(52, 170, 62, 16, 86));
+      tilt.appendChild(tape(196, 182, 62, 16, 95));
+      if (level >= 5) tilt.appendChild(tape(128, 176, 46, 14, 79));
     }
   }
-  function tape(cxPct, cyPct, wPct, hPct, rot) {
+  // A strip of tape, in card units.
+  function tape(cx, cy, len, wid, rot) {
     const t = h('div', 'pm-tape');
-    t.style.left = (cxPct - wPct / 2) + '%';
-    t.style.top = (cyPct - hPct / 2 / 1.4) + '%';
-    t.style.width = wPct + '%';
-    t.style.height = (hPct / 1.4) + '%';
+    t.style.left = f1((cx - len / 2) / W * 100) + '%';
+    t.style.top = f1((cy - wid / 2) / H * 100) + '%';
+    t.style.width = f1(len / W * 100) + '%';
+    t.style.height = f1(wid / H * 100) + '%';
     t.style.transform = `rotate(${rot}deg)`;
     return t;
   }
