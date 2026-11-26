@@ -1,27 +1,36 @@
 /*
- * Postmortem simple card.
+ * Postmortem card, round 2.
  *
- * One card design, five rarities. Rarity changes ONLY the frame, the inks and the
- * stamp, never the art. Each rung adds one thing you can name:
+ * One card design. The SUIT sets the ink colour and the big pip in the middle, so a
+ * hand of different stats reads apart at a glance. The RARITY sets the frame and the
+ * paper, never the art. The ladder reads cream, coloured, black:
  *
- *   Common     10  Plain print        one black ink, double rule, engraved portrait oval
- *   Rare       J   Second ink         oxblood joins: red frame, red wave band behind the number
- *   Epic       Q   Engraved border    lathe-work border, corner rosettes, oval ring, serial no.
- *   Legendary  K   Coroner's seal     embossed oxblood seal, security field, colour-shift ink
- *   Mythical   A   Black note         inverted: black paper, bone ink, everything above
+ *   Common     10  Plain print        cream paper, suit-ink hairline frame
+ *   Rare       J   Ink band           a solid band of the suit ink
+ *   Epic       Q   Engraved border    lathe-work border, corner rosettes, ringed oval
+ *   Legendary  K   Printed in colour  the whole note is printed on suit-tinted paper, engraved
+ *                                     edge to edge in bone; the colour bleeds in when dealt
+ *   Mythical   A   Black note         black paper, bone ink, everything above
+ *
+ * Suits: combat (rust), survival (olive), souls (teal), objectives (purple),
+ * crown (printed in brass, like the logo), joker (a misprint: off-register inks,
+ * one line printed upside down).
+ *
+ * The only stamp is NEW BEST (a personal record), so it always means something.
  *
  * Bad cards are the same card with damage, scaled to how bad it was:
  *   1 scuffed  2 creased  3 torn corner, taped  4 torn in two, taped  5 torn, taped, stained
  *
  * Usage:
- *   const el = PMCard.render({ rarity:'legendary', hero:13, suit:'combat', value:'34,210',
- *     stat:'Hero Damage', line:'Top 1% of Haze games', flavor:'…', serial:'0014 of 1,400' });
+ *   const el = PMCard.render({ rarity:'legendary', suit:'combat', hero:13, heroName:'Haze',
+ *     value:'34,210', stat:'Hero Damage', no:14, of:1000, newBest:true });
+ *   PMCard.deal(el)                // plays the deal-in (the ink bleed on Legendary)
  *   PMCard.renderBack();
  *   PMCard.enableTilt(container)   // one delegated listener for a whole hand
  *
  * Engraving is generated once per rarity into shared <symbol>s, so ten cards on screen
- * cost ten <use> references, not ten copies of the line work. Tilt only touches
- * transform and two custom properties on the card under the pointer.
+ * cost ten <use> references, not ten copies of the line work. Suit colour reaches the
+ * symbols through inherited custom properties. Tilt only writes to leaf elements.
  */
 (function () {
   'use strict';
@@ -37,12 +46,15 @@
     mythical:  { rank: 'A',  name: 'Mythical',  word: 'Ace' },
   };
   const SUIT = {
-    combat:   { name: 'Combat',   plural: 'Skulls' },
-    survival: { name: 'Survival', plural: 'Hearts' },
-    souls:    { name: 'Souls',    plural: 'Souls' },
-    crown:    { name: 'Crown',    plural: 'Crowns' },
+    combat:     { name: 'Combat',     plural: 'Skulls' },
+    survival:   { name: 'Survival',   plural: 'Hearts' },
+    souls:      { name: 'Souls',      plural: 'Souls' },
+    objectives: { name: 'Objectives', plural: 'Keys' },
+    crown:      { name: 'Crown',      plural: 'Crowns' },
+    joker:      { name: 'Joker',      plural: 'Jokers' },
   };
   const ORDER = ['common', 'rare', 'epic', 'legendary', 'mythical'];
+  const SUITS = ['combat', 'survival', 'souls', 'objectives', 'crown', 'joker'];
   const tier = r => ORDER.indexOf(r);
 
   /* ---------- geometry helpers ---------- */
@@ -172,8 +184,9 @@
     return rr(o, ro) + rr(i, ri);
   }
 
-  /* ---------- the portrait and frame layout (card units) ---------- */
-  const OVAL = { cx: 125, cy: 186, rx: 62, ry: 74 };
+  /* ---------- layout (card units) ---------- */
+  const OVAL = { cx: 125, cy: 181, rx: 58, ry: 67 };
+  const MED = { cx: 125, cy: 249, r: 24 };
 
   function el(tag, attrs, parent) {
     const e = document.createElementNS(NS, tag);
@@ -191,29 +204,38 @@
     const defs = el('defs', {}, svg);
     const A = window.PM_CARD_ART;
 
-    // hero silhouettes
     for (const id in A.heroes) {
-      const h = A.heroes[id];
-      const s = el('symbol', { id: 'pm-hero-' + id, viewBox: h.viewBox }, defs);
-      el('path', { d: h.body, class: 'pm-sil', 'fill-rule': 'evenodd' }, s);
-      if (h.eyes) el('path', { d: h.eyes, class: 'pm-eyes' }, s);
+      const hh = A.heroes[id];
+      const s = el('symbol', { id: 'pm-hero-' + id, viewBox: hh.viewBox }, defs);
+      el('path', { d: hh.body, class: 'pm-sil', 'fill-rule': 'evenodd' }, s);
+      if (hh.eyes) el('path', { d: hh.eyes, class: 'pm-eyes' }, s);
     }
     for (const k in A.suits) {
       const s = el('symbol', { id: 'pm-suit-' + k, viewBox: A.suits[k].viewBox }, defs);
-      el('path', { d: A.suits[k].d, fill: 'currentColor' }, s);
+      el('path', { d: A.suits[k].d, fill: 'currentColor', 'fill-rule': 'evenodd' }, s);
     }
     if (A.logo) {
       const s = el('symbol', { id: 'pm-logo', viewBox: A.logo.viewBox }, defs);
       s.innerHTML = A.logo.inner;
     }
 
-    // clip for the portrait oval
     const cp = el('clipPath', { id: 'pm-oval-clip' }, defs);
     el('ellipse', { cx: OVAL.cx, cy: OVAL.cy, rx: OVAL.rx, ry: OVAL.ry }, cp);
+    const cm = el('clipPath', { id: 'pm-med-clip' }, defs);
+    el('circle', { cx: MED.cx, cy: MED.cy, r: MED.r }, cm);
     const cpIn = el('clipPath', { id: 'pm-inner-clip' }, defs);
     el('rect', { x: 19, y: 19, width: W - 38, height: H - 38, rx: 4 }, cpIn);
+    const cpBack = el('clipPath', { id: 'pm-back-field' }, defs);
+    el('rect', { x: 23.5, y: 23.5, width: W - 47, height: H - 47, rx: 3 }, cpBack);
 
-    // engraving per rarity
+    // worn rubber-stamp ink: speckled holes where the stamp missed the paper
+    // stamp wear: fine speckle in the stamp's own units (120 x 46), so it never fades a whole word
+    const f = el('filter', { id: 'pm-wear-f', filterUnits: 'userSpaceOnUse', x: -10, y: -10, width: 140, height: 66 }, defs);
+    el('feTurbulence', { type: 'fractalNoise', baseFrequency: '.42', numOctaves: 2, seed: 7, result: 'n' }, f);
+    el('feColorMatrix', { in: 'n', type: 'matrix', values: '0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 -3.4 2.55' }, f);
+    const m = el('mask', { id: 'pm-wear', maskUnits: 'userSpaceOnUse', x: -10, y: -10, width: 140, height: 66 }, defs);
+    el('rect', { x: -10, y: -10, width: 140, height: 66, fill: '#fff', filter: 'url(#pm-wear-f)' }, m);
+
     for (const r of ORDER) defs.appendChild(buildEngraving(r));
     defs.appendChild(buildBack());
     document.body.prepend(svg);
@@ -223,9 +245,12 @@
     const t = tier(r);
     const g = el('symbol', { id: 'pm-engr-' + r, viewBox: `0 0 ${W} ${H}` });
 
-    // Legendary and Mythical: security field behind everything.
-    if (t >= 3) {
-      el('path', { d: field(OVAL.cx, OVAL.cy - 6, 8, 230, t === 4 ? 3.1 : 3.6), class: 'e-field', 'clip-path': 'url(#pm-inner-clip)' }, g);
+    // Legendary: engraved edge to edge, two security fields crossing into a moiré.
+    // Mythical keeps its single field.
+    if (t === 3) {
+      el('path', { d: field(W / 2, 96, 6, 260, 3.3) + field(W / 2, 262, 6, 260, 3.3), class: 'e-field', 'clip-path': 'url(#pm-inner-clip)' }, g);
+    } else if (t === 4) {
+      el('path', { d: field(OVAL.cx, OVAL.cy - 6, 8, 230, 3.1), class: 'e-field', 'clip-path': 'url(#pm-inner-clip)' }, g);
     }
 
     // Wave band behind the stat number: Rare up.
@@ -235,39 +260,29 @@
 
     // Frame.
     if (t === 0) {
-      // Common: a plain double rule in black.
       el('rect', { x: 9, y: 9, width: W - 18, height: H - 18, rx: 6, class: 'e-rule e-rule--outer' }, g);
       el('rect', { x: 13, y: 13, width: W - 26, height: H - 26, rx: 3.5, class: 'e-rule e-rule--inner' }, g);
     } else if (t === 1) {
-      // Rare: a solid oxblood band with a hairline inside it.
       el('path', { d: ringPath(8.5, 14.5, 6.5, 4), class: 'e-bandfill', 'fill-rule': 'evenodd' }, g);
       el('rect', { x: 17.5, y: 17.5, width: W - 35, height: H - 35, rx: 3, class: 'e-rule e-rule--inner' }, g);
     } else {
-      // Epic up: lathe-work ribbon between two rules, rosettes on the corners.
       const waves = t >= 3 ? 96 : 72;
-      // Epic: the band is tinted. Legendary up: printed solid in the second ink, engraved through in bone.
       el('path', { d: ringPath(7.5, 19.5, 7, 4), class: t >= 3 ? 'e-bandfill' : 'e-bandtint', 'fill-rule': 'evenodd' }, g);
       el('path', { d: latheBorder(8.5, 10, 6, waves, t >= 3 ? 5 : 4, 1), class: 'e-lathe e-lathe--a' }, g);
       el('path', { d: latheBorder(8.5, 10, 6, waves, t >= 3 ? 5 : 4, -1), class: 'e-lathe e-lathe--b' }, g);
       el('rect', { x: 7.5, y: 7.5, width: W - 15, height: H - 15, rx: 7, class: 'e-rule e-rule--outer' }, g);
       el('rect', { x: 19.5, y: 19.5, width: W - 39, height: H - 39, rx: 4, class: 'e-rule e-rule--inner' }, g);
-      // microtext rule just inside the border
-      const mp = el('path', { id: 'pm-micro-' + r, d: `M24 22.6H${W - 24}`, fill: 'none' }, g);
+      el('path', { id: 'pm-micro-' + r, d: `M24 22.6H${W - 24}`, fill: 'none' }, g);
       const tx = el('text', { class: 'e-micro' }, g);
-      const tp = el('textPath', { href: '#pm-micro-' + r }, tx);
-      // whole phrases only, stretched to exactly fill the rule
-      tp.setAttribute('textLength', W - 48); tp.setAttribute('lengthAdjust', 'spacingAndGlyphs');
+      const tp = el('textPath', { href: '#pm-micro-' + r, textLength: W - 48, lengthAdjust: 'spacingAndGlyphs' }, tx);
       tp.textContent = 'POSTMORTEM · CERTIFIED TRUE RECORD OF THE MATCH · POSTMORTEM · CERTIFIED TRUE RECORD OF THE MATCH';
-      const mp2 = el('path', { id: 'pm-micro2-' + r, d: `M${W - 24} ${H - 21}H24`, fill: 'none' }, g);
-      void mp; void mp2;
-      const tx2 = el('text', { class: 'e-micro' }, g);
-      const tp2 = el('textPath', { href: '#pm-micro2-' + r }, tx2);
-      tp2.setAttribute('textLength', W - 48); tp2.setAttribute('lengthAdjust', 'spacingAndGlyphs');
-      tp2.textContent = 'ISSUED BY THE CORONER OF THE CURSED APPLE · ISSUED BY THE CORONER OF THE CURSED APPLE';
-      tx2.setAttribute('transform', `rotate(180 ${W / 2} ${H - 21})`);
+      el('path', { id: 'pm-micro2-' + r, d: `M${W - 24} ${H - 21}H24`, fill: 'none' }, g);
+      const tx2 = el('text', { class: 'e-micro', transform: `rotate(180 ${W / 2} ${H - 21})` }, g);
+      const tp2 = el('textPath', { href: '#pm-micro2-' + r, textLength: W - 48, lengthAdjust: 'spacingAndGlyphs' }, tx2);
+      tp2.textContent = 'POSTMORTEM · PRINTED AFTER THE MATCH · POSTMORTEM · PRINTED AFTER THE MATCH';
     }
 
-    // Portrait: engraved ground, then rings.
+    // The oval: engraved ground, then rings.
     el('ellipse', { cx: OVAL.cx, cy: OVAL.cy, rx: OVAL.rx, ry: OVAL.ry, class: 'e-ground' }, g);
     const hg = el('g', { 'clip-path': 'url(#pm-oval-clip)', class: 'e-hatch' }, g);
     for (const l of hatch(OVAL.cx, OVAL.cy, OVAL.rx, OVAL.ry, t === 4 ? 1.7 : 2.1)) {
@@ -280,7 +295,6 @@
     el('ellipse', { cx: OVAL.cx, cy: OVAL.cy, rx: OVAL.rx, ry: OVAL.ry, class: 'e-rule e-rule--oval' }, g);
     el('ellipse', { cx: OVAL.cx, cy: OVAL.cy, rx: OVAL.rx + 2.6, ry: OVAL.ry + 2.6, class: 'e-rule e-rule--oval2' }, g);
 
-    // Corner rosettes: Epic up.
     if (t >= 2) {
       for (const [x, y] of [[13, 13], [W - 13, 13], [13, H - 13], [W - 13, H - 13]]) {
         el('circle', { cx: x, cy: y, r: 8.2, class: 'e-boss' }, g);
@@ -290,48 +304,213 @@
     return g;
   }
 
+  /* ---------- the back: brass on matte black, mirrored, the coin locked in the centre ---------- */
   function buildBack() {
     const g = el('symbol', { id: 'pm-back', viewBox: `0 0 ${W} ${H}` });
-    el('path', { d: field(W / 2, H / 2, 6, 230, 4.2), class: 'b-field', 'clip-path': 'url(#pm-inner-clip)' }, g);
-    el('path', { d: latheBorder(8.5, 10, 6, 84, 4, 1), class: 'b-lathe' }, g);
-    el('path', { d: latheBorder(8.5, 10, 6, 84, 4, -1), class: 'b-lathe' }, g);
-    el('rect', { x: 7.5, y: 7.5, width: W - 15, height: H - 15, rx: 7, class: 'b-rule' }, g);
-    el('rect', { x: 19.5, y: 19.5, width: W - 39, height: H - 39, rx: 4, class: 'b-rule' }, g);
-    // big rosette that the coin sits on, a ring of microtext, then the well
-    el('path', { d: rosette(W / 2, H / 2, 76, 76, 3.4, 30, 4, 3, 6), class: 'b-rose' }, g);
-    el('circle', { cx: W / 2, cy: H / 2, r: 66, class: 'b-well' }, g);
-    el('path', { id: 'pm-back-arc', d: `M${W / 2 - 61} ${H / 2}a61 61 0 1 1 122 0a61 61 0 1 1 -122 0`, fill: 'none' }, g);
-    const tx = el('text', { class: 'b-micro' }, g);
-    const tp = el('textPath', { href: '#pm-back-arc' }, tx);
-    tp.textContent = 'POSTMORTEM · EVERY MATCH LEAVES A RECORD · '.repeat(2);
-    el('circle', { cx: W / 2, cy: H / 2, r: 57, class: 'b-rule' }, g);
-    for (const [x, y] of [[13, 13], [W - 13, 13], [13, H - 13], [W - 13, H - 13]]) {
-      el('circle', { cx: x, cy: y, r: 8.2, class: 'b-boss' }, g);
-      el('path', { d: rosette(x, y, 3.4, 3.4, 1.6, 9, 3, 2, 2.1), class: 'b-roseS' }, g);
+    const cx = W / 2, cy = H / 2;
+
+    // outer frame and the ornament band that is part of it
+    el('rect', { x: 7.5, y: 7.5, width: W - 15, height: H - 15, rx: 7, class: 'k-rule k-rule--heavy' }, g);
+    el('rect', { x: 10.5, y: 10.5, width: W - 21, height: H - 21, rx: 5, class: 'k-rule' }, g);
+    el('rect', { x: 20.5, y: 20.5, width: W - 41, height: H - 41, rx: 3.5, class: 'k-rule k-rule--mid' }, g);
+    el('rect', { x: 23.5, y: 23.5, width: W - 47, height: H - 47, rx: 3, class: 'k-rule' }, g);
+    // lozenge chain along the band, dots between
+    let chain = '';
+    const c = 15.5, step = 7.6;
+    const lozH = (x, y) => `M${f1(x - 2.7)} ${y}L${x} ${f1(y - 3.2)}L${f1(x + 2.7)} ${y}L${x} ${f1(y + 3.2)}Z`;
+    const lozV = (x, y) => `M${x} ${f1(y - 2.7)}L${f1(x + 3.2)} ${y}L${x} ${f1(y + 2.7)}L${f1(x - 3.2)} ${y}Z`;
+    const dot = (x, y, r) => `M${f1(x - r)} ${f1(y)}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0Z`;
+    const nx = Math.floor((W - 52) / step), x0 = cx - (nx / 2) * step;
+    for (let i = 0; i <= nx; i++) {
+      const x = f1(x0 + i * step);
+      chain += lozH(+x, c) + lozH(+x, H - c);
+      if (i < nx) chain += dot(x0 + (i + 0.5) * step, c, 0.75) + dot(x0 + (i + 0.5) * step, H - c, 0.75);
     }
+    const ny = Math.floor((H - 52) / step), y0 = cy - (ny / 2) * step;
+    for (let i = 0; i <= ny; i++) {
+      const y = f1(y0 + i * step);
+      chain += lozV(c, +y) + lozV(W - c, +y);
+      if (i < ny) chain += dot(c, y0 + (i + 0.5) * step, 0.75) + dot(W - c, y0 + (i + 0.5) * step, 0.75);
+    }
+    el('path', { d: chain, class: 'k-fill' }, g);
+    // corner blocks: a solid square with a quatrefoil cut in brass
+    for (const [x, y] of [[c, c], [W - c, c], [c, H - c], [W - c, H - c]]) {
+      el('rect', { x: x - 5, y: y - 5, width: 10, height: 10, class: 'k-block' }, g);
+      el('path', { d: dot(x, y - 2, 1.7) + dot(x, y + 2, 1.7) + dot(x - 2, y, 1.7) + dot(x + 2, y, 1.7), class: 'k-cut' }, g);
+    }
+
+    // the field
+    const fg = el('g', { 'clip-path': 'url(#pm-back-field)' }, g);
+    // all-over ground: a fine diamond lattice with a bead in every cell, like the cloth on a card table
+    let lat = '', beadsG = '';
+    const lx = 7, ly = 9.4;
+    for (let k = -40; k <= 40; k++) {
+      const o = k * lx * 2;
+      lat += `M${f1(cx + o - 220)} ${f1(cy - 220 * ly / lx)}L${f1(cx + o + 220)} ${f1(cy + 220 * ly / lx)}`;
+      lat += `M${f1(cx + o + 220)} ${f1(cy - 220 * ly / lx)}L${f1(cx + o - 220)} ${f1(cy + 220 * ly / lx)}`;
+    }
+    for (let i = -16; i <= 16; i++) for (let j = -18; j <= 18; j++) {
+      if ((i + j) % 2) continue;
+      const x = cx + i * lx, y = cy + j * ly;
+      if (x > 20 && x < W - 20 && y > 20 && y < H - 20) beadsG += dot(x, y, .55);
+    }
+    el('path', { d: lat, class: 'k-lattice' }, fg);
+    el('path', { d: beadsG, class: 'k-fill k-fill--ground' }, fg);
+
+    // inner panel with stepped corners
+    const step2 = (o, n) => {
+      const x0 = o, y0 = o, x1 = W - o, y1 = H - o;
+      return `M${x0 + n} ${y0}H${x1 - n}V${y0 + n}H${x1}V${y1 - n}H${x1 - n}V${y1}H${x0 + n}V${y1 - n}H${x0}V${y0 + n}H${x0 + n}Z`;
+    };
+    el('path', { d: step2(30.5, 7), class: 'k-rule k-rule--mid' }, fg);
+    el('path', { d: step2(33.5, 7), class: 'k-rule k-rule--fine' }, fg);
+
+    // mirror helper: draw once in the top-left quarter, print in all four
+    const mir = (fn) => {
+      let d = '';
+      for (const [sx, sy] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) d += fn((x, y) => [sx > 0 ? x : W - x, sy > 0 ? y : H - y]);
+      return d;
+    };
+    const P = (T, pts) => poly(pts.map(([x, y]) => T(x, y)));
+    // a volute: a logarithmic spiral that leaves point E heading along u and curls toward side n
+    const volute = (E, u, n, r0, turns) => {
+      const C = [E[0] + n[0] * r0, E[1] + n[1] * r0];
+      const a0 = Math.atan2(E[1] - C[1], E[0] - C[0]);
+      const tan = [-Math.sin(a0), Math.cos(a0)];
+      const sgn = (tan[0] * u[0] + tan[1] * u[1]) >= 0 ? 1 : -1;
+      const pts = [], N = Math.ceil(turns * 40), b = 0.16;
+      for (let k = 0; k <= N; k++) {
+        const th = k / N * turns * TAU, r = r0 * Math.exp(-b * th);
+        pts.push([C[0] + r * Math.cos(a0 + sgn * th), C[1] + r * Math.sin(a0 + sgn * th)]);
+      }
+      return pts;
+    };
+    const norm = (x, y) => { const l = Math.hypot(x, y); return [x / l, y / l]; };
+
+    // corner fans: concentric arcs in each corner of the panel
+    el('path', {
+      d: mir(T => {
+        let d = '';
+        const o = 33.5;
+        for (const r of [16, 21, 26, 31, 36]) {
+          const pts = [];
+          for (let k = 0; k <= 24; k++) { const a = k / 24 * Math.PI / 2; pts.push([o + r * Math.cos(a), o + r * Math.sin(a)]); }
+          d += P(T, pts);
+        }
+        return d;
+      }), class: 'k-line'
+    }, fg);
+    el('path', {
+      d: mir(T => {
+        const o = 33.5, pts = [[o, o]];
+        for (let k = 0; k <= 16; k++) { const a = k / 16 * Math.PI / 2; pts.push([o + 10 * Math.cos(a), o + 10 * Math.sin(a)]); }
+        return P(T, pts) + 'Z';
+      }), class: 'k-fill'
+    }, fg);
+
+    // the lozenge and its lathe-work band
+    const A = 92, B = 136, IN = 0.9;
+    const loz = (a, b) => `M${cx} ${f1(cy - b)}L${f1(cx + a)} ${cy}L${cx} ${f1(cy + b)}L${f1(cx - a)} ${cy}Z`;
+    el('path', { d: loz(A + 3, B + 4.4), class: 'k-clear' }, fg);
+    const lozPt = t => {
+      const q = Math.floor(t * 4) % 4, f = t * 4 - Math.floor(t * 4);
+      const V = [[cx, cy - B], [cx + A, cy], [cx, cy + B], [cx - A, cy]];
+      const p0 = V[q], p1 = V[(q + 1) % 4];
+      return [p0[0] + (p1[0] - p0[0]) * f, p0[1] + (p1[1] - p0[1]) * f];
+    };
+    let band = '';
+    for (let i = 0; i < 3; i++) {
+      const pts = [], N = 720, waves = 64;
+      for (let k = 0; k <= N; k++) {
+        const t = k / N, O = lozPt(t);
+        const m = 1 - (1 - IN) * (0.5 + 0.5 * Math.sin(waves * TAU * t + i * TAU / 3));
+        pts.push([cx + (O[0] - cx) * m, cy + (O[1] - cy) * m]);
+      }
+      band += poly(pts, true);
+    }
+    el('path', { d: band, class: 'k-line k-line--band' }, fg);
+    el('path', { d: loz(A + 3, B + 4.4), class: 'k-rule k-rule--mid' }, fg);
+    el('path', { d: loz(A * IN - 2.5, B * IN - 3.7), class: 'k-rule k-rule--mid' }, fg);
+
+    // scrolls outside the lozenge: echo lines along each edge that end in volutes
+    el('path', {
+      d: mir(T => {
+        let d = '';
+        const top = [cx, cy - B], left = [cx - A, cy];
+        const u = norm(left[0] - top[0], left[1] - top[1]);
+        const nOut = [-u[1], u[0]].map(v => -v);         // points away from the lozenge, toward the corner
+        const nn = nOut[0] < 0 ? nOut : nOut.map(v => -v);
+        for (const [off, r0, t0, t1] of [[10, 9, .17, .8], [17.5, 7, .25, .72], [24, 5, .33, .64]]) {
+          const S = [top[0] + u[0] * (t0 * 164) + nn[0] * off, top[1] + u[1] * (t0 * 164) + nn[1] * off];
+          const E = [top[0] + u[0] * (t1 * 164) + nn[0] * off, top[1] + u[1] * (t1 * 164) + nn[1] * off];
+          d += P(T, [S, E]);
+          d += P(T, volute(E, u, nn, r0, 1.8));
+          d += P(T, volute(S, [-u[0], -u[1]], nn, r0, 1.8));
+        }
+        return d;
+      }), class: 'k-line k-line--scroll'
+    }, fg);
+    // a small rosette flower between the scrolls and the corner fan
+    el('path', {
+      d: mir(T => {
+        const fx = 54, fy = 80, pts = [];
+        for (let k = 0; k <= 96; k++) {
+          const t = k / 96 * TAU, r = 6.2 * (0.62 + 0.38 * Math.abs(Math.cos(3 * t)));
+          pts.push([fx + r * Math.cos(t), fy + r * Math.sin(t)]);
+        }
+        return P(T, pts) + 'Z' + P(T, [[fx, fy - 13], [fx, fy - 8]]) + P(T, [[fx, fy + 8], [fx, fy + 13]]);
+      }), class: 'k-line k-line--scroll'
+    }, fg);
+    el('path', { d: mir(T => { const [x, y] = T(54, 80); return dot(x, y, 1.6); }), class: 'k-fill' }, fg);
+
+    // inside the lozenge: nested lozenges stepping in toward the coin (deco, like ref 4's black back)
+    let nest = '';
+    for (const k of [0.8, 0.7, 0.6]) nest += loz(A * k, B * k);
+    el('path', { d: nest, class: 'k-rule' }, fg);
+    let nestF = '';
+    for (const k of [0.75, 0.65]) nestF += loz(A * k, B * k);
+    el('path', { d: nestF, class: 'k-rule k-rule--fine' }, fg);
+    // a small lozenge pip at each inner tip
+    let tips = '';
+    const lozT = (x, y, a, b) => `M${f1(x - a)} ${f1(y)}L${f1(x)} ${f1(y - b)}L${f1(x + a)} ${f1(y)}L${f1(x)} ${f1(y + b)}Z`;
+    for (const k of [0.8, 0.7]) {
+      tips += lozT(cx, cy - B * k, 2.2, 3) + lozT(cx, cy + B * k, 2.2, 3) + lozT(cx - A * k, cy, 2.2, 3) + lozT(cx + A * k, cy, 2.2, 3);
+    }
+    el('path', { d: tips, class: 'k-fill' }, fg);
+
+    // accents at the lozenge tips and sides
+    let acc = '';
+    const lozS = (x, y, a, b) => `M${f1(x - a)} ${f1(y)}L${f1(x)} ${f1(y - b)}L${f1(x + a)} ${f1(y)}L${f1(x)} ${f1(y + b)}Z`;
+    for (const [x, y] of [[cx, cy - B - 4.4], [cx, cy + B + 4.4], [cx - A - 3, cy], [cx + A + 3, cy]]) acc += lozS(x, y, 4.6, 6);
+    for (const y of [cy - B - 13, cy + B + 13]) acc += dot(cx, y, 1.7);
+    for (const x of [cx - A - 12, cx + A + 12]) acc += dot(x, cy, 1.5);
+    el('path', { d: acc, class: 'k-fill k-fill--edge' }, fg);
+
+    // the coin plate: a cleared disc ringed in guilloche, then the bead ring
+    el('circle', { cx, cy, r: 66, class: 'k-clear' }, g);
+    el('path', { d: rosette(cx, cy, 58.5, 58.5, 1.9, 22, 3, 2, 3.4), class: 'k-line k-line--fine' }, g);
+    el('circle', { cx, cy, r: 66, class: 'k-rule k-rule--mid' }, g);
+    el('circle', { cx, cy, r: 53, class: 'k-rule' }, g);
+    let beads = '';
+    for (let i = 0; i < 56; i++) {
+      const a = i / 56 * TAU;
+      beads += dot(cx + 48.5 * Math.cos(a), cy + 48.5 * Math.sin(a), 1.25);
+    }
+    el('path', { d: beads, class: 'k-fill' }, g);
+    el('circle', { cx, cy, r: 44.5, class: 'k-rule' }, g);
     return g;
   }
 
-  /* ---------- seal ---------- */
-  function sealSVG(rank, suit) {
-    const s = el('svg', { viewBox: '-50 -50 100 100', class: 'pm-seal', 'aria-hidden': 'true' });
-    // notary rim: 48 notches
-    const pts = [];
-    for (let i = 0; i < 96; i++) {
-      const a = i / 96 * TAU, r = i % 2 ? 44.5 : 48;
-      pts.push([r * Math.cos(a), r * Math.sin(a)]);
-    }
-    el('path', { d: poly(pts, true), class: 's-rim' }, s);
-    el('circle', { r: 40, class: 's-line' }, s);
-    el('circle', { r: 27, class: 's-line' }, s);
-    el('path', { id: 'pm-seal-arc', d: 'M-33.5 0a33.5 33.5 0 1 1 67 0a33.5 33.5 0 1 1 -67 0', fill: 'none' }, s);
-    const tx = el('text', { class: 's-text' }, s);
-    // textLength pins the words to exactly one lap, so the seam never overlaps
-    const tp = el('textPath', { href: '#pm-seal-arc', startOffset: '0', textLength: '208', lengthAdjust: 'spacing' }, tx);
-    tp.textContent = 'CERTIFIED · POSTMORTEM · CERTIFIED · POSTMORTEM · ';
-    el('use', { href: '#pm-suit-' + suit, x: -10.5, y: -21, width: 21, height: 21, class: 's-suit' }, s);
-    const rk = el('text', { y: 18.5, class: 's-rank', 'text-anchor': 'middle' }, s);
-    rk.textContent = rank;
+  /* ---------- the NEW BEST stamp (the only stamp) ---------- */
+  function stampSVG() {
+    const s = el('svg', { viewBox: '0 0 120 46', class: 'pm-stamp', 'aria-hidden': 'true' });
+    const g = el('g', { mask: 'url(#pm-wear)' }, s);
+    el('rect', { x: 2, y: 2, width: 116, height: 42, rx: 4, class: 'st-line st-line--heavy' }, g);
+    el('rect', { x: 6, y: 6, width: 108, height: 34, rx: 2, class: 'st-line' }, g);
+    const t = el('text', { x: 60, y: 27.5, 'text-anchor': 'middle', class: 'st-word' }, g);
+    t.textContent = 'NEW BEST';
+    const t2 = el('text', { x: 60, y: 35.6, 'text-anchor': 'middle', class: 'st-small' }, g);
+    t2.textContent = 'PERSONAL RECORD';
     return s;
   }
 
@@ -384,7 +563,7 @@
   // The torn edge: pale paper fibres showing along the tear.
   function tearEdge(line, side) {
     const s = el('svg', { viewBox: `0 0 ${W} ${H}`, class: 'pm-dmg', preserveAspectRatio: 'none', 'aria-hidden': 'true' });
-    const d = poly(line);
+    const d = poly(line.map(([x, y]) => [Math.min(W - 1.5, Math.max(1.5, x)), Math.min(H - 1.5, Math.max(1.5, y))]));
     el('path', { d, class: 'd-tear-shadow', transform: `translate(${side * 0.5} ${side * 0.7})` }, s);
     el('path', { d, class: 'd-tear-fibre' }, s);
     return s;
@@ -414,12 +593,21 @@
     el('use', { href: '#pm-suit-' + suit, width: 10, height: 10 }, s);
     return s;
   }
+  const num = n => Number(n).toLocaleString('en-US');
 
   function render(o) {
     ensureDefs();
-    const r = o.rarity, t = tier(r), R = RARITY[r], S = SUIT[o.suit];
-    const card = h('article', `pm-card r-${r}` + (o.bad ? ` is-bad bad-${o.bad}` : '') + (o.eyes === false ? ' no-eyes' : ''));
-    card.setAttribute('aria-label', `${R.word} of ${S.plural}, ${R.name}: ${o.value} ${o.stat}. ${o.line}.`);
+    const r = o.rarity, t = tier(r), R = RARITY[r], suit = o.suit || 'combat', S = SUIT[suit];
+    const layout = o.layout || 'pip';
+    const heroName = o.heroName || 'Haze';
+    const of = o.of || 1000;
+    const cls = ['pm-card', 'r-' + r, 's-' + suit, 'lay-' + layout];
+    if (o.bad) cls.push('is-bad', 'bad-' + o.bad);
+    if (o.eyes === false) cls.push('no-eyes');
+    if (suit === 'joker') cls.push('is-misprint');
+    const card = h('article', cls.join(' '));
+    const title = suit === 'joker' ? (o.title || 'The Joker') : `${R.word} of ${S.plural}`;
+    card.setAttribute('aria-label', `${title}, ${R.name}: ${o.value} ${o.stat}. Number ${num(o.no)} of ${num(of)} ${heroName} games.` + (o.newBest ? ' New personal best.' : ''));
     card.tabIndex = 0;
     const tilt = h('div', 'pm-tilt');
     const face = h('div', 'pm-face');
@@ -429,21 +617,46 @@
     const engr = el('svg', { class: 'pm-engr', viewBox: `0 0 ${W} ${H}`, 'aria-hidden': 'true' });
     el('use', { href: '#pm-engr-' + r }, engr);
     face.appendChild(engr);
+    if (suit === 'joker') {
+      // misprint: the second ink plate landed off register
+      const mis = el('svg', { class: 'pm-engr pm-misreg', viewBox: `0 0 ${W} ${H}`, 'aria-hidden': 'true' });
+      el('use', { href: '#pm-engr-' + r }, mis);
+      face.appendChild(mis);
+    }
 
-    // portrait
+    // the oval: the suit pip, big and in the suit's ink
     const por = el('svg', { class: 'pm-portrait', viewBox: `0 0 ${W} ${H}`, 'aria-hidden': 'true' });
     const pg = el('g', { 'clip-path': 'url(#pm-oval-clip)' }, por);
+    let med = null;
     const hv = (window.PM_CARD_ART.heroes[o.hero] || {}).viewBox || '0 0 280 380';
     const [, , vw, vh] = hv.split(' ').map(Number);
-    const sw = OVAL.rx * 2 * 0.98, shh = sw * vh / vw;
-    el('use', { href: '#pm-hero-' + o.hero, x: f1(OVAL.cx - sw / 2 + 2), y: f1(OVAL.cy - OVAL.ry + 9), width: f1(sw), height: f1(shh) }, pg);
+    if (layout === 'cameo') {
+      el('use', { href: '#pm-suit-' + suit, x: OVAL.cx - 54, y: OVAL.cy - 66, width: 108, height: 116, class: 'pm-pip pm-pip--ghost' }, pg);
+      const sw = OVAL.rx * 2 * 0.74, sh = sw * vh / vw;
+      el('use', { href: '#pm-hero-' + o.hero, x: f1(OVAL.cx - sw / 2 + 1), y: f1(OVAL.cy + OVAL.ry - sh * 0.86), width: f1(sw), height: f1(sh) }, pg);
+    } else {
+      el('use', { href: '#pm-suit-' + suit, x: OVAL.cx - 44, y: OVAL.cy - 62, width: 88, height: 96, class: 'pm-pip' }, pg);
+      // the hero sits in a small medallion on the oval's lower edge (its own layer, so the
+      // Legendary ink bleed passes under it)
+      med = el('svg', { class: 'pm-portrait pm-medal', viewBox: `0 0 ${W} ${H}`, 'aria-hidden': 'true' });
+      el('circle', { cx: MED.cx, cy: MED.cy, r: MED.r + 4.2, class: 'm-plate' }, med);
+      el('circle', { cx: MED.cx, cy: MED.cy, r: MED.r, class: 'm-ground' }, med);
+      const mg = el('g', { 'clip-path': 'url(#pm-med-clip)' }, med);
+      for (let y = MED.cy - MED.r; y <= MED.cy + MED.r; y += 1.8) {
+        const v = (y - MED.cy) / MED.r, half = MED.r * Math.sqrt(Math.max(0, 1 - v * v));
+        el('path', { d: `M${f1(MED.cx - half)} ${f1(y)}H${f1(MED.cx + half)}`, class: 'm-hatch' }, mg);
+      }
+      const sw = MED.r * 2 * 1.02, sh = sw * vh / vw;
+      el('use', { href: '#pm-hero-' + o.hero, x: f1(MED.cx - sw / 2 + 1), y: f1(MED.cy - MED.r + 3), width: f1(sw), height: f1(sh) }, mg);
+      el('circle', { cx: MED.cx, cy: MED.cy, r: MED.r, class: 'm-rule' }, med);
+      el('circle', { cx: MED.cx, cy: MED.cy, r: MED.r + 2.6, class: 'm-rule m-rule--fine' }, med);
+    }
     face.appendChild(por);
 
-    // corner indices
     for (const pos of ['tl', 'br']) {
       const idx = h('div', 'pm-idx pm-idx--' + pos);
       idx.appendChild(h('span', 'pm-rank' + (R.rank.length > 1 ? ' is-ten' : ''), R.rank));
-      idx.appendChild(suitIcon(o.suit, 'pm-suit'));
+      idx.appendChild(suitIcon(suit, 'pm-suit'));
       face.appendChild(idx);
     }
 
@@ -451,42 +664,70 @@
     head.appendChild(h('span', 'pm-suitname', S.name));
     head.appendChild(h('span', 'pm-rarity', R.name));
     face.appendChild(head);
-    // Epic up: a banknote serial in the second ink, which is the real rank of this game
-    if (t >= 2 && o.serial) {
-      const [no, of] = o.serial.split(/\s+of\s+/);
-      for (const pos of ['tr']) {
-        const sc = h('div', 'pm-serial pm-serial--' + pos);
-        sc.appendChild(h('span', 'pm-serial__no', 'No. ' + no));
-        if (of) sc.appendChild(h('span', 'pm-serial__of', 'of ' + of));
-        face.appendChild(sc);
-      }
-    }
 
     const stat = h('div', 'pm-stat');
-    stat.appendChild(h('div', 'pm-num', o.value));
+    if (suit === 'joker') stat.appendChild(h('div', 'pm-num pm-num--ghost', o.value));
+    const numEl = stat.appendChild(h('div', 'pm-num', o.value));
+    if (String(o.value).length > 5) numEl.classList.add('is-long');
     stat.appendChild(h('div', 'pm-label', o.stat));
     face.appendChild(stat);
 
-    if (t >= 3 && !o.bad) {
-      const seal = h('div', 'pm-sealwrap');
-      seal.appendChild(sealSVG(R.rank, o.suit));
-      face.appendChild(seal);
-    }
-
     const foot = h('div', 'pm-foot');
-    foot.appendChild(h('div', 'pm-title', `${R.word} of ${S.plural}`));
-    foot.appendChild(h('div', 'pm-line', o.line));
-    if (o.flavor) foot.appendChild(h('div', 'pm-flavor', o.flavor));
+    foot.appendChild(h('div', 'pm-title', title));
+    const ser = h('div', 'pm-serial');
+    ser.appendChild(h('span', 'pm-serial__no', 'No. ' + num(o.no)));
+    ser.appendChild(h('span', 'pm-serial__rest', ` of ${num(of)} ${heroName} games`));
+    // long hero names step the line down so it never meets the corner index
+    const len = ser.textContent.length;
+    if (len > 30) ser.style.fontSize = (len > 36 ? .74 : .82) + 'em';
+    foot.appendChild(ser);
     face.appendChild(foot);
 
+    if (t === 3) face.appendChild(h('div', 'pm-bleed'));
+    if (med) face.appendChild(med);
+    if (o.newBest) {
+      const st = h('div', 'pm-stampwrap');
+      st.appendChild(stampSVG());
+      face.appendChild(st);
+    }
     face.appendChild(h('div', 'pm-light'));
 
     if (o.bad) {
-      const seed = hash(o.value + o.stat + r);
+      const seed = hash(o.value + o.stat + r + suit);
       face.appendChild(damage(o.bad, seed));
       applyTear(card, tilt, face, o.bad, seed);
     }
     return card;
+  }
+
+  // Deal-in. Legendary: the suit ink bleeds through the paper from the centre out.
+  function deal(card) {
+    card.classList.remove('is-dealing');
+    void card.offsetWidth;
+    card.classList.add('is-dealing');
+    const bleed = card.querySelector('.pm-bleed');
+    const reduced = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    let raf = 0;
+    const done = () => {
+      cancelAnimationFrame(raf);
+      card.classList.remove('is-dealing');
+      card.removeEventListener('animationend', onEnd);
+      if (bleed) bleed.style.removeProperty('--bleed');
+    };
+    const onEnd = e => { if (!bleed && e.target === card.querySelector('.pm-tilt')) done(); };
+    card.addEventListener('animationend', onEnd);
+    if (bleed) {
+      // the suit ink floods out from the centre of the oval
+      if (reduced) { done(); return; }
+      const t0 = performance.now() + 350, dur = 1600;
+      const ease = x => 1 - Math.pow(1 - x, 2.4);
+      const step = now => {
+        const x = Math.min(1, Math.max(0, (now - t0) / dur));
+        bleed.style.setProperty('--bleed', (-8 + 128 * ease(x)).toFixed(1) + '%');
+        if (x < 1) raf = requestAnimationFrame(step); else done();
+      };
+      raf = requestAnimationFrame(step);
+    } else setTimeout(done, 1200);
   }
 
   function applyTear(card, tilt, face, level, seed) {
@@ -542,10 +783,10 @@
     const engr = el('svg', { class: 'pm-engr', viewBox: `0 0 ${W} ${H}`, 'aria-hidden': 'true' });
     el('use', { href: '#pm-back' }, engr);
     face.appendChild(engr);
+    // the logo slot: swap card/src/logo.svg and rebuild art.js
     const coin = el('svg', { class: 'pm-coin', viewBox: '0 0 200 200', 'aria-hidden': 'true' });
     el('use', { href: '#pm-logo', width: 200, height: 200 }, coin);
     face.appendChild(coin);
-    face.appendChild(h('div', 'pm-backword', 'Postmortem'));
     face.appendChild(h('div', 'pm-light'));
     tilt.appendChild(face);
     card.appendChild(tilt);
@@ -596,5 +837,5 @@
     }
   }
 
-  window.PMCard = { render, renderBack, enableTilt, RARITY, SUIT, ORDER };
+  window.PMCard = { render, renderBack, deal, enableTilt, RARITY, SUIT, ORDER, SUITS };
 })();

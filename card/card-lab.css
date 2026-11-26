@@ -22,3 +22,5 @@ body { margin: 0; background: #0d0b09; color: #d9ccb0; font: 15px/1.4 'Radiance'
 .lab-hand .pm-card:hover { transform: translateY(-16px) rotate(0); z-index: 2; }
 .lab-ten { display: flex; gap: 12px; flex-wrap: wrap; }
 body.gray #lab { filter: grayscale(1); }
+.lab-note { margin: -6px 0 14px; color: #8f8370; font-size: 13px; }
+.lab-sec > .lab-row + .lab-row { margin-top: 22px; }
