@@ -233,6 +233,11 @@
     el('stop', { offset: '1', 'stop-color': '#000' }, wmg);
     const wmm = el('mask', { id: 'pm-wm-mask', maskUnits: 'userSpaceOnUse', x: 0, y: 0, width: W, height: H }, defs);
     el('rect', { x: 46, y: 28, width: 158, height: 272, fill: 'url(#pm-wm-fade)' }, wmm);
+    // the field inside each tier's inner rule: the 'bleed' hero fills it edge to edge
+    for (const [k, inset] of [[0, 13.4], [1, 17.9], [2, 19.9]]) {
+      const c = el('clipPath', { id: 'pm-field-clip-' + k }, defs);
+      el('rect', { x: inset, y: inset, width: W - 2 * inset, height: H - 2 * inset, rx: 3 }, c);
+    }
     const cpIn = el('clipPath', { id: 'pm-inner-clip' }, defs);
     el('rect', { x: 19, y: 19, width: W - 38, height: H - 38, rx: 4 }, cpIn);
     const cpBack = el('clipPath', { id: 'pm-back-field' }, defs);
@@ -257,7 +262,9 @@
 
     // Wave band behind the stat number: Rare up.
     if (t >= 1) {
-      el('path', { d: waveBand(50, 200, 61, t >= 3 ? 15 : 13, t >= 2 ? 2.5 : 2, t >= 3 ? 9 : 7), class: 'e-band' }, g);
+      // in a group the 'bleed' layout moves down with the number (--e-band-y, inherited through <use>)
+      const bg = el('g', { class: 'e-bandg' }, g);
+      el('path', { d: waveBand(50, 200, 61, t >= 3 ? 15 : 13, t >= 2 ? 2.5 : 2, t >= 3 ? 9 : 7), class: 'e-band' }, bg);
     }
 
     // Frame.
@@ -642,12 +649,14 @@
     const rank = o.rank || R.rank;
     const heroArt = window.PM_CARD_ART.heroes[o.hero];
     const icon = o.icon || suit;   // e.g. 'joker3' to trial another drawing of the suit
-    // where the hero sits: 'pip' (medallion under the suit pip, default), 'portrait' (round 1:
+    // where the hero sits: 'bleed' (default: no oval, no centre pip; the hero printed pale and
+    // large, filling the card to its inner rule, the stat set over his chest), 'pip' (medallion
+    // under the suit pip), 'portrait' (round 1:
     // the hero fills the oval), 'window' (hero in the oval, pip in the medallion), 'cameo'
     // (hero in front of a ghost pip), 'watermark' (no oval: the hero printed large and pale,
     // the pip solid below the head)
-    const LAYOUTS = ['pip', 'portrait', 'window', 'cameo', 'watermark'];
-    const layout = heroArt && LAYOUTS.includes(o.layout) ? o.layout : 'pip';
+    const LAYOUTS = ['bleed', 'pip', 'portrait', 'window', 'cameo', 'watermark'];
+    const layout = !heroArt ? 'pip' : LAYOUTS.includes(o.layout) ? o.layout : 'bleed';
     const heroName = o.heroName || 'Haze';
     const of = o.of || 1000;
     const bad = o.bad === true ? t + 1 : o.bad;
@@ -688,11 +697,19 @@
     // Every hero is framed from its traced head metrics (tools/trace_heroes.py): the top of
     // the head sits on box.top, the face is centred on box.cx, and the head band (head plus
     // neck) fits box.h, so the whole head always shows and the shoulders crop below it.
-    const FR = heroArt?.frame || [5, vw / 2, vw * 0.45, vh * 0.56];
+    const FR = heroArt?.frame || [5, vw / 2, vw * 0.45, vh * 0.56, vh * 0.42];
+    // box.cover [x0, x1, y1]: the render must reach past these edges, so its own crop never
+    // shows; the face slides off centre a little rather than leave a gap at the border.
     const hero = (parent, box) => {
       const [top, fcx, hw, band] = FR;
       const sc = Math.min(box.h / band, box.w * 1.15 / hw);
-      el('use', { href: '#pm-hero-' + o.hero, x: f1(box.cx - fcx * sc), y: f1(box.top - top * sc), width: f1(vw * sc), height: f1(vh * sc) }, parent);
+      let x = box.cx - fcx * sc, y = box.top - top * sc;
+      if (box.cover) {
+        const [x0, x1, y1] = box.cover;
+        x = Math.min(x0, Math.max(x, x1 - vw * sc));
+        y = Math.max(y, y1 - vh * sc);
+      }
+      el('use', { href: '#pm-hero-' + o.hero, x: f1(x), y: f1(y), width: f1(vw * sc), height: f1(vh * sc) }, parent);
     };
     // the jester is as wide at the top as at the middle, so in the oval it sits smaller and
     // lower, or the oval's narrow top clips the hat
@@ -716,7 +733,34 @@
       el('circle', { cx: MED.cx, cy: MED.cy, r: MED.r + 2.6, class: 'm-rule m-rule--fine' }, med);
     };
     const OV_TOP = OVAL.cy - OVAL.ry;
-    if (layout === 'cameo') {
+    if (layout === 'bleed') {
+      // Full bleed: the eyes sit on one line on every card (EYE), far enough above the number;
+      // the scale comes from the brow-to-crown height, so tall hair (Haze) and a small head
+      // (Lash) both fill the card. The render is held past the side rules so its crop never
+      // shows; if it ends above the bottom rule, its last rows fade out under the text.
+      card.classList.add('no-oval');
+      const inset = [13.4, 17.9][t] ?? 19.9;
+      const [top, fcx, , , eye] = FR;
+      const EYE = 146;
+      const sc = Math.min(1.1, Math.max(0.8, 120 / Math.max(1, eye - top)));
+      const x = Math.min(inset, Math.max(W / 2 - fcx * sc, W - inset - vw * sc));
+      const y = EYE - eye * sc, bottom = y + vh * sc;
+      const bl = el('svg', { class: 'pm-portrait pm-watermark pm-bleedhero', viewBox: `0 0 ${W} ${H}`, 'aria-hidden': 'true' });
+      const bgp = el('g', { 'clip-path': `url(#pm-field-clip-${Math.min(t, 2)})` }, bl);
+      let target = bgp;
+      if (bottom < H - inset) {
+        const id = 'pm-bfade-' + hash(o.hero + suit + r + String(o.value));
+        const d = el('defs', {}, bl);
+        const lg = el('linearGradient', { id: id + 'g', gradientUnits: 'userSpaceOnUse', x1: 0, y1: f1(bottom - 46), x2: 0, y2: f1(bottom - 2), gradientTransform: '' }, d);
+        el('stop', { offset: '0', 'stop-color': '#fff' }, lg);
+        el('stop', { offset: '1', 'stop-color': '#000' }, lg);
+        const mk = el('mask', { id, maskUnits: 'userSpaceOnUse', x: 0, y: 0, width: W, height: H }, d);
+        el('rect', { x: 0, y: 0, width: W, height: H, fill: `url(#${id}g)` }, mk);
+        target = el('g', { mask: `url(#${id})` }, bgp);
+      }
+      el('use', { href: '#pm-hero-' + o.hero, x: f1(x), y: f1(y), width: f1(vw * sc), height: f1(vh * sc) }, target);
+      face.insertBefore(bl, face.firstChild.nextSibling);
+    } else if (layout === 'cameo') {
       if (wide) pip(pg, 92, 92, OVAL.cx, OVAL.cy - 2, 'pm-pip pm-pip--ghost');
       else pip(pg, 108, 116, OVAL.cx, OVAL.cy - 8, 'pm-pip pm-pip--ghost');
       hero(pg, { cx: OVAL.cx, top: OV_TOP + 22, w: 58, h: 76 });

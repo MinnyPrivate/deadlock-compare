@@ -29,6 +29,7 @@
   const HERO_SUIT = ['combat', 'objectives', 'crown', 'survival', 'souls', 'joker', 'combat', 'objectives', 'survival'];
   const HERO_RARITY = ['epic', 'common', 'legendary', 'rare', 'epic', 'common', 'mythical', 'rare', 'legendary'];
   const LAYOUTS = {
+    bleed: ['Full bleed', ' · new default: no oval, no centre pip'],
     portrait: ['Portrait', ' · the hero fills the oval'],
     pip: ['Medallion', ' · big pip, small hero (default)'],
     window: ['Window', ' · hero in the oval, pip in the medallion'],
@@ -72,11 +73,11 @@
   }
 
   // 1. ladder at rest
-  let s = section('The ladder, at rest', 'Cream, cream, cream with engraving, coloured, black.'), r = row(s);
+  let s = section('The ladder, at rest', 'Full bleed: the hero fills the card, the number is the headline, the corners carry the suit. Paper: cream, cream, cream engraved, coloured, black.'), r = row(s);
   for (const k of PMCard.ORDER) cell(r, card(k), `${PMCard.RARITY[k].rank} · ${PMCard.RARITY[k].name}`, LEGEND[k]);
 
   // 2. suits: the rainbow
-  s = section('The six inks: red, orange, yellow, green, blue, purple', 'Combat red, Objectives orange, Crown ochre, Survival green, Souls blue, Joker purple. Press Grayscale at the top to check they still part by tone.');
+  s = section('The six inks: red, orange, yellow, green, blue, purple', 'Combat red, Objectives orange, Crown ochre, Survival green, Souls blue, Joker purple. The centre pip is gone: the corners and the paper colour carry the suit.');
   for (const k of ['common', 'epic', 'legendary', 'mythical']) {
     r = row(s);
     for (const su of PMCard.SUITS) cell(r, sized(suitCard(su, k), 205), PMCard.SUIT[su].name, ' · ' + PMCard.RARITY[k].name);
@@ -108,16 +109,14 @@
     const [id, name] = HEROES[i], su = HERO_SUIT[i], k = HERO_RARITY[i];
     return PMCard.render(Object.assign({ rarity: k, hero: id, heroName: name, suit: su }, BASE[k], STATS[su], extra || {}));
   };
-  s = section('Nine heroes, traced the same way from the game renders', 'Every hero is framed from its own head: the whole head shows, centred, and the shoulders crop below. Default layout (medallion) first, then the oval portrait, then 120 px.');
+  s = section('Nine heroes, full bleed', 'Each hero fills the card to the border, pale, with the eyes cut out (or what covers them: Infernus\'s lenses, Abrams\'s glasses, Seven\'s grin under the hat). Then the same nine at 120 px.');
   r = row(s, 'lab-row lab-row--nine');
   HEROES.forEach(([, name], i) => cell(r, sized(heroCard(i), 172), name, ' · ' + PMCard.RARITY[HERO_RARITY[i]].name));
-  r = row(s, 'lab-row lab-row--nine');
-  HEROES.forEach(([, name], i) => cell(r, sized(heroCard(i, { layout: "portrait" }), 172), name, ' · portrait'));
   r = row(s, 'lab-row lab-row--nine');
   HEROES.forEach((x, i) => r.appendChild(sized(heroCard(i), 120)));
 
   // 6. hero placement
-  s = section('Where the hero sits: five ways', 'Haze on Epic Souls, Seven (the widest hat) on Legendary Combat, Lady Geist on Mythical Survival. The chest badge is gone; it covered him.');
+  s = section('Full bleed next to the older placements', 'Haze on Epic Souls, Seven on Legendary Combat, Lady Geist on Mythical Survival.');
   for (const [k, su, i] of [['epic', 'souls', 0], ['legendary', 'combat', 2], ['mythical', 'survival', 4]]) {
     r = row(s);
     for (const [L, [name, sub]] of Object.entries(LAYOUTS)) {

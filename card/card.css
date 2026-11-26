@@ -171,8 +171,8 @@
 .e-boss { fill: var(--paper); stroke: var(--frame); stroke-width: .7; }
 .e-rose { fill: none; stroke: var(--e-rose, var(--e-ring)); stroke-width: .25; }
 .e-micro { font: 700 2.05px 'VALVE Pulp', sans-serif; letter-spacing: .34px; fill: var(--ink); opacity: .75; }
-.pm-sil { fill: var(--e-sil); }
-.pm-eyes { fill: var(--e-eyes); }
+.pm-sil { fill: var(--e-sil); fill-opacity: var(--e-sil-op, 1); }
+.pm-eyes { fill: var(--e-eyes); fill-opacity: var(--e-eyes-op, 1); }
 .no-eyes { --e-eyes: var(--e-sil); }
 
 /* the suit pip, big, in the oval */
@@ -427,3 +427,25 @@
 @media (prefers-reduced-motion: reduce) {
   .pm-tilt, .pm-light, .pm-face { transition: none; }
 }
+
+/* ---------- layout 'bleed' (default): the hero fills the card, the stat is set over his chest ---------- */
+.e-bandg { transform: translateY(var(--e-band-y, 0px)); }
+.pm-bleedhero { --e-sil-op: .3; }   /* pale body; the eyes print at full strength */
+.pm-card .pm-bleedhero.pm-bleedhero { opacity: 1; }
+.r-legendary .pm-bleedhero { --e-sil-op: .3; --e-eyes: var(--suit-hi); --e-eyes-op: .75; }
+.r-mythical .pm-bleedhero { --e-sil-op: .24; --e-eyes-op: .85; }
+.lay-bleed { --e-band-y: 172px; }
+.lay-bleed .pm-stat { top: 20.3em; }
+.lay-bleed .pm-num { font-size: 5.6em; }
+.lay-bleed .pm-num.is-long { font-size: 5.05em; }
+.lay-bleed .pm-label { margin-top: .3em; font-size: 1.08em; }
+.lay-bleed .pm-foot { top: 28.3em; left: 5.7em; right: 5.7em; }
+.lay-bleed .pm-title { font-size: 1.04em; letter-spacing: .22em; margin-right: -.22em; }
+.lay-bleed .pm-serial { margin-top: .45em; }
+.lay-bleed .pm-sealwrap { left: 17.5em; top: 2.5em; }
+/* the corner index: a bigger suit, so it reads at a glance */
+.pm-idx { width: 3.4em; left: 2.1em; top: 2.4em; }
+.pm-idx--br { left: auto; top: auto; right: 2.1em; bottom: 2.4em; }
+.pm-idx .pm-rank { font-size: 2.75em; }
+.pm-idx .pm-rank.is-ten { font-size: 2.3em; }
+.pm-suit { width: 2.7em; height: 2.7em; margin-top: .3em; }
