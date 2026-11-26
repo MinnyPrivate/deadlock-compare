@@ -130,7 +130,7 @@ function valveLabel(p) { return p.mvp === 1 ? "MVP" : p.mvp > 1 ? "Key Player" :
 function heroName(p) { return p.hero + (state.me && state.me.slot === p.slot ? " (You)" : ""); }
 function portrait(p, cls) {
   const T = TEAMS[p.team];
-  return `<span class="${cls}" style="--coin:${T.coin};--tc:${T.c}"><img src="${p.img}" alt="" onerror="this.remove()"></span>`;
+  return `<span class="${cls}" style="--coin:${T.coin};--tc:${T.c}"><img src="${p.img}" alt="" data-remove-on-error></span>`;
 }
 // The MVP tab shows the game's rectangular card art (see cardImg in app.js), not the round chip.
 function cardFace(p, cls) { return `<span class="cardFace ${cls}" style="--tc:${TEAMS[p.team].c}">${cardImg(p)}</span>`; }

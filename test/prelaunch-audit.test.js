@@ -842,14 +842,20 @@ test("U4, U5 and R6: MVP labels estimates and official awards, keeps row focus a
     const p = state.players.find(p => p.slot === state.mvpPick);
     const changed = {...p.raw, hero_id: 999999};
     const scored = window.PM_SCORE.scoreMatch({players: [changed]}, window.HERO_TABLE).players[0];
+    const card = document.querySelector('.mvpRow .cardFace img');
+    const inlineHandler = card.hasAttribute('onerror');
+    card.dispatchEvent(new Event('error'));
     return {active, requested: row.dataset.slot, estimate: row.querySelector('.score').textContent,
-      official: document.querySelector('.mvpRow .badge').title, graded: scored.graded_hero, inTable: scored.inTable};
+      official: document.querySelector('.mvpRow .badge').title, graded: scored.graded_hero, inTable: scored.inTable,
+      inlineHandler, cardRemoved: !card.isConnected};
   })()`);
   assert.equal(output.active, output.requested);
   assert.match(output.estimate, /est\./);
   assert.match(output.official, /Valve's recorded/);
   assert.equal(output.graded, 999999);
   assert.equal(output.inTable, false);
+  assert.equal(output.inlineHandler, false);
+  assert.equal(output.cardRemoved, true);
 });
 
 test("R7: profile history renders while its Steam name is pending", async () => {
