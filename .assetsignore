@@ -52,9 +52,28 @@
 !/summary/*.js
 !/summary/*.css
 
+!/card/
+/card/**
+!/card/art.js
+!/card/card.js
+!/card/card.css
+
+!/deal/
+/deal/**
+!/deal/norms.js
+!/deal/features.js
+!/deal/catalog.js
+!/deal/engine.js
+
 !/data/
 /data/*
 !/data/hero_percentiles.json
+!/data/deal-norms/
+/data/deal-norms/**
+!/data/deal-norms/index.json
+!/data/deal-norms/hero_[0-9].json
+!/data/deal-norms/hero_[0-9][0-9].json
+!/data/deal-norms/hero_[0-9][0-9][0-9].json
 
 !/download/
 /download/*

@@ -6,11 +6,13 @@
 <meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Postmortem</title>
+<link rel="icon" href="data:,">
 <link rel="preload" href="assets/fonts/valveoracle-semibold.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="assets/fonts/radiance-semibold.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="hero-backdrop.css">
 <link rel="stylesheet" href="summary/summary.css">
+<link rel="stylesheet" href="card/card.css">
 </head>
 <body>
 <div id="summaryBackdrop" aria-hidden="true" hidden>
@@ -159,7 +161,14 @@
     </div>
   </main>
 
-  <main id="summaryView" aria-label="Match summary" hidden></main>
+  <main id="summaryView" aria-label="Match summary" hidden>
+    <section id="highlightsHand" class="hl-hand" aria-labelledby="highlightsHandTitle" hidden>
+      <h2 id="highlightsHandTitle"></h2>
+      <p id="highlightsHandStatus" role="status"></p>
+      <div id="highlightsHandCards" class="hl-hand-cards"></div>
+    </section>
+    <div class="hl-layout"></div>
+  </main>
   <div id="summaryTip" role="tooltip" hidden></div>
   <section id="mvpView" class="mvpView"></section>
   <section id="muView" class="mvpView muView"></section>
@@ -207,6 +216,13 @@
 <script src="summary/percentile.js"></script>
 <script src="summary/fights.js"></script>
 <script src="summary/share.js"></script>
+<script src="deal/norms.js"></script>
+<script src="deal/features.js"></script>
+<script src="deal/catalog.js"></script>
+<script src="deal/engine.js"></script>
+<script src="card/art.js"></script>
+<script src="card/card.js"></script>
+<script src="summary/hand.js"></script>
 <script src="summary/summary.js"></script>
 <script src="dust.js"></script>
 </body>

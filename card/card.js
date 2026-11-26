@@ -597,17 +597,26 @@
 
   function render(o) {
     ensureDefs();
-    const r = o.rarity, t = tier(r), R = RARITY[r], suit = o.suit || 'combat', S = SUIT[suit];
-    const layout = o.layout || 'pip';
+    const r = o.rarity === 'middle' ? 'common' : o.rarity;
+    const t = tier(r), R = RARITY[r], suit = o.suit || 'combat', S = SUIT[suit];
+    const rarityName = o.rarity === 'middle' ? 'Middle' : R.name;
+    const rank = o.rank || R.rank;
+    const heroArt = window.PM_CARD_ART.heroes[o.hero];
+    const layout = heroArt && o.layout === 'cameo' ? 'cameo' : 'pip';
     const heroName = o.heroName || 'Haze';
     const of = o.of || 1000;
+    const bad = o.bad === true ? t + 1 : o.bad;
     const cls = ['pm-card', 'r-' + r, 's-' + suit, 'lay-' + layout];
-    if (o.bad) cls.push('is-bad', 'bad-' + o.bad);
+    if (bad) cls.push('is-bad', 'bad-' + bad);
     if (o.eyes === false) cls.push('no-eyes');
     if (suit === 'joker') cls.push('is-misprint');
     const card = h('article', cls.join(' '));
-    const title = suit === 'joker' ? (o.title || 'The Joker') : `${R.word} of ${S.plural}`;
-    card.setAttribute('aria-label', `${title}, ${R.name}: ${o.value} ${o.stat}. Number ${num(o.no)} of ${num(of)} ${heroName} games.` + (o.newBest ? ' New personal best.' : ''));
+    const title = o.title || (suit === 'joker' ? 'The Joker' : `${R.word} of ${S.plural}`);
+    const comparison = o.comparison ?? `Number ${num(o.no)} of ${num(of)} ${heroName} games`;
+    const description = o.description || [o.value, o.stat].filter(Boolean).join(' ');
+    if (o.id) card.dataset.cardId = o.id;
+    if (o.description) card.title = o.description;
+    card.setAttribute('aria-label', `${title}, ${rarityName}. ${description.replace(/\.$/, '')}. ${comparison}.` + (o.newBest ? ' New personal best.' : ''));
     card.tabIndex = 0;
     const tilt = h('div', 'pm-tilt');
     const face = h('div', 'pm-face');
@@ -628,7 +637,7 @@
     const por = el('svg', { class: 'pm-portrait', viewBox: `0 0 ${W} ${H}`, 'aria-hidden': 'true' });
     const pg = el('g', { 'clip-path': 'url(#pm-oval-clip)' }, por);
     let med = null;
-    const hv = (window.PM_CARD_ART.heroes[o.hero] || {}).viewBox || '0 0 280 380';
+    const hv = heroArt?.viewBox || '0 0 280 380';
     const [, , vw, vh] = hv.split(' ').map(Number);
     if (layout === 'cameo') {
       el('use', { href: '#pm-suit-' + suit, x: OVAL.cx - 54, y: OVAL.cy - 66, width: 108, height: 116, class: 'pm-pip pm-pip--ghost' }, pg);
@@ -636,6 +645,8 @@
       el('use', { href: '#pm-hero-' + o.hero, x: f1(OVAL.cx - sw / 2 + 1), y: f1(OVAL.cy + OVAL.ry - sh * 0.86), width: f1(sw), height: f1(sh) }, pg);
     } else {
       el('use', { href: '#pm-suit-' + suit, x: OVAL.cx - 44, y: OVAL.cy - 62, width: 88, height: 96, class: 'pm-pip' }, pg);
+    }
+    if (layout === 'pip' && heroArt) {
       // the hero sits in a small medallion on the oval's lower edge (its own layer, so the
       // Legendary ink bleed passes under it)
       med = el('svg', { class: 'pm-portrait pm-medal', viewBox: `0 0 ${W} ${H}`, 'aria-hidden': 'true' });
@@ -655,14 +666,14 @@
 
     for (const pos of ['tl', 'br']) {
       const idx = h('div', 'pm-idx pm-idx--' + pos);
-      idx.appendChild(h('span', 'pm-rank' + (R.rank.length > 1 ? ' is-ten' : ''), R.rank));
+      idx.appendChild(h('span', 'pm-rank' + (rank.length > 1 ? ' is-ten' : ''), rank));
       idx.appendChild(suitIcon(suit, 'pm-suit'));
       face.appendChild(idx);
     }
 
     const head = h('div', 'pm-head');
     head.appendChild(h('span', 'pm-suitname', S.name));
-    head.appendChild(h('span', 'pm-rarity', R.name));
+    head.appendChild(h('span', 'pm-rarity', rarityName));
     face.appendChild(head);
 
     const stat = h('div', 'pm-stat');
@@ -675,11 +686,15 @@
     const foot = h('div', 'pm-foot');
     foot.appendChild(h('div', 'pm-title', title));
     const ser = h('div', 'pm-serial');
-    ser.appendChild(h('span', 'pm-serial__no', 'No. ' + num(o.no)));
-    ser.appendChild(h('span', 'pm-serial__rest', ` of ${num(of)} ${heroName} games`));
-    // long hero names step the line down so it never meets the corner index
-    const len = ser.textContent.length;
-    if (len > 30) ser.style.fontSize = (len > 36 ? .74 : .82) + 'em';
+    if (o.comparison != null) {
+      ser.textContent = o.comparison;
+    } else {
+      ser.appendChild(h('span', 'pm-serial__no', 'No. ' + num(o.no)));
+      ser.appendChild(h('span', 'pm-serial__rest', ` of ${num(of)} ${heroName} games`));
+      // Long hero names step the line down so it never meets the corner index.
+      const len = ser.textContent.length;
+      if (len > 30) ser.style.fontSize = (len > 36 ? .74 : .82) + 'em';
+    }
     foot.appendChild(ser);
     face.appendChild(foot);
 
@@ -692,10 +707,10 @@
     }
     face.appendChild(h('div', 'pm-light'));
 
-    if (o.bad) {
+    if (bad) {
       const seed = hash(o.value + o.stat + r + suit);
-      face.appendChild(damage(o.bad, seed));
-      applyTear(card, tilt, face, o.bad, seed);
+      face.appendChild(damage(bad, seed));
+      applyTear(card, tilt, face, bad, seed);
     }
     return card;
   }

@@ -584,6 +584,33 @@ test("official colors reach Summary, graph strokes, readout swatches and portrai
   assert.deepEqual(await page("auditErrors"), []);
 });
 
+test("Highlights shows dealMatch's hand in order for the viewed player", async () => {
+  const { dealMatch } = require("../deal/engine");
+  const score = require("../scoring");
+  const window = {};
+  require("node:vm").runInNewContext(await readFile(join(site, "heronorms.js"), "utf8"), { window });
+  const index = require("../data/deal-norms/index.json");
+  const viewer = match.match_info.players.find(p => p.account_id === 81646827);
+  const other = match.match_info.players.find(p => p.hero_id !== viewer.hero_id);
+  await navigate(`${localMatch}&me=${viewer.account_id}`);
+  await loaded(standardId);
+
+  for (const player of [viewer, other]) {
+    if (player === other) await page(`document.querySelector('[data-summary-portrait="${player.player_slot}"]').click()`);
+    const heroes = { [player.hero_id]: require(`../data/deal-norms/hero_${player.hero_id}.json`) };
+    const expected = dealMatch(match, player.player_slot, { index, heroes },
+      { score: { scoreMatch: score.scoreMatch, table: window.HERO_TABLE } });
+    assert.equal(expected.status, "dealt");
+    await waitPage(`Summary.selected().slot === ${player.player_slot} &&
+      !!document.querySelector('#highlightsHandCards [data-card-id]')`);
+    assert.deepEqual(await page(`[...document.querySelectorAll('#highlightsHandCards [data-card-id]')]
+      .map(card => [card.dataset.cardId, ...['title', 'num:not(.pm-num--ghost)', 'label', 'serial', 'rank']
+        .map(part => card.querySelector('.pm-' + part).textContent)])`),
+    expected.cards.map(card => [card.card_id, card.title, card.value_text, card.unit, card.percentile_text, card.corner_rank]));
+  }
+  assert.deepEqual(await page("auditErrors"), []);
+});
+
 test("U2 and P1: Summary opens on the viewer and cleans the hint while preserving other parameters", async () => {
   await navigate(`${localMatch}&me=81646827&unrelated=keep#friendly=1`);
   await loaded(standardId);

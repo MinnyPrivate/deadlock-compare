@@ -269,6 +269,10 @@
 }
 .pm-serial__no { font-weight: 800; }
 .pm-num.is-long { font-size: 3.6em; }
+.pm-card[data-card-id] .pm-label { padding-inline: 3em; letter-spacing: .13em; text-wrap: balance; }
+.pm-card[data-card-id] .pm-foot { white-space: normal; }
+.pm-card[data-card-id] .pm-title { letter-spacing: .1em; text-wrap: balance; }
+.pm-card[data-card-id] .pm-serial { margin-top: .26em; }
 /* tiny cards keep only the rank */
 .pm-card { container-type: inline-size; }
 @container (max-width: 145px) { .pm-serial__rest { display: none; } .pm-serial { font-size: 1.15em; } }
