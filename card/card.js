@@ -166,6 +166,12 @@
     return out;
   }
 
+  // A rounded-rect ring between insets o and i (fill-rule evenodd).
+  function ringPath(o, i, ro, ri) {
+    const rr = (n, r) => `M${n + r} ${n}H${W - n - r}A${r} ${r} 0 0 1 ${W - n} ${n + r}V${H - n - r}A${r} ${r} 0 0 1 ${W - n - r} ${H - n}H${n + r}A${r} ${r} 0 0 1 ${n} ${H - n - r}V${n + r}A${r} ${r} 0 0 1 ${n + r} ${n}Z`;
+    return rr(o, ro) + rr(i, ri);
+  }
+
   /* ---------- the portrait and frame layout (card units) ---------- */
   const OVAL = { cx: 125, cy: 186, rx: 62, ry: 74 };
 
@@ -233,19 +239,14 @@
       el('rect', { x: 9, y: 9, width: W - 18, height: H - 18, rx: 6, class: 'e-rule e-rule--outer' }, g);
       el('rect', { x: 13, y: 13, width: W - 26, height: H - 26, rx: 3.5, class: 'e-rule e-rule--inner' }, g);
     } else if (t === 1) {
-      // Rare: a heavy oxblood rule with a hairline inside it.
-      el('rect', { x: 10.5, y: 10.5, width: W - 21, height: H - 21, rx: 5.5, class: 'e-rule e-rule--heavy' }, g);
-      el('rect', { x: 16, y: 16, width: W - 32, height: H - 32, rx: 3, class: 'e-rule e-rule--inner' }, g);
+      // Rare: a solid oxblood band with a hairline inside it.
+      el('path', { d: ringPath(8.5, 14.5, 6.5, 4), class: 'e-bandfill', 'fill-rule': 'evenodd' }, g);
+      el('rect', { x: 17.5, y: 17.5, width: W - 35, height: H - 35, rx: 3, class: 'e-rule e-rule--inner' }, g);
     } else {
       // Epic up: lathe-work ribbon between two rules, rosettes on the corners.
       const waves = t >= 3 ? 96 : 72;
-      if (t >= 3) {
-        // Legendary up: the border band is printed solid in the second ink, engraved through in bone
-        const o = 7.5, i = 19.5;
-        el('path', { d: `M${o + 7} ${o}H${W - o - 7}A7 7 0 0 1 ${W - o} ${o + 7}V${H - o - 7}A7 7 0 0 1 ${W - o - 7} ${H - o}H${o + 7}A7 7 0 0 1 ${o} ${H - o - 7}V${o + 7}A7 7 0 0 1 ${o + 7} ${o}Z` +
-          `M${i + 4} ${i}H${W - i - 4}A4 4 0 0 1 ${W - i} ${i + 4}V${H - i - 4}A4 4 0 0 1 ${W - i - 4} ${H - i}H${i + 4}A4 4 0 0 1 ${i} ${H - i - 4}V${i + 4}A4 4 0 0 1 ${i + 4} ${i}Z`,
-          class: 'e-bandfill', 'fill-rule': 'evenodd' }, g);
-      }
+      // Epic: the band is tinted. Legendary up: printed solid in the second ink, engraved through in bone.
+      el('path', { d: ringPath(7.5, 19.5, 7, 4), class: t >= 3 ? 'e-bandfill' : 'e-bandtint', 'fill-rule': 'evenodd' }, g);
       el('path', { d: latheBorder(8.5, 10, 6, waves, t >= 3 ? 5 : 4, 1), class: 'e-lathe e-lathe--a' }, g);
       el('path', { d: latheBorder(8.5, 10, 6, waves, t >= 3 ? 5 : 4, -1), class: 'e-lathe e-lathe--b' }, g);
       el('rect', { x: 7.5, y: 7.5, width: W - 15, height: H - 15, rx: 7, class: 'e-rule e-rule--outer' }, g);
@@ -254,12 +255,15 @@
       const mp = el('path', { id: 'pm-micro-' + r, d: `M24 22.6H${W - 24}`, fill: 'none' }, g);
       const tx = el('text', { class: 'e-micro' }, g);
       const tp = el('textPath', { href: '#pm-micro-' + r }, tx);
-      tp.textContent = 'POSTMORTEM · CERTIFIED TRUE RECORD OF THE MATCH · '.repeat(3);
+      // whole phrases only, stretched to exactly fill the rule
+      tp.setAttribute('textLength', W - 48); tp.setAttribute('lengthAdjust', 'spacingAndGlyphs');
+      tp.textContent = 'POSTMORTEM · CERTIFIED TRUE RECORD OF THE MATCH · POSTMORTEM · CERTIFIED TRUE RECORD OF THE MATCH';
       const mp2 = el('path', { id: 'pm-micro2-' + r, d: `M${W - 24} ${H - 21}H24`, fill: 'none' }, g);
       void mp; void mp2;
       const tx2 = el('text', { class: 'e-micro' }, g);
       const tp2 = el('textPath', { href: '#pm-micro2-' + r }, tx2);
-      tp2.textContent = 'ISSUED BY THE CORONER OF THE CURSED APPLE · '.repeat(3);
+      tp2.setAttribute('textLength', W - 48); tp2.setAttribute('lengthAdjust', 'spacingAndGlyphs');
+      tp2.textContent = 'ISSUED BY THE CORONER OF THE CURSED APPLE · ISSUED BY THE CORONER OF THE CURSED APPLE';
       tx2.setAttribute('transform', `rotate(180 ${W / 2} ${H - 21})`);
     }
 
@@ -295,7 +299,6 @@
     el('rect', { x: 19.5, y: 19.5, width: W - 39, height: H - 39, rx: 4, class: 'b-rule' }, g);
     // big rosette that the coin sits on, a ring of microtext, then the well
     el('path', { d: rosette(W / 2, H / 2, 76, 76, 3.4, 30, 4, 3, 6), class: 'b-rose' }, g);
-    el('path', { d: rosette(W / 2, H / 2, 70, 70, 2.2, 22, 3, 1, 0), class: 'b-rose2' }, g);
     el('circle', { cx: W / 2, cy: H / 2, r: 66, class: 'b-well' }, g);
     el('path', { id: 'pm-back-arc', d: `M${W / 2 - 61} ${H / 2}a61 61 0 1 1 122 0a61 61 0 1 1 -122 0`, fill: 'none' }, g);
     const tx = el('text', { class: 'b-micro' }, g);
@@ -365,6 +368,7 @@
     // crease: a fold line, light on one side and dark on the other
     if (level >= 2) {
       const y0 = 50 + R() * 50, y1 = y0 + 150 + R() * 60;
+      el('path', { d: `M-2 ${f1(y0 - 3)}L${W + 2} ${f1(y1 - 3)}`, class: 'd-crease-soft' }, s);
       el('path', { d: `M-2 ${f1(y0)}L${W + 2} ${f1(y1)}`, class: 'd-crease-dk' }, s);
       el('path', { d: `M-2 ${f1(y0 + 0.9)}L${W + 2} ${f1(y1 + 0.9)}`, class: 'd-crease-lt' }, s);
     }
@@ -414,7 +418,7 @@
   function render(o) {
     ensureDefs();
     const r = o.rarity, t = tier(r), R = RARITY[r], S = SUIT[o.suit];
-    const card = h('article', `pm-card r-${r}` + (o.bad ? ` is-bad bad-${o.bad}` : ''));
+    const card = h('article', `pm-card r-${r}` + (o.bad ? ` is-bad bad-${o.bad}` : '') + (o.eyes === false ? ' no-eyes' : ''));
     card.setAttribute('aria-label', `${R.word} of ${S.plural}, ${R.name}: ${o.value} ${o.stat}. ${o.line}.`);
     card.tabIndex = 0;
     const tilt = h('div', 'pm-tilt');
@@ -463,7 +467,7 @@
     stat.appendChild(h('div', 'pm-label', o.stat));
     face.appendChild(stat);
 
-    if (t >= 3) {
+    if (t >= 3 && !o.bad) {
       const seal = h('div', 'pm-sealwrap');
       seal.appendChild(sealSVG(R.rank, o.suit));
       face.appendChild(seal);
@@ -488,19 +492,19 @@
   function applyTear(card, tilt, face, level, seed) {
     const R = rng(seed ^ 0x9e3779b9);
     if (level === 3) {
-      // top right corner torn off and taped back on, slightly askew
-      const line = tearLine(R, W - 84, -2, W + 2, 94, 22, 6);
-      face.style.clipPath = `polygon(0% 0%, ${pc(line)}, 100% 100%, 0% 100%)`;
-      face.appendChild(tearEdge(line, 1));
+      // bottom left corner torn off and taped back on, slightly askew; clear of the number, serial and rank
+      const line = tearLine(R, -2, H - 82, 70, H + 2, 18, 5);
+      face.style.clipPath = `polygon(0% 0%, 100% 0%, 100% 100%, ${pc(line.slice().reverse())})`;
+      face.appendChild(tearEdge(line, -1));
       const piece = face.cloneNode(true);
       piece.classList.add('pm-piece');
-      piece.style.clipPath = `polygon(${pc(line)}, 100% 0%)`;
-      piece.style.transform = 'translate(.5%, -.3%) rotate(.9deg)';
-      piece.style.transformOrigin = '100% 0%';
-      piece.appendChild(tearEdge(line, -1));
+      piece.style.clipPath = `polygon(0% 100%, ${pc(line)})`;
+      piece.style.transform = 'translate(-.9%, .8%) rotate(-1.8deg)';
+      piece.style.transformOrigin = '0% 100%';
+      piece.appendChild(tearEdge(line, 1));
       tilt.appendChild(piece);
-      tilt.appendChild(tape(196, 30, 54, 15, -44));
-      tilt.appendChild(tape(232, 72, 44, 15, -38));
+      tilt.appendChild(tape(18, H - 63, 52, 15, -42));
+      tilt.appendChild(tape(46, H - 27, 52, 15, -38));
     } else if (level >= 4) {
       // torn across, the halves a little out of line, taped
       const line = tearLine(R, -2, 158 + R() * 20, W + 2, 176 + R() * 20, 34, 8);
@@ -509,7 +513,7 @@
       const piece = face.cloneNode(true);
       piece.classList.add('pm-piece');
       piece.style.clipPath = `polygon(${pc(line)}, 100% 100%, 0% 100%)`;
-      piece.style.transform = 'translate(-.5%, .45%) rotate(-.8deg)';
+      piece.style.transform = 'translate(-1%, .9%) rotate(-1.3deg)';
       piece.appendChild(tearEdge(line, -1));
       tilt.appendChild(piece);
       tilt.appendChild(tape(52, 170, 62, 16, 86));
