@@ -24,3 +24,10 @@ body { margin: 0; background: #0d0b09; color: #d9ccb0; font: 15px/1.4 'Radiance'
 body.gray #lab { filter: grayscale(1); }
 .lab-note { margin: -6px 0 14px; color: #8f8370; font-size: 13px; }
 .lab-sec > .lab-row + .lab-row { margin-top: 22px; }
+.lab-row--hand { align-items: center; gap: 14px; flex-wrap: nowrap; }
+.lab-rowcap { width: 120px; flex: none; color: #ebe0c8; font-size: 13px; }
+.lab-sec > .lab-row--hand + .lab-row--hand { margin-top: 14px; }
+.lab-coins { align-items: flex-end; }
+.lab-coin { display: flex; flex-direction: column; align-items: center; gap: 8px; color: #b08e4c; }
+
+.lab-ten .pm-card { --w: 150px !important; }

@@ -25,6 +25,15 @@
     crown:      { stat: 'Match MVP', value: '1st' },
     joker:      { stat: 'Deaths to Neutrals', value: '7', title: 'The Joker' },
   };
+  const INKS = { steel: 'Cool steel blue', orange: 'Orange (the Amber patron)', yellow: 'Yellow', sapphire: 'My pick: deep sapphire (the other patron)' };
+  const LAYOUTS = {
+    portrait: ['Portrait', ' · round 1: Haze fills the oval'],
+    pip: ['Medallion', ' · round 2: big pip, small Haze'],
+    window: ['Window', ' · Haze in the oval, pip in the medallion'],
+    cameo: ['Cameo', ' · Haze in front of a ghost pip'],
+    badge: ['Badge', ' · Haze wears the suit on his chest'],
+    watermark: ['Watermark', ' · no oval, Haze printed pale behind the pip'],
+  };
   const base = { hero: HAZE, heroName: 'Haze', suit: 'combat', stat: 'Hero Damage' };
   const card = (rarity, extra) => PMCard.render(Object.assign({ rarity }, base, BASE[rarity], extra || {}));
   const suitCard = (suit, rarity, extra) => PMCard.render(Object.assign({ rarity }, base, BASE[rarity], { suit }, STATS[suit], extra || {}));
@@ -53,42 +62,58 @@
     return el;
   }
   const sized = (el, w) => { el.style.setProperty('--w', w + 'px'); return el; };
+  function coin(file, size, label) {
+    const c = document.createElement('div'); c.className = 'lab-coin';
+    const img = document.createElement('img'); img.src = file; img.width = size; img.height = size; img.alt = label;
+    c.appendChild(img);
+    const p = document.createElement('div'); p.className = 'lab-cap'; p.textContent = label; c.appendChild(p);
+    return c;
+  }
 
   // 1. ladder at rest
   let s = section('The ladder, at rest', 'Cream, cream, cream with engraving, coloured, black.'), r = row(s);
   for (const k of PMCard.ORDER) cell(r, card(k), `${PMCard.RARITY[k].rank} · ${PMCard.RARITY[k].name}`, LEGEND[k]);
 
-  // 2. ladder on hover
-  s = section('The ladder, on hover (tilted toward the light)'); r = row(s);
-  for (const k of PMCard.ORDER) cell(r, hovered(card(k), 6, -9, 22, 18, .85), `${PMCard.RARITY[k].name}, hover`);
+  // 2. suits
+  s = section('Suits: each has its own ink and pip', 'Combat now takes the red, Joker the purple, Souls your icon. Objectives shows steel blue here; the trial inks are in the next section.');
+  for (const k of ['common', 'epic', 'legendary', 'mythical']) {
+    r = row(s);
+    for (const su of PMCard.SUITS) cell(r, sized(suitCard(su, k), 205), PMCard.SUIT[su].name, ' · ' + PMCard.RARITY[k].name);
+  }
 
-  // 3. suits
-  s = section('Suits: each has its own ink and pip', 'Combat rust, Survival olive, Souls teal, Objectives purple, Crown brass, Joker misprint.');
-  r = row(s);
-  for (const k of PMCard.SUITS) cell(r, sized(suitCard(k, 'common'), 205), PMCard.SUIT[k].name, ' · Common');
-  r = row(s);
-  for (const k of PMCard.SUITS) cell(r, sized(suitCard(k, 'epic'), 205), PMCard.SUIT[k].name, ' · Epic');
-  r = row(s);
-  for (const k of PMCard.SUITS) cell(r, sized(suitCard(k, 'legendary'), 205), PMCard.SUIT[k].name, ' · Legendary');
-  r = row(s);
-  for (const k of PMCard.SUITS) cell(r, sized(suitCard(k, 'mythical'), 205), PMCard.SUIT[k].name, ' · Mythical');
+  // 3. objectives trial inks, each in a hand next to the brass crown
+  s = section('Objectives: four trial inks, each dealt in a hand with the Crown', 'Look for which one still reads apart from the Crown brass and from Combat red.');
+  for (const [ink, label] of Object.entries(INKS)) {
+    r = row(s, 'lab-row lab-row--hand');
+    const cap = document.createElement('div'); cap.className = 'lab-rowcap'; cap.textContent = label; r.appendChild(cap);
+    const hand = [
+      suitCard('combat', 'rare'), suitCard('objectives', 'epic', { ink }), suitCard('crown', 'legendary'),
+      suitCard('objectives', 'legendary', { ink }), suitCard('survival', 'common'), suitCard('objectives', 'mythical', { ink }),
+    ];
+    for (const c of hand) r.appendChild(sized(c, 170));
+  }
 
-  // 4. new best
-  s = section('NEW BEST: the only stamp', 'Only when this game beat his own record for the stat.'); r = row(s);
-  cell(r, card('rare', { newBest: true }), 'Rare + New Best');
-  cell(r, suitCard('souls', 'epic', { newBest: true }), 'Epic + New Best');
-  cell(r, card('legendary', { newBest: true }), 'Legendary + New Best');
-  cell(r, card('mythical', { newBest: true }), 'Mythical + New Best');
-
-  // 5. layout
-  s = section('Hero placement: medallion (default) vs cameo', 'Medallion keeps the suit pip whole. Cameo tucks Haze into the oval in front of a ghost pip.');
+  // 4. joker: his pick, the two-pip jester
+  s = section('Joker: the two-pip jester (your pick)', 'Purple ink, misprinted: the second plate lands off register and the stat line is upside down.');
   r = row(s);
-  cell(r, card('epic'), 'Medallion', ' · Epic');
-  cell(r, card('epic', { layout: 'cameo' }), 'Cameo', ' · Epic');
-  cell(r, suitCard('souls', 'legendary'), 'Medallion', ' · Legendary');
-  cell(r, suitCard('souls', 'legendary', { layout: 'cameo' }), 'Cameo', ' · Legendary');
+  for (const k of ['common', 'epic', 'legendary', 'mythical']) cell(r, sized(suitCard('joker', k), 205), 'Joker', ' · ' + PMCard.RARITY[k].name);
 
-  // 6. bad cards
+  // 5. new best
+  s = section("NEW BEST: the coroner's wax seal", 'Red wax, black wax on the red Combat suit so it never blends in. Round 2 stamp at the end for comparison.'); r = row(s);
+  cell(r, card('rare', { newBest: true }), 'Rare + seal', ' · Combat, black wax');
+  cell(r, suitCard('souls', 'epic', { newBest: true }), 'Epic + seal');
+  cell(r, suitCard('survival', 'legendary', { newBest: true }), 'Legendary + seal');
+  cell(r, suitCard('joker', 'mythical', { newBest: true }), 'Mythical + seal');
+  cell(r, suitCard('souls', 'epic', { newBest: true, mark: 'stamp' }), 'Round 2 stamp', ' · for comparison');
+
+  // 6. hero placement
+  s = section('Where Haze sits: six ways', 'Same card each time. Top row Epic Souls, bottom row Legendary Combat.');
+  for (const [k, su] of [['epic', 'souls'], ['legendary', 'combat']]) {
+    r = row(s);
+    for (const [L, [name, sub]] of Object.entries(LAYOUTS)) cell(r, sized(suitCard(su, k, { layout: L }), 205), name, sub);
+  }
+
+  // 7. bad cards
   s = section('Bad cards: the same card, damaged by how bad it was'); r = row(s);
   const badLadder = [
     ['common', 'survival', 1, '1,120', 'Healing', 806],
@@ -101,30 +126,38 @@
     cell(r, PMCard.render(Object.assign({}, base, { rarity: k, suit, bad: lv, value: v, stat, no })), `Bad ${PMCard.RARITY[k].name}`, ' · ' + DAMAGE[lv]);
   }
 
-  // 7. back
-  s = section('The back', 'Brass on matte black. The coin is a placeholder: swap card/src/logo.svg.'); r = row(s);
-  cell(r, PMCard.renderBack(), 'Back, at rest');
+  // 8. back and coin
+  s = section('The back and the coin', 'Your pick from the Gemini sheet (#2), redrawn as clean vector: reeded edge, legend ring "POSTMORTEM · EVERY MATCH HAS A STORY". Also without words.');
+  r = row(s);
+  cell(r, PMCard.renderBack(), 'Back, with the legend');
+  cell(r, PMCard.renderBack({ legend: false }), 'Back, no words', ' · bead ring instead');
   cell(r, hovered(PMCard.renderBack(), 6, -9, 22, 18, .8), 'Back, hover');
+  r = row(s, 'lab-row lab-coins');
+  r.appendChild(coin('assets/logo/postmortem-coin.svg', 220, 'Coin, legend'));
+  r.appendChild(coin('assets/logo/postmortem-coin-plain.svg', 220, 'Coin, no words'));
+  r.appendChild(coin('assets/logo/postmortem-coin.svg', 32, '32 px'));
+  r.appendChild(coin('assets/logo/postmortem-coin-16.svg', 32, '32 px, small cut'));
+  r.appendChild(coin('assets/logo/postmortem-coin-16.svg', 16, '16 px, small cut'));
 
-  // 8. a dealt hand
+  // 9. a dealt hand
   s = section('A dealt hand (click Deal to replay)'); r = row(s, 'lab-hand'); r.id = 'hand';
   const hand = [
     suitCard('survival', 'common', { stat: 'Deaths', value: '3', no: 344 }),
     suitCard('souls', 'rare', { no: 201 }),
-    suitCard('combat', 'common', { stat: 'Accuracy', value: '41%', no: 702, bad: 1 }),
-    suitCard('objectives', 'epic', { no: 77 }),
+    suitCard('objectives', 'common', { no: 702, bad: 1 }),
+    suitCard('joker', 'epic', { no: 77 }),
     card('legendary', { newBest: true }),
   ];
   for (const c of hand) r.appendChild(c);
 
-  // 9. small sizes
+  // 10. small sizes
   s = section('Small: 150 px and 110 px'); r = row(s);
   for (const k of PMCard.SUITS) r.appendChild(sized(suitCard(k, k === 'crown' ? 'legendary' : 'rare'), 150));
   r.appendChild(sized(PMCard.renderBack(), 150));
   r = row(s);
   for (const k of PMCard.ORDER) r.appendChild(sized(card(k), 110));
 
-  // 10. ten on screen
+  // 11. ten on screen
   s = section('Ten on screen (hover across them)'); r = row(s, 'lab-ten'); r.id = 'ten';
   const tenSet = [['common', 'combat'], ['common', 'survival'], ['rare', 'souls'], ['common', 'objectives'], ['epic', 'combat'],
     ['rare', 'survival'], ['legendary', 'souls'], ['common', 'joker'], ['rare', 'objectives'], ['mythical', 'crown']];

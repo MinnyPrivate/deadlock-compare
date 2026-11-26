@@ -214,15 +214,18 @@
       const s = el('symbol', { id: 'pm-suit-' + k, viewBox: A.suits[k].viewBox }, defs);
       el('path', { d: A.suits[k].d, fill: 'currentColor', 'fill-rule': 'evenodd' }, s);
     }
-    if (A.logo) {
-      const s = el('symbol', { id: 'pm-logo', viewBox: A.logo.viewBox }, defs);
-      s.innerHTML = A.logo.inner;
+    for (const [id, L] of [['pm-logo', A.logo], ['pm-logo-plain', A.logoPlain || A.logo]]) {
+      if (!L) continue;
+      const s = el('symbol', { id, viewBox: L.viewBox }, defs);
+      s.innerHTML = L.inner;
     }
 
     const cp = el('clipPath', { id: 'pm-oval-clip' }, defs);
     el('ellipse', { cx: OVAL.cx, cy: OVAL.cy, rx: OVAL.rx, ry: OVAL.ry }, cp);
     const cm = el('clipPath', { id: 'pm-med-clip' }, defs);
     el('circle', { cx: MED.cx, cy: MED.cy, r: MED.r }, cm);
+    const cpWm = el('clipPath', { id: 'pm-wm-clip' }, defs);
+    el('rect', { x: 19, y: 19, width: W - 38, height: 262 }, cpWm);
     const cpIn = el('clipPath', { id: 'pm-inner-clip' }, defs);
     el('rect', { x: 19, y: 19, width: W - 38, height: H - 38, rx: 4 }, cpIn);
     const cpBack = el('clipPath', { id: 'pm-back-field' }, defs);
@@ -283,17 +286,19 @@
     }
 
     // The oval: engraved ground, then rings.
-    el('ellipse', { cx: OVAL.cx, cy: OVAL.cy, rx: OVAL.rx, ry: OVAL.ry, class: 'e-ground' }, g);
-    const hg = el('g', { 'clip-path': 'url(#pm-oval-clip)', class: 'e-hatch' }, g);
+    // the oval group can be switched off per card (--e-oval: 0) for the 'watermark' layout
+    const og = el('g', { class: 'e-oval' }, g);
+    el('ellipse', { cx: OVAL.cx, cy: OVAL.cy, rx: OVAL.rx, ry: OVAL.ry, class: 'e-ground' }, og);
+    const hg = el('g', { 'clip-path': 'url(#pm-oval-clip)', class: 'e-hatch' }, og);
     for (const l of hatch(OVAL.cx, OVAL.cy, OVAL.rx, OVAL.ry, t === 4 ? 1.7 : 2.1)) {
       el('path', { d: l.d, 'stroke-width': f1(l.w) }, hg);
     }
     if (t >= 2) {
-      el('path', { d: rosette(OVAL.cx, OVAL.cy, OVAL.rx + 4.5, OVAL.ry + 4.5, 1.6, t >= 3 ? 44 : 36, 3, 2, 3.2), class: 'e-ring' }, g);
-      el('ellipse', { cx: OVAL.cx, cy: OVAL.cy, rx: OVAL.rx + 12.2, ry: OVAL.ry + 12.2, class: 'e-rule e-rule--ring' }, g);
+      el('path', { d: rosette(OVAL.cx, OVAL.cy, OVAL.rx + 4.5, OVAL.ry + 4.5, 1.6, t >= 3 ? 44 : 36, 3, 2, 3.2), class: 'e-ring' }, og);
+      el('ellipse', { cx: OVAL.cx, cy: OVAL.cy, rx: OVAL.rx + 12.2, ry: OVAL.ry + 12.2, class: 'e-rule e-rule--ring' }, og);
     }
-    el('ellipse', { cx: OVAL.cx, cy: OVAL.cy, rx: OVAL.rx, ry: OVAL.ry, class: 'e-rule e-rule--oval' }, g);
-    el('ellipse', { cx: OVAL.cx, cy: OVAL.cy, rx: OVAL.rx + 2.6, ry: OVAL.ry + 2.6, class: 'e-rule e-rule--oval2' }, g);
+    el('ellipse', { cx: OVAL.cx, cy: OVAL.cy, rx: OVAL.rx, ry: OVAL.ry, class: 'e-rule e-rule--oval' }, og);
+    el('ellipse', { cx: OVAL.cx, cy: OVAL.cy, rx: OVAL.rx + 2.6, ry: OVAL.ry + 2.6, class: 'e-rule e-rule--oval2' }, og);
 
     if (t >= 2) {
       for (const [x, y] of [[13, 13], [W - 13, 13], [13, H - 13], [W - 13, H - 13]]) {
@@ -491,17 +496,43 @@
     el('path', { d: rosette(cx, cy, 58.5, 58.5, 1.9, 22, 3, 2, 3.4), class: 'k-line k-line--fine' }, g);
     el('circle', { cx, cy, r: 66, class: 'k-rule k-rule--mid' }, g);
     el('circle', { cx, cy, r: 53, class: 'k-rule' }, g);
-    let beads = '';
-    for (let i = 0; i < 56; i++) {
-      const a = i / 56 * TAU;
-      beads += dot(cx + 48.5 * Math.cos(a), cy + 48.5 * Math.sin(a), 1.25);
-    }
-    el('path', { d: beads, class: 'k-fill' }, g);
-    el('circle', { cx, cy, r: 44.5, class: 'k-rule' }, g);
+
     return g;
   }
 
-  /* ---------- the NEW BEST stamp (the only stamp) ---------- */
+  /* ---------- NEW BEST: the coroner's wax seal (the only mark) ---------- */
+  function waxSealSVG(seed) {
+    const s = el('svg', { viewBox: '-55 -55 110 110', class: 'pm-seal', 'aria-hidden': 'true' });
+    const R = rng(seed || 11);
+    // squeezed wax: a lumpy disc with a few short runs at the edge
+    const p1 = R() * TAU, p2 = R() * TAU, p3 = R() * TAU;
+    const runs = [0, 1, 2].map(() => [R() * TAU, 2.5 + R() * 3]);
+    const pts = [];
+    for (let i = 0; i < 180; i++) {
+      const a = i / 180 * TAU;
+      let r = 45 + 2.2 * Math.sin(5 * a + p1) + 1.3 * Math.sin(9 * a + p2) + .7 * Math.sin(17 * a + p3);
+      for (const [ra, rl] of runs) { const d = Math.atan2(Math.sin(a - ra), Math.cos(a - ra)); r += rl * Math.exp(-(d * d) / .012); }
+      pts.push([r * Math.cos(a), r * Math.sin(a)]);
+    }
+    el('path', { d: poly(pts, true), class: 'w-wax' }, s);
+    // the pressed face, sunk into the wax
+    el('circle', { r: 37.5, class: 'w-press' }, s);
+    el('circle', { r: 36, class: 'w-ring' }, s);
+    el('circle', { r: 24.5, class: 'w-ring' }, s);
+    const id = 'pm-seal-arc-' + (seed || 11);
+    el('path', { id, d: 'M-30.3 0a30.3 30.3 0 1 1 60.6 0a30.3 30.3 0 1 1 -60.6 0', fill: 'none' }, s);
+    const tx = el('text', { class: 'w-text' }, s);
+    // textLength pins the words to exactly one lap, so the seam never overlaps
+    const tp = el('textPath', { href: '#' + id, startOffset: '0', textLength: '188', lengthAdjust: 'spacing' }, tx);
+    tp.textContent = 'PERSONAL RECORD \u00b7 POSTMORTEM \u00b7 ';
+    const t1 = el('text', { y: -4.5, class: 'w-small', 'text-anchor': 'middle' }, s);
+    t1.textContent = 'NEW';
+    const t2 = el('text', { y: 11.5, class: 'w-big', 'text-anchor': 'middle' }, s);
+    t2.textContent = 'BEST';
+    return s;
+  }
+
+  /* ---------- the old NEW BEST rubber stamp (kept for comparison; render uses the seal) ---------- */
   function stampSVG() {
     const s = el('svg', { viewBox: '0 0 120 46', class: 'pm-stamp', 'aria-hidden': 'true' });
     const g = el('g', { mask: 'url(#pm-wear)' }, s);
@@ -597,17 +628,33 @@
 
   function render(o) {
     ensureDefs();
-    const r = o.rarity, t = tier(r), R = RARITY[r], suit = o.suit || 'combat', S = SUIT[suit];
-    const layout = o.layout || 'pip';
+    const r = o.rarity === 'middle' ? 'common' : o.rarity;
+    const t = tier(r), R = RARITY[r], suit = o.suit || 'combat', S = SUIT[suit];
+    const rarityName = o.rarity === 'middle' ? 'Middle' : R.name;
+    const rank = o.rank || R.rank;
+    const heroArt = window.PM_CARD_ART.heroes[o.hero];
+    const icon = o.icon || suit;   // e.g. 'joker3' to trial another drawing of the suit
+    // where the hero sits: 'pip' (medallion under the suit pip, default), 'portrait' (round 1:
+    // the hero fills the oval), 'window' (hero in the oval, pip in the medallion), 'cameo'
+    // (hero in front of a ghost pip), 'badge' (hero in the oval wearing the pip on his chest),
+    // 'watermark' (no oval: the hero printed large and pale, the pip solid over his chest)
+    const LAYOUTS = ['pip', 'portrait', 'window', 'cameo', 'badge', 'watermark'];
+    const layout = heroArt && LAYOUTS.includes(o.layout) ? o.layout : 'pip';
     const heroName = o.heroName || 'Haze';
     const of = o.of || 1000;
+    const bad = o.bad === true ? t + 1 : o.bad;
     const cls = ['pm-card', 'r-' + r, 's-' + suit, 'lay-' + layout];
-    if (o.bad) cls.push('is-bad', 'bad-' + o.bad);
+    if (bad) cls.push('is-bad', 'bad-' + bad);
     if (o.eyes === false) cls.push('no-eyes');
     if (suit === 'joker') cls.push('is-misprint');
+    if (o.ink) cls.push('ink-' + o.ink);
     const card = h('article', cls.join(' '));
-    const title = suit === 'joker' ? (o.title || 'The Joker') : `${R.word} of ${S.plural}`;
-    card.setAttribute('aria-label', `${title}, ${R.name}: ${o.value} ${o.stat}. Number ${num(o.no)} of ${num(of)} ${heroName} games.` + (o.newBest ? ' New personal best.' : ''));
+    const title = o.title || (suit === 'joker' ? 'The Joker' : `${R.word} of ${S.plural}`);
+    const comparison = o.comparison ?? `Number ${num(o.no)} of ${num(of)} ${heroName} games`;
+    const description = o.description || [o.value, o.stat].filter(Boolean).join(' ');
+    if (o.id) card.dataset.cardId = o.id;
+    if (o.description) card.title = o.description;
+    card.setAttribute('aria-label', `${title}, ${rarityName}. ${description.replace(/\.$/, '')}. ${comparison}.` + (o.newBest ? ' New personal best.' : ''));
     card.tabIndex = 0;
     const tilt = h('div', 'pm-tilt');
     const face = h('div', 'pm-face');
@@ -628,16 +675,17 @@
     const por = el('svg', { class: 'pm-portrait', viewBox: `0 0 ${W} ${H}`, 'aria-hidden': 'true' });
     const pg = el('g', { 'clip-path': 'url(#pm-oval-clip)' }, por);
     let med = null;
-    const hv = (window.PM_CARD_ART.heroes[o.hero] || {}).viewBox || '0 0 280 380';
+    const hv = heroArt?.viewBox || '0 0 280 380';
     const [, , vw, vh] = hv.split(' ').map(Number);
-    if (layout === 'cameo') {
-      el('use', { href: '#pm-suit-' + suit, x: OVAL.cx - 54, y: OVAL.cy - 66, width: 108, height: 116, class: 'pm-pip pm-pip--ghost' }, pg);
-      const sw = OVAL.rx * 2 * 0.74, sh = sw * vh / vw;
-      el('use', { href: '#pm-hero-' + o.hero, x: f1(OVAL.cx - sw / 2 + 1), y: f1(OVAL.cy + OVAL.ry - sh * 0.86), width: f1(sw), height: f1(sh) }, pg);
-    } else {
-      el('use', { href: '#pm-suit-' + suit, x: OVAL.cx - 44, y: OVAL.cy - 62, width: 88, height: 96, class: 'pm-pip' }, pg);
-      // the hero sits in a small medallion on the oval's lower edge (its own layer, so the
-      // Legendary ink bleed passes under it)
+    const hero = (parent, sw, x, y) => {
+      const sh = sw * vh / vw;
+      el('use', { href: '#pm-hero-' + o.hero, x: f1(x - sw / 2 + 1), y: f1(y === undefined ? 0 : y(sh)), width: f1(sw), height: f1(sh) }, parent);
+    };
+    const pip = (parent, w, hgt, cx, cy, cls) =>
+      el('use', { href: '#pm-suit-' + icon, x: f1(cx - w / 2), y: f1(cy - hgt / 2), width: f1(w), height: f1(hgt), class: cls || 'pm-pip' }, parent);
+    // the small medallion on the oval's lower edge; its own layer, so the Legendary ink bleed
+    // passes under it. It holds the hero, or (layout 'window') the suit pip.
+    const medallion = withHero => {
       med = el('svg', { class: 'pm-portrait pm-medal', viewBox: `0 0 ${W} ${H}`, 'aria-hidden': 'true' });
       el('circle', { cx: MED.cx, cy: MED.cy, r: MED.r + 4.2, class: 'm-plate' }, med);
       el('circle', { cx: MED.cx, cy: MED.cy, r: MED.r, class: 'm-ground' }, med);
@@ -646,23 +694,46 @@
         const v = (y - MED.cy) / MED.r, half = MED.r * Math.sqrt(Math.max(0, 1 - v * v));
         el('path', { d: `M${f1(MED.cx - half)} ${f1(y)}H${f1(MED.cx + half)}`, class: 'm-hatch' }, mg);
       }
-      const sw = MED.r * 2 * 1.02, sh = sw * vh / vw;
-      el('use', { href: '#pm-hero-' + o.hero, x: f1(MED.cx - sw / 2 + 1), y: f1(MED.cy - MED.r + 3), width: f1(sw), height: f1(sh) }, mg);
+      if (withHero) hero(mg, MED.r * 2 * 1.02, MED.cx, () => MED.cy - MED.r + 3);
+      else pip(mg, MED.r * 1.5, MED.r * 1.62, MED.cx, MED.cy, 'pm-pip pm-pip--med');
       el('circle', { cx: MED.cx, cy: MED.cy, r: MED.r, class: 'm-rule' }, med);
       el('circle', { cx: MED.cx, cy: MED.cy, r: MED.r + 2.6, class: 'm-rule m-rule--fine' }, med);
+    };
+    if (layout === 'cameo') {
+      pip(pg, 108, 116, OVAL.cx, OVAL.cy - 8, 'pm-pip pm-pip--ghost');
+      hero(pg, OVAL.rx * 2 * 0.74, OVAL.cx, sh => OVAL.cy + OVAL.ry - sh * 0.86);
+    } else if (layout === 'portrait' || layout === 'window' || layout === 'badge') {
+      // round 1: the hero's bust fills the oval
+      hero(pg, OVAL.rx * 2 * 0.84, OVAL.cx, sh => OVAL.cy + OVAL.ry - sh * 0.84);
+      if (layout === 'window') medallion(false);
+      if (layout === 'badge') {
+        // the suit worn as a badge on the chest, printed in the paper colour
+        el('circle', { cx: OVAL.cx + 1, cy: OVAL.cy + 44, r: 13.5, class: 'm-badge' }, pg);
+        pip(pg, 15, 17, OVAL.cx + 1, OVAL.cy + 44, 'pm-pip pm-pip--badge');
+      }
+    } else if (layout === 'watermark') {
+      card.classList.add('no-oval');
+      const wm = el('svg', { class: 'pm-portrait pm-watermark', viewBox: `0 0 ${W} ${H}`, 'aria-hidden': 'true' });
+      const wg = el('g', { 'clip-path': 'url(#pm-wm-clip)' }, wm);
+      hero(wg, 214, W / 2, () => 108);
+      face.insertBefore(wm, face.firstChild.nextSibling);
+      pip(por, 74, 80, OVAL.cx, OVAL.cy + 34);
+    } else {
+      pip(pg, 88, 96, OVAL.cx, OVAL.cy - 14);
+      if (heroArt) medallion(true);
     }
     face.appendChild(por);
 
     for (const pos of ['tl', 'br']) {
       const idx = h('div', 'pm-idx pm-idx--' + pos);
-      idx.appendChild(h('span', 'pm-rank' + (R.rank.length > 1 ? ' is-ten' : ''), R.rank));
-      idx.appendChild(suitIcon(suit, 'pm-suit'));
+      idx.appendChild(h('span', 'pm-rank' + (rank.length > 1 ? ' is-ten' : ''), rank));
+      idx.appendChild(suitIcon(icon, 'pm-suit'));
       face.appendChild(idx);
     }
 
     const head = h('div', 'pm-head');
     head.appendChild(h('span', 'pm-suitname', S.name));
-    head.appendChild(h('span', 'pm-rarity', R.name));
+    head.appendChild(h('span', 'pm-rarity', rarityName));
     face.appendChild(head);
 
     const stat = h('div', 'pm-stat');
@@ -675,27 +746,31 @@
     const foot = h('div', 'pm-foot');
     foot.appendChild(h('div', 'pm-title', title));
     const ser = h('div', 'pm-serial');
-    ser.appendChild(h('span', 'pm-serial__no', 'No. ' + num(o.no)));
-    ser.appendChild(h('span', 'pm-serial__rest', ` of ${num(of)} ${heroName} games`));
-    // long hero names step the line down so it never meets the corner index
-    const len = ser.textContent.length;
-    if (len > 30) ser.style.fontSize = (len > 36 ? .74 : .82) + 'em';
+    if (o.comparison != null) {
+      ser.textContent = o.comparison;
+    } else {
+      ser.appendChild(h('span', 'pm-serial__no', 'No. ' + num(o.no)));
+      ser.appendChild(h('span', 'pm-serial__rest', ` of ${num(of)} ${heroName} games`));
+      // Long hero names step the line down so it never meets the corner index.
+      const len = ser.textContent.length;
+      if (len > 30) ser.style.fontSize = (len > 36 ? .74 : .82) + 'em';
+    }
     foot.appendChild(ser);
     face.appendChild(foot);
 
     if (t === 3) face.appendChild(h('div', 'pm-bleed'));
     if (med) face.appendChild(med);
     if (o.newBest) {
-      const st = h('div', 'pm-stampwrap');
-      st.appendChild(stampSVG());
+      const st = h('div', o.mark === 'stamp' ? 'pm-stampwrap' : 'pm-sealwrap');
+      st.appendChild(o.mark === 'stamp' ? stampSVG() : waxSealSVG(hash(String(o.value) + o.stat)));
       face.appendChild(st);
     }
     face.appendChild(h('div', 'pm-light'));
 
-    if (o.bad) {
+    if (bad) {
       const seed = hash(o.value + o.stat + r + suit);
-      face.appendChild(damage(o.bad, seed));
-      applyTear(card, tilt, face, o.bad, seed);
+      face.appendChild(damage(bad, seed));
+      applyTear(card, tilt, face, bad, seed);
     }
     return card;
   }
@@ -773,7 +848,7 @@
     return t;
   }
 
-  function renderBack() {
+  function renderBack(o = {}) {
     ensureDefs();
     const card = h('article', 'pm-card pm-back');
     card.setAttribute('aria-label', 'Postmortem card, face down');
@@ -783,9 +858,15 @@
     const engr = el('svg', { class: 'pm-engr', viewBox: `0 0 ${W} ${H}`, 'aria-hidden': 'true' });
     el('use', { href: '#pm-back' }, engr);
     face.appendChild(engr);
-    // the logo slot: swap card/src/logo.svg and rebuild art.js
+    // the logo slot: card/src/logo.svg (or logo_plain.svg with { legend: false }), built by
+    // tools/build_logo.py and tools/build_card_art.mjs
     const coin = el('svg', { class: 'pm-coin', viewBox: '0 0 200 200', 'aria-hidden': 'true' });
-    el('use', { href: '#pm-logo', width: 200, height: 200 }, coin);
+    if (o.legend === false) el('use', { href: '#pm-logo-plain', width: 200, height: 200 }, coin);
+    else {
+      // the legend turns to mush on small cards, so those show the plain coin (see card.css)
+      el('use', { href: '#pm-logo', width: 200, height: 200, class: 'coin-legend' }, coin);
+      el('use', { href: '#pm-logo-plain', width: 200, height: 200, class: 'coin-plain' }, coin);
+    }
     face.appendChild(coin);
     face.appendChild(h('div', 'pm-light'));
     tilt.appendChild(face);
