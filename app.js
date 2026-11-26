@@ -359,11 +359,14 @@ const grouped = g => ["team", "lane"].includes(modeNow(g));
 const ZOOM = !!(window.CSS && CSS.supports && CSS.supports("zoom", "2")) && params.get("scale") !== "transform";
 function fit() {
   const H = EMBED ? 996 : 1080;
-  const z = Math.min(innerWidth / 1920, innerHeight / H);
+  const width = document.documentElement.clientWidth;
+  const height = document.documentElement.clientHeight;
+  const z = Math.min(width / 1920, height / H);
   const st = $("stage");
-  const left = Math.max(0, Math.round((innerWidth - 1920 * z) / 2));
+  const left = Math.max(0, Math.round((width - 1920 * z) / 2));
   if (ZOOM) { st.style.zoom = z; st.style.transform = ""; st.style.left = left / z + "px"; }
   else { st.style.transform = `scale(${z})`; st.style.left = left + "px"; }
+  st.style.setProperty("--match-scale", z);
   state.zoom = z; state.stageLeft = left;
 }
 // The mouse in an element's own 1080p layout units. Built only from the mouse's place on screen, the scale set in fit()
@@ -685,6 +688,7 @@ function clearMatch(awaitingValve = false) {
   $("companionSource").textContent = "";
   document.body.classList.add("noMatch");
   $("tooltip").hidden = true;
+  $("summaryView").scrollTop = 0;
   $("summaryView").hidden = $("summaryBackdrop").hidden = true;
   state.tab = awaitingValve ? "summary" : "graphs";
   renderTabs();

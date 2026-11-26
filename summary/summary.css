@@ -51,6 +51,34 @@ body:not(.standalone) #summaryView, body:not(.standalone) #summaryView * { curso
   height: 100%;
 }
 
+/* Website hand above the existing Highlights layout. */
+body.standalone #summaryView:has(.hl-hand:not([hidden])) {
+  bottom: 64px;
+  overflow: auto;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 239, 215, .35) transparent;
+  padding-inline: 6px;
+}
+.hl-hand { margin-bottom: 24px; padding-block: 6px 8px; }
+#summaryView .hl-hand h2 { margin-bottom: 12px; font: 600 26px/1.15 var(--sans); }
+.hl-hand p:empty, .hl-hand-cards:empty { display: none; }
+.hl-hand-cards { display: flex; flex-wrap: wrap; gap: 16px; }
+.hl-hand-cards .pm-card { --w: 186px; }
+.hl-hand:not([hidden]) + .hl-layout { position: relative; height: 854px; margin-bottom: 38px; }
+
+/* The match shell scales as a whole. Keep the hand readable at phone widths. */
+@media (max-width: 700px) {
+  body.standalone #summaryView:has(.hl-hand:not([hidden])) {
+    bottom: auto;
+    height: calc((100dvh - 12px) / var(--match-scale, 1) - 186px);
+  }
+  .hl-hand { zoom: calc(1 / var(--match-scale, 1)); padding-inline: 4px; }
+  .hl-hand-cards { gap: 12px; }
+  .hl-hand-cards .pm-card { --w: min(186px, calc((100vw - 46px) / 2)); }
+  body.standalone.tabSummary:has(.hl-hand:not([hidden])) .companionControls { top: 22px; bottom: auto; }
+}
+
 /* ---------- hero column ---------- */
 .hl-hero { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
 .hl-result { display: grid; grid-template-columns: 44px 1fr; align-items: center; column-gap: 12px; }
@@ -597,3 +625,18 @@ body:not(.standalone) .hl-duel-score b { font-size: 52px; }
 .share-panel { animation-duration: .15s; }
 .hl-best-list.is-single li { padding: 8px 0; }
 .hl-best-list.is-single b { font-size: 26px; }
+
+/* Keep the detailed bests below their headline when the list fills a short grid row. */
+.hl-hand:not([hidden]) + .hl-layout .hl-bests .hl-visual { justify-content: safe center; overflow: auto; }
+.hl-hand:not([hidden]) + .hl-layout:has(.hl-best-list > :nth-child(3)) { height: 996px; }
+.hl-hand:not([hidden]) + .hl-layout .hl-best-list:has(> :nth-child(3)) {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 16px;
+}
+.hl-hand:not([hidden]) + .hl-layout .hl-best-list:has(> :nth-child(3)) li { padding-block: 4px; }
+.hl-hand:not([hidden]) + .hl-layout .hl-best-list:has(> :nth-child(3)) small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

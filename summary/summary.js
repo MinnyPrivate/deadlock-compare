@@ -5,6 +5,8 @@
 // with the full breakdown. ShareCard (summary/share.js) turns the same highlights into an image.
 window.Summary = (() => {
   const view = $("summaryView"), tooltip = $("summaryTip");
+  const layout = view.querySelector(".hl-layout");
+  const handView = $("highlightsHand"), handCards = $("highlightsHandCards"), handStatus = $("highlightsHandStatus");
   const STATS = [
     { key: "kills", index: 0, label: "Kills", read: s => s.kills },
     { key: "deaths", index: 2, label: "Deaths", read: s => s.deaths, low: true },
@@ -19,6 +21,7 @@ window.Summary = (() => {
   const lookups = new Map();
   let names = new Map(), art = {}, match, rows, deaths, percentiles, shownTip, tipTimer;
   let enteredMatch, enterStart = 0, renderedBackdrop, current, previewPlan;
+  let handPlayer = null;
 
   const preview = () => state.previewSlot !== null;
   const name = p => names.get(Number(p.raw.account_id)) || p.hero;
@@ -52,6 +55,7 @@ window.Summary = (() => {
 
   function select(slot) {
     state.summaryPick = slot;
+    if (!EMBED) view.scrollTop = 0;
     renderAll();
   }
 
@@ -711,6 +715,35 @@ window.Summary = (() => {
       </div></section>`;
   }
 
+  async function renderHand(player) {
+    if (EMBED || state.awaitingValve) {
+      handPlayer = null;
+      handView.hidden = true;
+      handCards.replaceChildren();
+      return;
+    }
+    $("highlightsHandTitle").textContent = isMe(player) ? "Your dealt hand" : `${player.hero}'s dealt hand`;
+    if (handPlayer === player) return;
+    handPlayer = player;
+    const source = state.match;
+    const stillViewing = () => state.match === source && handPlayer === player;
+    handView.hidden = false;
+    handCards.replaceChildren();
+    handStatus.textContent = "Dealing cards…";
+    try {
+      const hand = await window.HighlightsHand.deal(source, player);
+      if (!stillViewing()) return;
+      if (hand.status === "dealt") {
+        handCards.append(...hand.cards.map(card => window.PMCard.render(window.HighlightsHand.cardInput(card, player))));
+        handStatus.textContent = "";
+      } else {
+        handStatus.textContent = hand.message;
+      }
+    } catch (_) {
+      if (stillViewing()) handStatus.textContent = "The dealt hand is temporarily unavailable.";
+    }
+  }
+
   function render(preserveFocus = false) {
     prepareMatch();
     const p = selected(), stats = statsFor(p);
@@ -731,11 +764,12 @@ window.Summary = (() => {
     }
     const built = rows.length ? buildCards(p, stats) : { cards: [], rows: 0 }, cards = built.cards;
     current = { p, cards, won: Number(match.winning_team) === p.team, stats };
-    view.innerHTML = `<div class="hl-layout">${heroColumn(p, stats)}
+    void renderHand(p);
+    layout.innerHTML = `${heroColumn(p, stats)}
       ${cards.length ? gridHtml(built) : basicStats(stats)}
-      ${EMBED ? "" : '<footer class="hl-footer">Unofficial fan project. Not affiliated with or endorsed by Valve. Deadlock art and fonts belong to Valve.</footer>'}</div>`;
+      ${EMBED ? "" : '<footer class="hl-footer">Unofficial fan project. Not affiliated with or endorsed by Valve. Deadlock art and fonts belong to Valve.</footer>'}`;
     if (!preview() && !state.confirmedPreview) animateIn();
-    if (active) restoreFocus(active);
+    if (active && !active.isConnected) restoreFocus(active);
   }
 
   function restoreFocus(previous) {
