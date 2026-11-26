@@ -24,7 +24,6 @@
   --ink2: var(--suit);
   --frame: var(--suit);
   --pip: var(--suit);
-  --stamp: #2b1d18;            /* NEW BEST: office stamp ink, dark so it reads on every suit */
   --hatch: .5;
   --w: 250px;
 
@@ -42,16 +41,13 @@
 /* Suits (his round 3 picks): combat in the old joker red, joker in the muted spirit purple,
    vitality green pushed warm toward olive so it never meets the souls teal, crown in brass.
    Objectives is still open: steel blue by default, with .ink-* trial inks for him to pick. */
+/* the six inks run the rainbow: red, orange, yellow, green, blue, purple */
 .pm-card.s-combat     { --suit: #8a2420; --suit-deep: #4f1512; --suit-hi: #d0604f; }
+.pm-card.s-objectives { --suit: #b45d17; --suit-deep: #6c370e; --suit-hi: #eea05b; }
+.pm-card.s-crown      { --suit: #b9871c; --suit-deep: #7a5410; --suit-hi: #f2cf6a; --ink: #4a3815; }
 .pm-card.s-survival   { --suit: #5a6f1f; --suit-deep: #36451a; --suit-hi: #a3bb52; }
-.pm-card.s-souls      { --suit: #0f7a66; --suit-deep: #0b4b40; --suit-hi: #38e0b8; }
-.pm-card.s-objectives { --suit: #3f6683; --suit-deep: #243c50; --suit-hi: #8fb6d3; }
-.pm-card.s-crown      { --suit: #9a7430; --suit-deep: #6b4a17; --suit-hi: #d8b067; --ink: #4a3815; }
+.pm-card.s-souls      { --suit: #3f6683; --suit-deep: #243c50; --suit-hi: #8fb6d3; }
 .pm-card.s-joker      { --suit: #614a80; --suit-deep: #3a2d4c; --suit-hi: #a990c9; }
-.pm-card.s-objectives.ink-orange   { --suit: #b45d17; --suit-deep: #6c370e; --suit-hi: #eea05b; }
-.pm-card.s-objectives.ink-yellow   { --suit: #c29c17; --suit-deep: #87690e; --suit-hi: #f0d65c; }
-.pm-card.s-objectives.ink-steel    { --suit: #3f6683; --suit-deep: #243c50; --suit-hi: #8fb6d3; }
-.pm-card.s-objectives.ink-sapphire { --suit: #23468f; --suit-deep: #15295a; --suit-hi: #7d9be0; }
 
 /* Legendary: the whole note is printed in the suit's colour, engraved in bone */
 .pm-card.r-legendary {
@@ -61,7 +57,6 @@
   --ink2: var(--bone);
   --frame: var(--bone-hi);
   --pip: var(--bone-hi);
-  --stamp: #160e0b;
   --hatch: .42;
 }
 .pm-card.r-mythical {
@@ -71,7 +66,6 @@
   --ink2: var(--suit-hi);
   --frame: #e9dcc0;
   --pip: var(--suit);
-  --stamp: #eadcc0;
   --hatch: .55;
 }
 .pm-card.s-crown.r-mythical { --ink: #d9b871; --frame: #d9b871; }
@@ -189,11 +183,6 @@
 .m-oval-plate { fill: var(--paper); }
 .pm-pip--med { color: var(--pip); }
 .r-legendary .pm-pip--med { color: var(--suit); }
-/* layout 'badge': the pip worn on the chest */
-.m-badge { fill: var(--suit); stroke: var(--paper); stroke-width: 1.4; }
-.pm-pip--badge { color: var(--paper); }
-.r-legendary .m-badge { fill: var(--suit-deep); stroke: var(--bone-hi); }
-.r-legendary .pm-pip--badge, .r-mythical .pm-pip--badge { color: var(--bone-hi); }
 /* layout 'watermark': no oval, the hero printed large and pale behind the pip */
 .pm-watermark { --e-sil: var(--suit); --e-eyes: var(--paper); opacity: .36; }
 .r-legendary .pm-watermark { --e-sil: #000; --e-eyes: var(--suit-hi); opacity: .32; }
@@ -303,37 +292,30 @@
 .r-legendary.is-bad .pm-serial { color: var(--bone-hi); text-decoration: underline; text-decoration-thickness: .06em; text-underline-offset: .18em; }
 .r-mythical.is-bad .pm-serial { color: var(--suit-hi); }
 
-/* ---------- NEW BEST: the only stamp ---------- */
-.pm-stampwrap {
-  position: absolute;
-  left: 12.6em;
-  top: 10.4em;
-  width: 9.8em;
-  transform: rotate(-9deg);
-  opacity: .94;
-  mix-blend-mode: multiply;
-}
-.r-mythical .pm-stampwrap { mix-blend-mode: normal; }
-.pm-stamp { display: block; width: 100%; height: auto; overflow: visible; }
-.st-line { fill: none; stroke: var(--stamp); stroke-width: 1.2; }
-.st-line--heavy { stroke-width: 3; }
-.st-word { font: 700 15px 'VALVE Pulp', sans-serif; letter-spacing: 1.6px; fill: var(--stamp); }
-.st-small { font: 700 5.2px 'VALVE Pulp', sans-serif; letter-spacing: 1.5px; fill: var(--stamp); }
-.is-dealing .pm-stampwrap { animation: pm-stamp .5s 1.1s cubic-bezier(.3, 1.6, .5, 1) both; }
+/* ---------- NEW BEST: the certified seal, the only mark ---------- */
 /* the coroner's wax seal */
 .pm-sealwrap {
   position: absolute;
-  left: 15.9em;
-  top: 11.9em;
-  width: 6.4em;
-  height: 6.4em;
+  left: 17.3em;
+  top: 10.2em;
+  width: 5.6em;
+  height: 5.6em;
   transform: rotate(-12deg);
   --wax: #7a1712; --wax-deep: #5e100c; --wax-hi: #c0584a;
 }
-.pm-card.s-combat .pm-sealwrap { --wax: #2a1612; --wax-deep: #1c0e0b; --wax-hi: #d6c2a0; }   /* black wax on the red suit */
+.pm-card.s-combat .pm-sealwrap { --wax: #2a1612; --wax-deep: #1c0e0b; --wax-hi: #d6c2a0; --cert: #241411; }   /* black on the red suit */
 .pm-card.s-combat .w-wax { stroke: #d6c2a0; stroke-width: 1.6; }
 .pm-seal { display: block; width: 100%; height: 100%; overflow: visible;
   filter: drop-shadow(0 .09em .02em rgba(0, 0, 0, .5)) drop-shadow(0 -.03em 0 rgba(255, 235, 215, .22)); }
+.c-edge { fill: none; stroke: var(--paper-hi); stroke-width: 4.5; stroke-linejoin: round; }
+.c-rim { fill: var(--cert, var(--oxblood)); }
+.c-line { fill: none; stroke: var(--bone-hi); stroke-width: .9; opacity: .75; }
+.c-text { font: 700 6.2px 'VALVE Pulp', sans-serif; fill: var(--bone-hi); }
+.c-suit { color: var(--bone-hi); }
+.c-word { font: 800 13.5px 'PM Bodoni', serif; font-variation-settings: 'opsz' 11; letter-spacing: .4px; fill: var(--bone-hi); }
+.r-mythical .c-rim { fill: var(--cert, #8e2a22); }
+.r-mythical .c-line { stroke: var(--brass); opacity: 1; }
+.r-mythical .c-edge { stroke: #0c0a08; }
 .w-wax { fill: var(--wax); }
 .w-press { fill: var(--wax-deep); }
 .w-ring { fill: none; stroke: var(--wax-hi); stroke-width: .9; opacity: .85; }
@@ -342,7 +324,6 @@
 .w-big { font: 800 17px 'PM Bodoni', serif; font-variation-settings: 'opsz' 11; fill: var(--wax-hi); }
 .is-dealing .pm-sealwrap { animation: pm-seal .55s 1.1s cubic-bezier(.3, 1.5, .5, 1) both; }
 @keyframes pm-seal { from { opacity: 0; transform: rotate(-12deg) scale(1.45); } to { opacity: 1; transform: rotate(-12deg) scale(1); } }
-@keyframes pm-stamp { from { opacity: 0; transform: rotate(-9deg) scale(1.6); } to { opacity: .94; transform: rotate(-9deg) scale(1); } }
 
 /* ---------- Joker: a misprint ---------- */
 .pm-misreg { transform: translate(1.7%, -1.1%); opacity: .8; mix-blend-mode: multiply; --frame: var(--suit); --ink: var(--suit); --e-lathe-b: var(--suit); --e-hatch-ink: var(--suit); }

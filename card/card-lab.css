@@ -31,3 +31,5 @@ body.gray #lab { filter: grayscale(1); }
 .lab-coin { display: flex; flex-direction: column; align-items: center; gap: 8px; color: #b08e4c; }
 
 .lab-ten .pm-card { --w: 150px !important; }
+.lab-row--nine { gap: 14px; }
+.lab-icon { width: 205px; height: 205px; color: #614a80; background: #efe6d2; border-radius: 6px; padding: 18px; box-sizing: border-box; }

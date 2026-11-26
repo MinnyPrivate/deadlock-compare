@@ -16,7 +16,7 @@
  * crown (printed in brass, like the logo), joker (a misprint: off-register inks,
  * one line printed upside down).
  *
- * The only stamp is NEW BEST (a personal record), so it always means something.
+ * The only mark is NEW BEST (a personal record, the certified seal), so it always means something.
  *
  * Bad cards are the same card with damage, scaled to how bad it was:
  *   1 scuffed  2 creased  3 torn corner, taped  4 torn in two, taped  5 torn, taped, stained
@@ -226,18 +226,17 @@
     el('circle', { cx: MED.cx, cy: MED.cy, r: MED.r }, cm);
     const cpWm = el('clipPath', { id: 'pm-wm-clip' }, defs);
     el('rect', { x: 19, y: 19, width: W - 38, height: 262 }, cpWm);
+    // watermark: the hero fades out toward the edges, so the render's own crop never shows
+    const wmg = el('radialGradient', { id: 'pm-wm-fade' }, defs);
+    el('stop', { offset: '0', 'stop-color': '#fff' }, wmg);
+    el('stop', { offset: '.6', 'stop-color': '#fff' }, wmg);
+    el('stop', { offset: '1', 'stop-color': '#000' }, wmg);
+    const wmm = el('mask', { id: 'pm-wm-mask', maskUnits: 'userSpaceOnUse', x: 0, y: 0, width: W, height: H }, defs);
+    el('rect', { x: 46, y: 28, width: 158, height: 272, fill: 'url(#pm-wm-fade)' }, wmm);
     const cpIn = el('clipPath', { id: 'pm-inner-clip' }, defs);
     el('rect', { x: 19, y: 19, width: W - 38, height: H - 38, rx: 4 }, cpIn);
     const cpBack = el('clipPath', { id: 'pm-back-field' }, defs);
     el('rect', { x: 23.5, y: 23.5, width: W - 47, height: H - 47, rx: 3 }, cpBack);
-
-    // worn rubber-stamp ink: speckled holes where the stamp missed the paper
-    // stamp wear: fine speckle in the stamp's own units (120 x 46), so it never fades a whole word
-    const f = el('filter', { id: 'pm-wear-f', filterUnits: 'userSpaceOnUse', x: -10, y: -10, width: 140, height: 66 }, defs);
-    el('feTurbulence', { type: 'fractalNoise', baseFrequency: '.42', numOctaves: 2, seed: 7, result: 'n' }, f);
-    el('feColorMatrix', { in: 'n', type: 'matrix', values: '0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 -3.4 2.55' }, f);
-    const m = el('mask', { id: 'pm-wear', maskUnits: 'userSpaceOnUse', x: -10, y: -10, width: 140, height: 66 }, defs);
-    el('rect', { x: -10, y: -10, width: 140, height: 66, fill: '#fff', filter: 'url(#pm-wear-f)' }, m);
 
     for (const r of ORDER) defs.appendChild(buildEngraving(r));
     defs.appendChild(buildBack());
@@ -500,7 +499,7 @@
     return g;
   }
 
-  /* ---------- NEW BEST: the coroner's wax seal (the only mark) ---------- */
+  /* ---------- round 3's coroner's wax seal (kept for comparison: o.mark 'wax') ---------- */
   function waxSealSVG(seed) {
     const s = el('svg', { viewBox: '-55 -55 110 110', class: 'pm-seal', 'aria-hidden': 'true' });
     const R = rng(seed || 11);
@@ -532,16 +531,25 @@
     return s;
   }
 
-  /* ---------- the old NEW BEST rubber stamp (kept for comparison; render uses the seal) ---------- */
-  function stampSVG() {
-    const s = el('svg', { viewBox: '0 0 120 46', class: 'pm-stamp', 'aria-hidden': 'true' });
-    const g = el('g', { mask: 'url(#pm-wear)' }, s);
-    el('rect', { x: 2, y: 2, width: 116, height: 42, rx: 4, class: 'st-line st-line--heavy' }, g);
-    el('rect', { x: 6, y: 6, width: 108, height: 34, rx: 2, class: 'st-line' }, g);
-    const t = el('text', { x: 60, y: 27.5, 'text-anchor': 'middle', class: 'st-word' }, g);
-    t.textContent = 'NEW BEST';
-    const t2 = el('text', { x: 60, y: 35.6, 'text-anchor': 'middle', class: 'st-small' }, g);
-    t2.textContent = 'PERSONAL RECORD';
+  /* ---------- NEW BEST: the certified seal (round 1's Legendary seal, now the only mark) ---------- */
+  function certSealSVG(suit, seed) {
+    const s = el('svg', { viewBox: '-52 -52 104 104', class: 'pm-seal pm-cert', 'aria-hidden': 'true' });
+    const pts = [];
+    for (let i = 0; i < 96; i++) { const a = i / 96 * TAU, r = i % 2 ? 44.5 : 48; pts.push([r * Math.cos(a), r * Math.sin(a)]); }
+    const rim = poly(pts, true);
+    el('path', { d: rim, class: 'c-edge' }, s);   // a paper outline, so it lifts off any ink
+    el('path', { d: rim, class: 'c-rim' }, s);
+    el('circle', { r: 40, class: 'c-line' }, s);
+    el('circle', { r: 27, class: 'c-line' }, s);
+    const id = 'pm-cert-arc-' + seed;
+    el('path', { id, d: 'M-33.5 0a33.5 33.5 0 1 1 67 0a33.5 33.5 0 1 1 -67 0', fill: 'none' }, s);
+    const tx = el('text', { class: 'c-text' }, s);
+    // textLength pins the words to exactly one lap, so the seam never overlaps
+    const tp = el('textPath', { href: '#' + id, startOffset: '0', textLength: '208', lengthAdjust: 'spacing' }, tx);
+    tp.textContent = 'NEW BEST \u00b7 CERTIFIED \u00b7 POSTMORTEM \u00b7 CERTIFIED \u00b7 ';
+    el('use', { href: '#pm-suit-' + suit, x: -9.5, y: -21.5, width: 19, height: 19, class: 'c-suit' }, s);
+    const t = el('text', { y: 14.5, class: 'c-word', 'text-anchor': 'middle' }, s);
+    t.textContent = 'BEST';
     return s;
   }
 
@@ -636,9 +644,9 @@
     const icon = o.icon || suit;   // e.g. 'joker3' to trial another drawing of the suit
     // where the hero sits: 'pip' (medallion under the suit pip, default), 'portrait' (round 1:
     // the hero fills the oval), 'window' (hero in the oval, pip in the medallion), 'cameo'
-    // (hero in front of a ghost pip), 'badge' (hero in the oval wearing the pip on his chest),
-    // 'watermark' (no oval: the hero printed large and pale, the pip solid over his chest)
-    const LAYOUTS = ['pip', 'portrait', 'window', 'cameo', 'badge', 'watermark'];
+    // (hero in front of a ghost pip), 'watermark' (no oval: the hero printed large and pale,
+    // the pip solid below the head)
+    const LAYOUTS = ['pip', 'portrait', 'window', 'cameo', 'watermark'];
     const layout = heroArt && LAYOUTS.includes(o.layout) ? o.layout : 'pip';
     const heroName = o.heroName || 'Haze';
     const of = o.of || 1000;
@@ -677,10 +685,18 @@
     let med = null;
     const hv = heroArt?.viewBox || '0 0 280 380';
     const [, , vw, vh] = hv.split(' ').map(Number);
-    const hero = (parent, sw, x, y) => {
-      const sh = sw * vh / vw;
-      el('use', { href: '#pm-hero-' + o.hero, x: f1(x - sw / 2 + 1), y: f1(y === undefined ? 0 : y(sh)), width: f1(sw), height: f1(sh) }, parent);
+    // Every hero is framed from its traced head metrics (tools/trace_heroes.py): the top of
+    // the head sits on box.top, the face is centred on box.cx, and the head band (head plus
+    // neck) fits box.h, so the whole head always shows and the shoulders crop below it.
+    const FR = heroArt?.frame || [5, vw / 2, vw * 0.45, vh * 0.56];
+    const hero = (parent, box) => {
+      const [top, fcx, hw, band] = FR;
+      const sc = Math.min(box.h / band, box.w * 1.15 / hw);
+      el('use', { href: '#pm-hero-' + o.hero, x: f1(box.cx - fcx * sc), y: f1(box.top - top * sc), width: f1(vw * sc), height: f1(vh * sc) }, parent);
     };
+    // the jester is as wide at the top as at the middle, so in the oval it sits smaller and
+    // lower, or the oval's narrow top clips the hat
+    const wide = icon === 'joker';
     const pip = (parent, w, hgt, cx, cy, cls) =>
       el('use', { href: '#pm-suit-' + icon, x: f1(cx - w / 2), y: f1(cy - hgt / 2), width: f1(w), height: f1(hgt), class: cls || 'pm-pip' }, parent);
     // the small medallion on the oval's lower edge; its own layer, so the Legendary ink bleed
@@ -694,32 +710,30 @@
         const v = (y - MED.cy) / MED.r, half = MED.r * Math.sqrt(Math.max(0, 1 - v * v));
         el('path', { d: `M${f1(MED.cx - half)} ${f1(y)}H${f1(MED.cx + half)}`, class: 'm-hatch' }, mg);
       }
-      if (withHero) hero(mg, MED.r * 2 * 1.02, MED.cx, () => MED.cy - MED.r + 3);
+      if (withHero) hero(mg, { cx: MED.cx, top: MED.cy - MED.r + 4.5, w: MED.r * 1.2, h: MED.r * 1.36 });
       else pip(mg, MED.r * 1.5, MED.r * 1.62, MED.cx, MED.cy, 'pm-pip pm-pip--med');
       el('circle', { cx: MED.cx, cy: MED.cy, r: MED.r, class: 'm-rule' }, med);
       el('circle', { cx: MED.cx, cy: MED.cy, r: MED.r + 2.6, class: 'm-rule m-rule--fine' }, med);
     };
+    const OV_TOP = OVAL.cy - OVAL.ry;
     if (layout === 'cameo') {
-      pip(pg, 108, 116, OVAL.cx, OVAL.cy - 8, 'pm-pip pm-pip--ghost');
-      hero(pg, OVAL.rx * 2 * 0.74, OVAL.cx, sh => OVAL.cy + OVAL.ry - sh * 0.86);
-    } else if (layout === 'portrait' || layout === 'window' || layout === 'badge') {
-      // round 1: the hero's bust fills the oval
-      hero(pg, OVAL.rx * 2 * 0.84, OVAL.cx, sh => OVAL.cy + OVAL.ry - sh * 0.84);
+      if (wide) pip(pg, 92, 92, OVAL.cx, OVAL.cy - 2, 'pm-pip pm-pip--ghost');
+      else pip(pg, 108, 116, OVAL.cx, OVAL.cy - 8, 'pm-pip pm-pip--ghost');
+      hero(pg, { cx: OVAL.cx, top: OV_TOP + 22, w: 58, h: 76 });
+    } else if (layout === 'portrait' || layout === 'window') {
+      // the hero's bust fills the oval: head in the upper part, shoulders to the rim
+      hero(pg, { cx: OVAL.cx, top: OV_TOP + 9, w: 72, h: 88 });
       if (layout === 'window') medallion(false);
-      if (layout === 'badge') {
-        // the suit worn as a badge on the chest, printed in the paper colour
-        el('circle', { cx: OVAL.cx + 1, cy: OVAL.cy + 44, r: 13.5, class: 'm-badge' }, pg);
-        pip(pg, 15, 17, OVAL.cx + 1, OVAL.cy + 44, 'pm-pip pm-pip--badge');
-      }
     } else if (layout === 'watermark') {
       card.classList.add('no-oval');
       const wm = el('svg', { class: 'pm-portrait pm-watermark', viewBox: `0 0 ${W} ${H}`, 'aria-hidden': 'true' });
-      const wg = el('g', { 'clip-path': 'url(#pm-wm-clip)' }, wm);
-      hero(wg, 214, W / 2, () => 108);
+      const wg = el('g', { 'clip-path': 'url(#pm-wm-clip)', mask: 'url(#pm-wm-mask)' }, wm);
+      hero(wg, { cx: W / 2, top: 99, w: 104, h: 104 });
       face.insertBefore(wm, face.firstChild.nextSibling);
-      pip(por, 74, 80, OVAL.cx, OVAL.cy + 34);
+      pip(por, 62, 68, OVAL.cx, OVAL.cy + 50);
     } else {
-      pip(pg, 88, 96, OVAL.cx, OVAL.cy - 14);
+      if (wide) pip(pg, 78, 78, OVAL.cx, OVAL.cy - 9);
+      else pip(pg, 88, 96, OVAL.cx, OVAL.cy - 14);
       if (heroArt) medallion(true);
     }
     face.appendChild(por);
@@ -761,8 +775,10 @@
     if (t === 3) face.appendChild(h('div', 'pm-bleed'));
     if (med) face.appendChild(med);
     if (o.newBest) {
-      const st = h('div', o.mark === 'stamp' ? 'pm-stampwrap' : 'pm-sealwrap');
-      st.appendChild(o.mark === 'stamp' ? stampSVG() : waxSealSVG(hash(String(o.value) + o.stat)));
+      // the certified seal; o.mark 'wax' keeps round 3's wax seal for comparison
+      const seed = hash(String(o.value) + o.stat + suit);
+      const st = h('div', 'pm-sealwrap' + (o.mark === 'wax' ? ' is-wax' : ''));
+      st.appendChild(o.mark === 'wax' ? waxSealSVG(seed) : certSealSVG(icon, seed));
       face.appendChild(st);
     }
     face.appendChild(h('div', 'pm-light'));

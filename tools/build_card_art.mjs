@@ -14,7 +14,8 @@ for (const f of fs.readdirSync(dir).sort()) {
   let m;
   if ((m = f.match(/^hero_(\d+)\.svg$/))) {
     const [body, eyes = ''] = paths(s);
-    out.heroes[m[1]] = { viewBox: vb(s), body, eyes };
+    const fr = (s.match(/data-frame="([^"]+)"/) || [])[1];
+    out.heroes[m[1]] = { viewBox: vb(s), body, eyes, frame: fr ? fr.split(' ').map(Number) : null };
   } else if ((m = f.match(/^suit_(\w+)\.svg$/))) {
     out.suits[m[1]] = { viewBox: vb(s), d: paths(s).join(' ') };
   } else if (f === 'logo.svg' || f === 'logo_plain.svg') {
