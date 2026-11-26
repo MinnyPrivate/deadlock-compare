@@ -1702,7 +1702,10 @@ function rowHtml(se, v, g) {
 
 // The game's own painted card, uncropped, for the places Valve shows it as a rectangle (Lane Stats, the hover box, the MVP tab).
 // The round chips keep the masked art. Heroes without card art leave the gray gradient empty.
-function cardImg(p) { return p.card ? `<img src="${p.card}" alt="" onerror="this.remove()">` : ""; }
+document.addEventListener("error", event => {
+  if (event.target.matches?.("img[data-remove-on-error]")) event.target.remove();
+}, true);
+function cardImg(p) { return p.card ? `<img src="${p.card}" alt="" data-remove-on-error>` : ""; }
 function portraitImg(p) { return `<img src="${p.img}" alt="" style="--coin:${TEAMS[p.team].coin}">`; }
 // ---------- hints under the chart ----------
 function renderLines(series, g) {

@@ -686,22 +686,27 @@ async function loadProfile(id, src, confirmedProfile = null, accountSaved = true
 const RANGES = [["all", "All games"], ["200", "Last 200"], ["50", "Last 50"]];
 function inRange() { return P.range === "all" ? P.games : P.games.slice(0, Number(P.range)); }
 
-// Hero averages from heronorms.js (23,968 recent matches): index 0 kills, 1 assists, 2 deaths.
-function heroAvg(h) {
-  const t = window.HERO_TABLE && HERO_TABLE.heroes[h];
-  return t ? { k: t.mean[0], a: t.mean[1], d: t.mean[2], sdD: t.sd[2] } : { k: 6.5, a: 11.5, d: 7, sdD: 3.7 };
+function heroAvg(m) {
+  const ref = stat => window.PM_SCORE?.expected(m.hero_id, stat, m.match_duration_s);
+  const k = ref("kills"), a = ref("assists"), d = ref("deaths");
+  return k && a && d ? { k: k.mean, a: a.mean, d: d.mean, sdD: d.sd, known: d.knownHero } : null;
 }
 // (Kills + assists) per death, as a multiple of what this hero usually gets.
 function kdaVsHero(m) {
-  const a = heroAvg(m.hero_id);
+  const a = heroAvg(m);
+  if (!a) return null;
   return ((m.player_kills + m.player_assists) / Math.max(1, m.player_deaths)) / ((a.k + a.a) / Math.max(1, a.d));
 }
 
 // One blunt word per match, graded against the hero's own average. Never "threw" or anything meaner.
 function verdict(m) {
-  const r = kdaVsHero(m), win = isWin(m), min = m.match_duration_s / 60;
-  const tail = "Compares (kills + assists) per death with the average for " + heroName(m.hero_id) + ".";
+  const a = heroAvg(m), win = isWin(m), min = m.match_duration_s / 60;
+  const r = a ? ((m.player_kills + m.player_assists) / Math.max(1, m.player_deaths)) / ((a.k + a.a) / Math.max(1, a.d)) : null;
+  const baseline = a?.known ? heroName(m.hero_id) : "all heroes";
+  const lengthText = window.PM_SCORE?.lengthLabel ? window.PM_SCORE.lengthLabel(m.match_duration_s) : "games of this length";
+  const tail = `Compares (kills + assists) per death with the average for ${baseline} in ${lengthText}.`;
   if (m.abandoned_time_s) return { w: "Left early", c: "neutral", rule: "Left the match before it ended." };
+  if (r == null) return { w: win ? "Win" : "Loss", c: "neutral", rule: "Match length unavailable." };
   if (win && r >= 1.6) return { w: "Unstoppable", c: "good", rule: `Won with ${fmt1(r)}x the usual K+A per death. ${tail}` };
   if (!win && r >= 1.6) return { w: "Unlucky", c: "good", rule: `Lost, but with ${fmt1(r)}x the usual K+A per death. ${tail}` };
   if (win && min < 25) return { w: "Stomp", c: "neutral", rule: "Won in under 25 minutes." };
@@ -763,11 +768,13 @@ function profileTags(games) {
     if (wr <= 0.4) tags.push({ t: "Losses come in pairs", c: "bad", rule: `Won only ${pct(wr * afterL.length, afterL.length)}% of games played right after a loss (${afterL.length} games). Maybe take a break after one.` });
   }
   if (lastStandard.length >= 10) {
-    let z = 0;
-    for (const m of lastStandard) { const a = heroAvg(m.hero_id); z += (m.player_deaths - a.d) / a.sdD; }
-    z /= lastStandard.length;
-    if (z <= -0.4) tags.push({ t: "Hard to kill", c: "good", rule: `Died less than the average player on the same heroes over the last ${lastStandard.length} standard games.` });
-    if (z >= 0.4) tags.push({ t: "Respawn regular", c: "bad", rule: `Died more than the average player on the same heroes over the last ${lastStandard.length} standard games.` });
+    const grades = lastStandard.flatMap(m => {
+      const a = heroAvg(m);
+      return a?.sdD > 0 ? [(m.player_deaths - a.d) / a.sdD] : [];
+    });
+    const z = grades.length >= 10 ? grades.reduce((sum, n) => sum + n, 0) / grades.length : 0;
+    if (z <= -0.4) tags.push({ t: "Hard to kill", c: "good", rule: `Died less than usual for these heroes in games of the same length across ${grades.length} standard games.` });
+    if (z >= 0.4) tags.push({ t: "Respawn regular", c: "bad", rule: `Died more than usual for these heroes in games of the same length across ${grades.length} standard games.` });
   }
   const late = last50.filter(m => new Date(m.start_time * 1000).getHours() < 5).length;
   if (last50.length >= 15 && late / last50.length >= 0.35) tags.push({ t: "Night owl", c: "neutral", rule: `${pct(late, last50.length)}% of the last ${last50.length} games started between midnight and 5 AM (your time).` });
@@ -847,7 +854,7 @@ function renderProfileData() {
   const form = $main.querySelector(".mainCol .form");
   if (form) form.outerHTML = all.length ? formHtml(all, brawl) : "";
   else if (all.length) document.getElementById("matches").insertAdjacentHTML("beforebegin", formHtml(all, brawl));
-  $main.querySelector(".foot").textContent = `Data: deadlock-api${P.skipped ? `. ${plural(P.skipped, "game")} outside supported matchmaking queues` : ""}. Stats use available match history. New games can take a few minutes to appear.${brawl ? "" : " Standard match verdicts use each hero's averages from about 24,000 recent matches."} Match accolade tags come from Valve.`;
+  $main.querySelector(".foot").textContent = `Data: deadlock-api${P.skipped ? `. ${plural(P.skipped, "game")} outside supported matchmaking queues` : ""}. Stats use available match history. New games can take a few minutes to appear.${brawl ? "" : " Standard match verdicts compare each hero with games of the same length."} Match accolade tags come from Valve.`;
   renderSide();
   renderMatches();
 }
