@@ -1,3 +1,41 @@
+# Security headers for every file the site serves.
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  Strict-Transport-Security: max-age=31536000
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), bluetooth=()
+
+# Content Security Policy per page. Each page gets exactly one policy (two matching rules would
+# stack and the stricter one would win), so keep these path lists from overlapping.
+# frame-ancestors 'self' stops other sites from framing the pages. The in-game panel loads the page
+# as its own document, not inside another site.
+
+# Match page (and the in-game panel, which opens "/").
+/
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://assets-bucket.deadlock-api.com; connect-src 'self' https://api.deadlock-api.com; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'
+/index
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://assets-bucket.deadlock-api.com; connect-src 'self' https://api.deadlock-api.com; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'
+/index.html
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://assets-bucket.deadlock-api.com; connect-src 'self' https://api.deadlock-api.com; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'
+
+# Profile page. Steam avatars come from Steam's image hosts, so images may load from any https address.
+/profile
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://api.deadlock-api.com; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'
+/profile.html
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://api.deadlock-api.com; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'
+
+# Test pages for the game's embedded browser. They have inline scripts, so they need 'unsafe-inline',
+# but they cannot talk to any other site.
+/reveal-probe
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'
+/reveal-probe.html
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'
+/hideout-test
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'
+/hideout-test.html
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'
+
+# The companion app download.
 /download/postmortem-companion.zip
   Content-Type: application/zip
   Content-Disposition: attachment; filename="postmortem-companion.zip"
