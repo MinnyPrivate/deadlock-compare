@@ -1,19 +1,61 @@
-# Files and folders that must not be served by the Cloudflare site
-.git
-.github
-mod
-test
-docs/
-tools
-/dev-cards.*
-README.md
-wrangler.jsonc
-.assetsignore
-node_modules
-companion/
+# What the Cloudflare site is allowed to serve.
+#
+# This is an ALLOWLIST. The first rule hides every file and folder in the repo root.
+# Only the lines that start with "!" are published. Anything new (notes, AGENTS.md,
+# GEMINI.md, DESIGN.md, test folders, screenshots, scripts, config, secrets) stays
+# private unless someone adds it here on purpose. Wrangler reads this file when it uploads.
+# To publish a new site file, add one "!" line for it. Nothing else needs to change.
+#
+# Order matters: the last rule that matches a path wins.
+
+# 1. Hide everything at the top level.
+/*
+
+# 2. Pages and the scripts and styles they load (public site).
+!/index.html
+!/profile.html
+!/reveal-probe.html
+!/hideout-test.html
+!/app.js
+!/companion-download.js
+!/companion-preview.js
+!/dust.js
+!/gamedata.js
+!/graph-markers.js
+!/hero-backdrop.css
+!/hero-backdrop.js
+!/heroes.js
+!/heronorms.js
+!/herothemes.js
+!/lanes.js
+!/matchups.js
+!/mvp.js
+!/player-assets.js
+!/profile.css
+!/profile.js
+!/scoring.js
+!/session-storage.js
+!/style.css
+
+# 3. Public folders. Inside each one only the listed file types are published.
+!/assets/
+/assets/**
+!/assets/**/
+!/assets/**/*.webp
+!/assets/**/*.png
+!/assets/**/*.jpg
+!/assets/**/*.svg
+!/assets/**/*.woff2
+
+!/summary/
+/summary/*
+!/summary/*.js
+!/summary/*.css
+
+!/data/
+/data/*
+!/data/hero_percentiles.json
+
+!/download/
 /download/*
 !/download/postmortem-companion.zip
-wrangler.step3.jsonc
-.dev.vars*
-.env*
-.wrangler/
