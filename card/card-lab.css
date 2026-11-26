@@ -1,0 +1,26 @@
+:root { color-scheme: dark; }
+body { margin: 0; background: #0d0b09; color: #d9ccb0; font: 15px/1.4 'Radiance', system-ui, sans-serif; }
+.lab-head { padding: 28px 48px 8px; }
+.lab-head h1 { font: 700 15px 'VALVE Pulp', sans-serif; letter-spacing: .3em; text-transform: uppercase; color: #ebe0c8; margin: 0 0 6px; }
+.lab-head p { margin: 0 0 12px; color: #a99c82; }
+.lab-head button { background: #1d1813; color: #d9ccb0; border: 1px solid #3a3026; padding: 6px 12px; font: inherit; cursor: pointer; }
+.lab-head button[aria-pressed="true"] { background: #7d1f1b; border-color: #a4362e; color: #fff4e4; }
+#lab { padding: 0 48px 60px; }
+.lab-sec { margin-top: 30px; }
+.lab-sec h2 { font: 700 12px 'VALVE Pulp', sans-serif; letter-spacing: .28em; text-transform: uppercase; color: #a99c82; margin: 0 0 14px; border-bottom: 1px solid #2a231c; padding-bottom: 8px; }
+.lab-row { display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-start; }
+.lab-cell { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.lab-cap { font-size: 12.5px; color: #a99c82; text-align: center; max-width: 250px; }
+.lab-cap b { color: #ebe0c8; font-weight: 600; display: block; }
+.lab-hand { display: flex; padding: 16px 0 26px 10px; }
+.lab-hand .pm-card + .pm-card { margin-left: -46px; }
+.lab-hand .pm-card { transition: transform .25s; }
+.lab-hand .pm-card:nth-child(1) { transform: rotate(-6deg) translateY(12px); }
+.lab-hand .pm-card:nth-child(2) { transform: rotate(-3deg) translateY(3px); }
+.lab-hand .pm-card:nth-child(4) { transform: rotate(3deg) translateY(3px); }
+.lab-hand .pm-card:nth-child(5) { transform: rotate(6deg) translateY(12px); }
+.lab-hand .pm-card:hover { transform: translateY(-16px) rotate(0); z-index: 2; }
+.lab-ten { display: flex; gap: 12px; flex-wrap: wrap; }
+body.gray #lab { filter: grayscale(1); }
+.lab-note { margin: -6px 0 14px; color: #8f8370; font-size: 13px; }
+.lab-sec > .lab-row + .lab-row { margin-top: 22px; }

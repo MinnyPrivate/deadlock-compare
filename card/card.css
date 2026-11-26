@@ -1,0 +1,399 @@
+/* Postmortem simple card. See card/card.js for the rarity ladder. */
+
+@font-face { font-family: 'PM Bodoni'; src: url('../assets/fonts/bodonimoda-var.woff2') format('woff2'); font-weight: 400 900; font-display: swap; }
+@font-face { font-family: 'PM Bodoni'; src: url('../assets/fonts/bodonimoda-var-italic.woff2') format('woff2'); font-weight: 400 900; font-style: italic; font-display: swap; }
+@font-face { font-family: 'VALVE Pulp'; src: url('../assets/fonts/valvepulp-bold.woff2') format('woff2'); font-weight: 700; font-display: swap; }
+@font-face { font-family: 'Radiance'; src: url('../assets/fonts/radiance-regular.woff2') format('woff2'); font-weight: 400; font-display: swap; }
+
+.pm-card {
+  /* palette: black, bone, oxblood, brass, plus one ink per suit */
+  --bone: #ebe0c8;
+  --bone-hi: #f6efdd;
+  --lamp: #17130f;
+  --oxblood: #7d1f1b;
+  --brass: #a78a55;
+
+  /* suit inks, aged from Deadlock's own colours (set by .s-*) */
+  --suit: #a4461c;          /* ink on cream */
+  --suit-deep: #6a2810;     /* Legendary paper, Mythical band */
+  --suit-hi: #df7a43;       /* ink on black */
+
+  --paper: var(--bone);
+  --paper-hi: var(--bone-hi);
+  --ink: var(--lamp);
+  --ink2: var(--suit);
+  --frame: var(--suit);
+  --pip: var(--suit);
+  --stamp: #2b1d18;            /* NEW BEST: office stamp ink, dark so it reads on every suit */
+  --hatch: .5;
+  --w: 250px;
+
+  position: relative;
+  display: inline-block;
+  width: var(--w);
+  aspect-ratio: 5 / 7;
+  font-size: calc(var(--w) / 25);   /* 1em = 10 card units */
+  perspective: 60em;
+  outline: none;
+  flex: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+/* Suits. Weapon orange aged to rust, vitality green pushed warm toward olive so it
+   never meets the souls teal, spirit purple muted, crown printed in brass. */
+.pm-card.s-combat     { --suit: #a4461c; --suit-deep: #6a2810; --suit-hi: #e07c45; }
+.pm-card.s-survival   { --suit: #5a6f1f; --suit-deep: #36451a; --suit-hi: #a3bb52; }
+.pm-card.s-souls      { --suit: #0f7a66; --suit-deep: #0b4b40; --suit-hi: #38e0b8; }
+.pm-card.s-objectives { --suit: #614a80; --suit-deep: #3a2d4c; --suit-hi: #a990c9; }
+.pm-card.s-crown      { --suit: #9a7430; --suit-deep: #6b4a17; --suit-hi: #d8b067; --ink: #4a3815; }
+.pm-card.s-joker      { --suit: #8a2420; --suit-deep: #4f1512; --suit-hi: #d0604f; }
+
+/* Legendary: the whole note is printed in the suit's colour, engraved in bone */
+.pm-card.r-legendary {
+  --paper: color-mix(in oklab, var(--suit-deep) 78%, var(--suit));
+  --paper-hi: color-mix(in oklab, var(--paper) 70%, #fff);
+  --ink: var(--bone-hi);
+  --ink2: var(--bone);
+  --frame: var(--bone-hi);
+  --pip: var(--bone-hi);
+  --stamp: #160e0b;
+  --hatch: .42;
+}
+.pm-card.r-mythical {
+  --paper: #16120f;
+  --paper-hi: #2a231d;
+  --ink: #e9dcc0;
+  --ink2: var(--suit-hi);
+  --frame: #e9dcc0;
+  --pip: var(--suit);
+  --stamp: #eadcc0;
+  --hatch: .55;
+}
+.pm-card.s-crown.r-mythical { --ink: #d9b871; --frame: #d9b871; }
+
+.pm-tilt {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)) translateZ(0);
+  transition: transform .45s cubic-bezier(.2, .7, .2, 1);
+}
+.pm-card.is-live .pm-tilt,
+.pm-card.is-hover .pm-tilt { transition: transform .08s linear; transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)) translateZ(1.6em); will-change: transform; }
+
+.pm-face {
+  position: absolute;
+  inset: 0;
+  border-radius: 1.15em;
+  overflow: hidden;
+  color: var(--ink);
+  background-color: var(--paper);
+  background-image:
+    url('../assets/card/grain-dark.png'),
+    radial-gradient(120% 90% at 50% 40%, transparent 55%, rgba(60, 40, 20, .16) 100%);
+  background-size: 16em 16em, 100% 100%;
+}
+.r-mythical .pm-face,
+.pm-back .pm-face {
+  background-image:
+    url('../assets/card/grain-light.png'),
+    radial-gradient(120% 90% at 50% 40%, transparent 50%, rgba(0, 0, 0, .45) 100%);
+}
+/* Shadows sit on the card, not on the tilting face, so a pointer move never
+   repaints a blurred shadow. The lifted shadow is a second layer that fades in. */
+.pm-card::before,
+.pm-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 1.15em;
+  pointer-events: none;
+}
+.pm-card::before {
+  box-shadow:
+    0 0 0 .06em rgba(0, 0, 0, .35),
+    0 .15em .3em rgba(0, 0, 0, .35),
+    0 1.2em 2em -1em rgba(0, 0, 0, .7);
+}
+.pm-card::after {
+  opacity: 0;
+  transform: translateY(.6em) scale(.98);
+  box-shadow: 0 2.2em 3em -1.2em rgba(0, 0, 0, .85);
+  transition: opacity .35s;
+}
+.pm-card.is-live::after,
+.pm-card.is-hover::after { opacity: 1; }
+
+/* ---------- engraving ---------- */
+.pm-engr, .pm-portrait, .pm-dmg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.pm-engr * { vector-effect: none; }
+/* Engraving lives in shared <symbol>s, so rarity styling must reach it through
+   inherited custom properties (selectors like .r-epic .e-x do not cross <use>). */
+.pm-card {
+  --e-lathe-a: var(--suit); --e-lathe-b: var(--ink); --e-lathe-op: .8;
+  --e-ground: none; --e-hatch-ink: var(--ink);
+  --e-ring: var(--suit); --e-field: var(--suit); --e-field-op: .28;
+  --e-band-fill: var(--suit); --e-band-tint: var(--suit); --e-sil: var(--lamp); --e-eyes: var(--bone-hi);
+  --m-ground: var(--paper); --m-hatch: var(--ink);
+}
+.pm-card.r-epic { --e-lathe-b: var(--suit-deep); --e-lathe-op: 1; }
+.pm-card.r-legendary {
+  --e-lathe-a: var(--bone-hi); --e-lathe-b: var(--bone-hi); --e-lathe-op: .7;
+  --e-band-fill: color-mix(in oklab, var(--suit-deep) 70%, #000);
+  --e-hatch-ink: var(--bone-hi); --e-ring: var(--bone-hi); --e-field: var(--bone-hi); --e-field-op: .2;
+  --m-ground: var(--bone); --m-hatch: #3a2418;
+}
+.pm-card.r-mythical {
+  --e-lathe-a: var(--ink); --e-lathe-b: var(--ink); --e-lathe-op: .62;
+  --e-band-fill: var(--suit-deep); --e-ground: #d8caae; --e-hatch-ink: #3a2418;
+  --e-band-op: .45; --e-ring: var(--brass); --e-rose: var(--ink); --e-field: var(--ink); --e-field-op: .15; --e-sil: #0c0a08;
+  --m-ground: #d8caae; --m-hatch: #3a2418;
+}
+.pm-card.s-crown.r-mythical { --e-lathe-a: #d9b871; --e-lathe-b: #d9b871; --e-ring: #d9b871; --e-rose: #d9b871; --e-field: #d9b871; }
+.e-rule { fill: none; stroke: var(--frame); }
+.e-rule--outer { stroke-width: 1.1; }
+.e-rule--inner { stroke-width: .45; }
+.e-rule--heavy { stroke-width: 3.4; }
+.e-rule--oval { stroke-width: 1.1; }
+.e-rule--oval2 { stroke-width: .4; }
+.e-rule--ring { stroke-width: .5; stroke: var(--e-ring); }
+.e-band { fill: none; stroke: var(--ink2); stroke-width: .3; opacity: var(--e-band-op, .55); }
+.e-bandfill { fill: var(--e-band-fill); }
+.e-bandtint { fill: var(--e-band-tint); opacity: .16; }
+.e-ground { fill: var(--e-ground); }
+.e-hatch path { stroke: var(--e-hatch-ink); opacity: var(--hatch); fill: none; }
+.e-ring { fill: none; stroke: var(--e-ring); stroke-width: .28; }
+.e-lathe { fill: none; stroke-width: .38; opacity: var(--e-lathe-op); }
+.e-lathe--a { stroke: var(--e-lathe-a); }
+.e-lathe--b { stroke: var(--e-lathe-b); }
+.e-field { fill: none; stroke: var(--e-field); stroke-width: .22; opacity: var(--e-field-op); }
+.e-boss { fill: var(--paper); stroke: var(--frame); stroke-width: .7; }
+.e-rose { fill: none; stroke: var(--e-rose, var(--e-ring)); stroke-width: .25; }
+.e-micro { font: 700 2.05px 'VALVE Pulp', sans-serif; letter-spacing: .34px; fill: var(--ink); opacity: .75; }
+.pm-sil { fill: var(--e-sil); }
+.pm-eyes { fill: var(--e-eyes); }
+.no-eyes { --e-eyes: var(--e-sil); }
+
+/* the suit pip, big, in the oval */
+.pm-pip { color: var(--pip); }
+.pm-pip--ghost { opacity: .5; }
+/* the hero medallion on the oval's lower edge */
+.m-plate { fill: var(--paper); }
+.m-ground { fill: var(--m-ground); }
+.m-hatch { stroke: var(--m-hatch); stroke-width: .3; opacity: .45; }
+.m-rule { fill: none; stroke: var(--frame); stroke-width: 1.1; }
+.m-rule--fine { stroke-width: .4; }
+
+/* ---------- type ---------- */
+.pm-idx {
+  position: absolute;
+  left: 2.6em;
+  top: 2.65em;
+  width: 2.6em;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: var(--frame);
+}
+.pm-idx--br { left: auto; top: auto; right: 2.6em; bottom: 2.65em; transform: rotate(180deg); }
+.pm-rank {
+  font: 800 2.3em/0.86 'PM Bodoni', serif;
+  font-variation-settings: 'opsz' 11;
+  letter-spacing: -.02em;
+}
+.pm-rank.is-ten { letter-spacing: -.06em; font-size: 1.95em; margin-left: -.06em; }
+.pm-suit { width: 1.3em; height: 1.3em; margin-top: .3em; color: var(--frame); }
+.r-legendary .pm-rank, .r-mythical .pm-rank { color: var(--ovi); }
+.pm-label { color: var(--ink); }
+
+.pm-head {
+  position: absolute;
+  left: 0; right: 0;
+  top: 3.45em;
+  text-align: center;
+  font: 700 .72em/1 'VALVE Pulp', sans-serif;
+  letter-spacing: .24em;
+  text-transform: uppercase;
+  color: var(--frame);
+}
+.pm-head > * + *::before { content: '·'; margin: 0 .5em 0 .3em; }
+.pm-stat {
+  position: absolute;
+  left: 0; right: 0;
+  top: 4.4em;
+  text-align: center;
+}
+.pm-num {
+  font: 800 3.95em/1 'PM Bodoni', serif;
+  font-variation-settings: 'opsz' 11;
+  font-variant-numeric: lining-nums;
+  letter-spacing: -.01em;
+  color: var(--ink);
+  text-shadow:
+    .035em 0 0 var(--paper), -.035em 0 0 var(--paper), 0 .035em 0 var(--paper), 0 -.035em 0 var(--paper),
+    .025em .025em 0 var(--paper), -.025em .025em 0 var(--paper), .025em -.025em 0 var(--paper), -.025em -.025em 0 var(--paper);
+}
+.pm-label {
+  margin-top: .25em;
+  font: 700 .95em/1 'VALVE Pulp', sans-serif;
+  letter-spacing: .3em;
+  margin-right: -.3em;
+  text-transform: uppercase;
+}
+
+/* colour-shifting ink (Legendary and up): oxblood that turns toward black as the card tilts */
+.r-legendary :is(.pm-num, .pm-rank) { --ovi: color-mix(in oklab, var(--bone-hi) calc(100% - var(--shift, .3) * 100%), var(--suit-hi)); }
+.r-legendary .pm-num { color: var(--ovi); }
+.r-mythical :is(.pm-num, .pm-rank) { --ovi: color-mix(in oklab, #efe3c8 calc(100% - var(--shift, .3) * 60%), var(--suit-hi)); }
+.r-mythical .pm-num { color: var(--ovi); }
+
+.pm-foot {
+  position: absolute;
+  left: 4.4em; right: 4.4em;
+  top: 28.55em;
+  white-space: nowrap;
+  text-align: center;
+}
+.pm-title {
+  font: 700 .78em/1 'VALVE Pulp', sans-serif;
+  letter-spacing: .26em;
+  margin-right: -.26em;
+  text-transform: uppercase;
+  color: var(--frame);
+}
+.pm-serial {
+  margin-top: .5em;
+  font: 500 .94em/1.1 'PM Bodoni', serif;
+  font-variation-settings: 'opsz' 14;
+  color: var(--ink);
+}
+.pm-serial__no { font-weight: 800; }
+.pm-num.is-long { font-size: 3.6em; }
+/* tiny cards keep only the rank */
+.pm-card { container-type: inline-size; }
+@container (max-width: 145px) { .pm-serial__rest { display: none; } .pm-serial { font-size: 1.15em; } }
+.is-bad .pm-serial { color: var(--oxblood); }
+.r-legendary.is-bad .pm-serial { color: var(--bone-hi); text-decoration: underline; text-decoration-thickness: .06em; text-underline-offset: .18em; }
+.r-mythical.is-bad .pm-serial { color: var(--suit-hi); }
+
+/* ---------- NEW BEST: the only stamp ---------- */
+.pm-stampwrap {
+  position: absolute;
+  left: 12.6em;
+  top: 10.4em;
+  width: 9.8em;
+  transform: rotate(-9deg);
+  opacity: .94;
+  mix-blend-mode: multiply;
+}
+.r-mythical .pm-stampwrap { mix-blend-mode: normal; }
+.pm-stamp { display: block; width: 100%; height: auto; overflow: visible; }
+.st-line { fill: none; stroke: var(--stamp); stroke-width: 1.2; }
+.st-line--heavy { stroke-width: 3; }
+.st-word { font: 700 15px 'VALVE Pulp', sans-serif; letter-spacing: 1.6px; fill: var(--stamp); }
+.st-small { font: 700 5.2px 'VALVE Pulp', sans-serif; letter-spacing: 1.5px; fill: var(--stamp); }
+.is-dealing .pm-stampwrap { animation: pm-stamp .5s 1.1s cubic-bezier(.3, 1.6, .5, 1) both; }
+@keyframes pm-stamp { from { opacity: 0; transform: rotate(-9deg) scale(1.6); } to { opacity: .94; transform: rotate(-9deg) scale(1); } }
+
+/* ---------- Joker: a misprint ---------- */
+.pm-misreg { transform: translate(1.7%, -1.1%); opacity: .8; mix-blend-mode: multiply; --frame: var(--suit); --ink: var(--suit); --e-lathe-b: var(--suit); --e-hatch-ink: var(--suit); }
+.r-legendary .pm-misreg, .r-mythical .pm-misreg { mix-blend-mode: screen; opacity: .5; --frame: var(--suit-hi); --ink: var(--suit-hi); --e-lathe-a: var(--suit-hi); --e-lathe-b: var(--suit-hi); --e-hatch-ink: var(--suit-hi); }
+.pm-stat { isolation: isolate; }
+.pm-num--ghost { position: absolute; left: 0; right: 0; top: 0; z-index: -1; color: var(--suit) !important; opacity: .7; transform: translate(.09em, -.06em); text-shadow: none !important; }
+.r-legendary .pm-num--ghost, .r-mythical .pm-num--ghost { color: var(--suit-hi) !important; }
+.is-misprint .pm-label { display: inline-block; transform: rotate(180deg); }
+
+/* ---------- deal-in ---------- */
+@property --bleed { syntax: '<percentage>'; inherits: false; initial-value: 120%; }
+.pm-bleed {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  display: none;
+  /* before the colour arrives the note reads as a plain cream print: the coloured paper is shown
+     inverted to cream and the bone ink to dark, then the suit colour floods out from the centre */
+  -webkit-backdrop-filter: grayscale(1) invert(1) sepia(.45) brightness(1.04) contrast(1.08);
+  backdrop-filter: grayscale(1) invert(1) sepia(.45) brightness(1.04) contrast(1.08);
+  -webkit-mask-image: radial-gradient(circle at 50% 50%, transparent var(--bleed), #000 calc(var(--bleed) + 3%));
+  mask-image: radial-gradient(circle at 50% 50%, transparent var(--bleed), #000 calc(var(--bleed) + 3%));
+}
+/* deal() drives --bleed from script: Chromium does not repaint a backdrop filter under an animated mask */
+.is-dealing .pm-bleed { display: block; --bleed: -8%; }
+.is-dealing .pm-tilt { animation: pm-press .45s cubic-bezier(.2, .9, .3, 1.2) backwards; }
+@keyframes pm-press { from { transform: translateY(-.8em) scale(1.04); opacity: .2; } to { transform: none; opacity: 1; } }
+
+/* ---------- light: a soft raking light on hover, no glare, no rainbow ---------- */
+.pm-light {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .35s;
+  background:
+    radial-gradient(70% 55% at var(--lx, 35%) var(--ly, 25%), rgba(255, 249, 235, .26), rgba(255, 249, 235, 0) 70%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0) 60%, rgba(40, 25, 10, .08));
+  mix-blend-mode: soft-light;
+}
+.is-live .pm-light, .is-hover .pm-light { opacity: 1; }
+
+/* ---------- back: brass on matte black ---------- */
+.pm-back { --paper: #131110; --ink: #b8964f; --kb: #b08e4c; }
+.pm-back .pm-face {
+  background-image:
+    url('../assets/card/grain-light.png'),
+    radial-gradient(120% 90% at 50% 50%, transparent 60%, rgba(0, 0, 0, .35) 100%);
+}
+.k-rule { fill: none; stroke: var(--kb); stroke-width: .55; }
+.k-rule--heavy { stroke-width: 1.5; }
+.k-rule--mid { stroke-width: 1; }
+.k-rule--fine { stroke-width: .4; }
+.k-fill { fill: var(--kb); }
+.k-fill--edge { stroke: var(--paper); stroke-width: .6; }
+.k-block { fill: var(--kb); }
+.k-cut { fill: var(--paper); }
+.k-lattice { fill: none; stroke: var(--kb); stroke-width: .3; opacity: .28; }
+.k-fill--ground { opacity: .45; }
+.k-line { fill: none; stroke: var(--kb); stroke-width: .55; stroke-linecap: round; }
+.k-line--fine { stroke-width: .35; opacity: .9; }
+.k-line--band { stroke-width: .4; }
+.k-line--scroll { stroke-width: .9; }
+.k-clear { fill: var(--paper); }
+.pm-coin {
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 7.9em; height: 7.9em;
+  margin: -3.95em 0 0 -3.95em;
+  color: var(--ink);
+}
+
+/* ---------- bad cards: the same card, damaged ---------- */
+.pm-dmg { pointer-events: none; }
+.d-scuff { fill: var(--paper-hi); opacity: .85; }
+.r-mythical .d-scuff { fill: #6b5f4f; }
+.d-crease-soft { stroke: rgba(40, 25, 12, .07); stroke-width: 6; fill: none; }
+.d-crease-dk { stroke: rgba(40, 25, 12, .28); stroke-width: .6; fill: none; }
+.d-crease-lt { stroke: rgba(255, 250, 238, .65); stroke-width: .8; fill: none; }
+.r-mythical .d-crease-lt { stroke: rgba(255, 245, 225, .22); }
+.d-stain { fill: none; stroke: rgba(105, 58, 28, .2); stroke-width: 2.4; }
+.d-stain--2 { stroke-width: .6; stroke: rgba(105, 58, 28, .34); }
+.r-mythical .d-stain { stroke: rgba(200, 170, 120, .14); }
+.d-tear-fibre { fill: none; stroke: #f3ead6; stroke-width: 1.5; stroke-linejoin: round; opacity: .95; }
+.d-tear-shadow { fill: none; stroke: rgba(0, 0, 0, .35); stroke-width: 1.2; stroke-linejoin: round; }
+.r-mythical .d-tear-fibre { stroke: #cbbd9f; }
+.is-bad .pm-line { color: var(--oxblood); }
+.r-mythical.is-bad .pm-line { color: #c86a5b; }
+.pm-tape {
+  position: absolute;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .34), rgba(255, 255, 255, .08) 28%, rgba(255, 255, 255, 0) 70%, rgba(255, 255, 255, .14)),
+    rgba(232, 220, 182, .5);
+  border-top: .05em solid rgba(120, 96, 50, .28);
+  border-bottom: .05em solid rgba(120, 96, 50, .28);
+  box-shadow: inset 0 .04em 0 rgba(255, 255, 255, .45), 0 .06em .14em rgba(0, 0, 0, .25);
+  clip-path: polygon(3% 0%, 97% 0%, 100% 12%, 97.5% 25%, 100% 38%, 97.5% 50%, 100% 63%, 97.5% 75%, 100% 88%, 97% 100%, 3% 100%, 0% 88%, 2.5% 75%, 0% 63%, 2.5% 50%, 0% 38%, 2.5% 25%, 0% 12%);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pm-tilt, .pm-light, .pm-face { transition: none; }
+}
