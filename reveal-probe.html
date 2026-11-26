@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Postmortem</title>
+<style>
+/* Reveal probe page. TEST ONLY. Motion is transform and opacity only: no canvas, no blur, no filter, no backdrop-filter.
+   Everything is laid out in Panorama 1080 layout units on a "stage" the size of the web panel, then scaled to fit. */
+:root {
+  --felt: #12140f;
+  --felt2: #1b1e17;
+  --ink: #10130D;
+  --paper: #f1ead9;
+  --paper2: #d8ceb6;
+  --off: #FFEFD7;
+  --muted: #ACA395;
+  --gold: #e2b84a;
+  --green: #69e799;
+  --common: #b9b2a3;
+  --rare: #6fb6ff;
+  --epic: #c48bff;
+  --legendary: #ffd76a;
+  --mythic: #ff6b4a;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #0a0b09; color: var(--off);
+  font-family: "Radiance", "Segoe UI", system-ui, sans-serif; cursor: default; user-select: none; }
+#stage { position: absolute; left: 0; top: 0; transform-origin: 0 0;
+  background: radial-gradient(ellipse at 50% 45%, var(--felt2) 0%, var(--felt) 62%, #070806 100%); overflow: hidden; }
+#stage::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse at 50% 50%, transparent 55%, rgba(0,0,0,.55) 100%); }
+.hdr { position: absolute; left: 0; right: 0; text-align: center; letter-spacing: .32em; text-transform: uppercase; }
+.hdr .t { font-weight: 800; color: var(--off); }
+.hdr .s { color: var(--muted); letter-spacing: .18em; margin-top: .45em; }
+.slot { position: absolute; left: 0; top: 0; will-change: transform; transition: transform .55s cubic-bezier(.2,.75,.2,1), opacity .3s; }
+.card { position: absolute; inset: 0; transform-style: preserve-3d; transition: transform .46s cubic-bezier(.3,.7,.2,1); }
+.slot.flipped .card { transform: rotateY(180deg); }
+.slot:hover .card { transition-duration: .18s; }
+.face { position: absolute; inset: 0; border-radius: 7%/5%; backface-visibility: hidden; -webkit-backface-visibility: hidden; overflow: hidden; }
+.back { background: #191a16; box-shadow: 0 .6em 1.4em rgba(0,0,0,.55); border: .14em solid #3a372f; }
+.back .rim { position: absolute; inset: 6%; border-radius: 6%/4%; border: .09em solid var(--gold); opacity: .8; }
+.back .coin { position: absolute; left: 50%; top: 50%; width: 50%; aspect-ratio: 1; transform: translate(-50%,-50%);
+  border-radius: 50%; background: var(--gold); box-shadow: 0 .16em 0 #9c7a26; }
+.back .eye { position: absolute; left: 50%; top: 50%; width: 74%; height: 40%; transform: translate(-50%,-50%);
+  background: #191a16; clip-path: polygon(0 50%, 14% 26%, 32% 8%, 50% 0, 68% 8%, 86% 26%, 100% 50%, 86% 74%, 68% 92%, 50% 100%, 32% 92%, 14% 74%); }
+.back .pupil { position: absolute; left: 50%; top: 50%; width: 32%; aspect-ratio: 1; transform: translate(-50%,-50%); border-radius: 50%; background: var(--gold); }
+.front { transform: rotateY(180deg); background: linear-gradient(180deg, var(--paper) 0%, var(--paper2) 100%); color: var(--ink);
+  border: .16em solid var(--rc); box-shadow: 0 .6em 1.4em rgba(0,0,0,.55); }
+.front .band { position: absolute; left: 0; right: 0; top: 0; height: 15%; background: var(--rc); display: flex; align-items: center; justify-content: center;
+  font-weight: 800; letter-spacing: .2em; font-size: .62em; color: var(--ink); }
+.front .stat { position: absolute; left: 0; right: 0; top: 30%; text-align: center; font-weight: 900; font-size: 2.3em; line-height: 1; }
+.front .unit { position: absolute; left: 0; right: 0; top: 52%; text-align: center; font-size: .6em; letter-spacing: .14em; text-transform: uppercase; opacity: .7; }
+.front .title { position: absolute; left: 8%; right: 8%; bottom: 17%; text-align: center; font-weight: 800; font-size: .78em; line-height: 1.15; }
+.front .rank { position: absolute; left: 0; right: 0; bottom: 7%; text-align: center; font-size: .56em; letter-spacing: .1em; opacity: .75; }
+.front .suit { position: absolute; left: 7%; top: 19%; width: 14%; aspect-ratio: 1; background: var(--ink); opacity: .85; }
+.suit.combat { clip-path: polygon(50% 0, 100% 38%, 82% 100%, 18% 100%, 0 38%); }
+.suit.survival { clip-path: polygon(50% 100%, 0 38%, 12% 8%, 50% 26%, 88% 8%, 100% 38%); }
+.suit.souls { border-radius: 50%; }
+.suit.crown { clip-path: polygon(0 100%, 0 25%, 25% 55%, 50% 10%, 75% 55%, 100% 25%, 100% 100%); }
+.suit.joker { clip-path: polygon(0 100%, 15% 15%, 35% 60%, 50% 0, 65% 60%, 85% 15%, 100% 100%); }
+.glow { position: absolute; inset: -22%; opacity: 0; pointer-events: none;
+  background: radial-gradient(closest-side, var(--rc) 0%, transparent 100%); transition: opacity .25s; }
+.slot.flipped.big .glow { animation: pulse 1.6s ease-out 1; }
+@keyframes pulse { 0% { opacity: 0; } 18% { opacity: .9; } 100% { opacity: .35; } }
+.slot.flipped.big.settled .glow { opacity: .35; }
+.damaged .front { clip-path: polygon(0 0, 100% 0, 100% 78%, 86% 84%, 92% 100%, 0 100%); }
+.damaged .front .band { background: #8b8476; }
+.btns { position: absolute; left: 0; right: 0; display: flex; justify-content: center; gap: .7em; }
+.btn { font: inherit; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; color: var(--off); background: #2e2c27; border: .08em solid #4a473f;
+  padding: .55em 1.1em; border-radius: .3em; cursor: default; transition: background-color .08s; }
+.btn:hover { background: #4a473f; }
+.btn.primary { background: #2f5a3f; border-color: var(--green); }
+.btn.primary:hover { background: #3d7652; }
+.btn[hidden] { display: none; }
+#result { position: absolute; left: 0; right: 0; text-align: center; color: var(--muted); letter-spacing: .06em; }
+#endbar { position: absolute; left: 0; right: 0; display: flex; justify-content: center; gap: .9em; opacity: 0; pointer-events: none; transition: opacity .3s; }
+#stage.ended #endbar { opacity: 1; pointer-events: auto; }
+#debug { position: fixed; right: 6px; bottom: 6px; font: 11px/1.3 monospace; color: #9f9; background: rgba(0,0,0,.7); padding: 6px; max-width: 46vw; max-height: 40vh; overflow: hidden; white-space: pre; display: none; z-index: 9; }
+.mark { position: fixed; width: 14px; height: 14px; margin: -7px 0 0 -7px; border: 2px solid #f0f; border-radius: 50%; pointer-events: none; z-index: 8; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="hdr" id="hdr"><div class="t">The Deal</div><div class="s" id="sub">Reveal probe &middot; click a card to flip it</div></div>
+  <div id="hand"></div>
+  <div class="btns" id="btns">
+    <button class="btn primary" id="bDeal">Deal</button>
+    <button class="btn" id="bFF">Fast-forward</button>
+    <button class="btn" id="bSkip">Skip</button>
+    <button class="btn" id="bReset">Reset</button>
+    <button class="btn" id="bFps">FPS test</button>
+    <button class="btn" id="bLen">Title test</button>
+  </div>
+  <div id="endbar"><button class="btn primary">Share</button><button class="btn">Binder</button><button class="btn">Full stats</button></div>
+  <div id="result"></div>
+</div>
+<div id="debug"></div>
+<script>
+(function () {
+  "use strict";
+  var q = new URLSearchParams(location.search);
+  var DEBUG = q.get("debug") === "1";
+  var dbg = document.getElementById("debug");
+  if (DEBUG) dbg.style.display = "block";
+  var dlog = [];
+  function note(s) { if (!DEBUG) return; dlog.push(s); if (dlog.length > 22) dlog.shift(); dbg.textContent = dlog.join("\n"); }
+
+  // ---------- titles to Panorama (queued so none are lost between frames) ----------
+  var urgentQ = [], queue = [], titleTimer = null, lastSent = 0;
+  function send(t, urgent) { (urgent ? urgentQ : queue).push(t); pump(); }
+  function take() { return urgentQ.length ? urgentQ.shift() : queue.shift(); }
+  function put(t) { document.title = t; lastSent = Date.now(); note(t.length > 90 ? t.slice(0, 90) + "... (" + t.length + ")" : t); }
+  // One title per 60 ms so Panorama sees every one. Urgent ones (effects) jump the line and go out at once if the line is free.
+  function pump() {
+    if (titleTimer) return;
+    var wait = Math.max(0, 60 - (Date.now() - lastSent));
+    if (wait === 0) { var t = take(); if (t !== undefined) put(t); if (!urgentQ.length && !queue.length) return; wait = 60; }
+    titleTimer = setTimeout(function () { titleTimer = null; var t = take(); if (t !== undefined) put(t); if (urgentQ.length || queue.length) pump(); }, wait);
+  }
+
+  // ---------- hand data (placeholders shaped like a real hand) ----------
+  var HAND = [
+    { r: "mythic",    s: "crown",    stat: "1st",   unit: "MVP of the lobby",  title: "Crowned",            rank: "Top 0.1% on Haze" },
+    { r: "legendary", s: "combat",   stat: "41k",   unit: "hero damage",       title: "Bullet Hell",        rank: "Top 1% on Haze" },
+    { r: "epic",      s: "souls",    stat: "1,284", unit: "souls per minute",  title: "Gold Rush",          rank: "Top 10%" },
+    { r: "epic",      s: "joker",    stat: "3",     unit: "zipline kills",     title: "The Scenic Route",   rank: "Joker" },
+    { r: "rare",      s: "survival", stat: "2",     unit: "deaths",            title: "Hard to Kill",       rank: "Top 25%" },
+    { r: "rare",      s: "combat",   stat: "64%",   unit: "kill participation", title: "Always There",      rank: "Top 25%" },
+    { r: "rare",      s: "souls",    stat: "112",   unit: "denies",            title: "Not Yours",          rank: "Top 25%" },
+    { r: "common",    s: "survival", stat: "9.1k",  unit: "healing",           title: "Patched Up",         rank: "Top 40%" },
+    { r: "common",    s: "combat",   stat: "18",    unit: "assists",           title: "Wingman",            rank: "Top 40%" },
+    { r: "common",    s: "souls",    stat: "4",     unit: "urns lost",         title: "Butterfingers",      rank: "Bottom 25%", damaged: true }
+  ];
+  var RC = { common: "var(--common)", rare: "var(--rare)", epic: "var(--epic)", legendary: "var(--legendary)", mythic: "var(--mythic)" };
+
+  // ---------- stage geometry ----------
+  var W = 1244, H = 724, SIZE = "MEDIUM";   // web panel size in layout units (Panorama tells us via the hash)
+  var stage = document.getElementById("stage"), handEl = document.getElementById("hand");
+  var k = 1, ox = 0, oy = 0;
+  var slots = [], pos = [], deck = { x: 0, y: 0 }, cw = 0, ch = 0;
+  var state = "idle"; // idle (deck), dealt, ended
+
+  function readHash() {
+    var h = new URLSearchParams(location.hash.replace(/^#/, ""));
+    var w = parseFloat(h.get("w")), hh = parseFloat(h.get("h"));
+    if (w > 50 && hh > 50) { W = w; H = hh; }
+    if (h.get("size")) SIZE = h.get("size");
+    return h;
+  }
+  function fit() {
+    var iw = innerWidth, ih = innerHeight;
+    k = Math.min(iw / W, ih / H);
+    ox = (iw - W * k) / 2; oy = (ih - H * k) / 2;
+    stage.style.width = W + "px"; stage.style.height = H + "px";
+    stage.style.transform = "translate(" + ox + "px," + oy + "px) scale(" + k + ")";
+    layout();
+  }
+  // Stage point -> Panorama layout units of the web panel (the panel's layout height maps to innerHeight).
+  function toLayout(x, y) { var u = innerHeight / H; return [(ox + x * k) / u, (oy + y * k) / u]; }
+
+  function layout() {
+    var top = H * 0.16, bottom = H * 0.86, rowsH = bottom - top;
+    var gap = Math.max(10, W * 0.018);
+    ch = Math.min((rowsH - gap) / 2, ((W * 0.9 - 4 * gap) / 5) / 0.714);
+    cw = ch * 0.714;
+    var font = ch / 11;
+    stage.style.fontSize = font + "px";
+    var hdr = document.getElementById("hdr"); hdr.style.top = (H * 0.035) + "px"; hdr.style.fontSize = (H / 40) + "px";
+    var rowW = 5 * cw + 4 * gap, x0 = (W - rowW) / 2;
+    var y0 = top + (rowsH - (2 * ch + gap)) / 2;
+    pos = [];
+    for (var i = 0; i < 10; i++) {
+      var r = Math.floor(i / 5), c = i % 5;
+      var lift = Math.abs(c - 2) * ch * 0.035;          // gentle fan: outer cards sit lower and lean out
+      pos.push({ x: x0 + c * (cw + gap), y: y0 + r * (ch + gap) + lift, rot: (c - 2) * 1.6 });
+    }
+    deck = { x: (W - cw) / 2, y: top + (rowsH - ch) / 2 };
+    var b = document.getElementById("btns"); b.style.top = (H * 0.905) + "px"; b.style.fontSize = (H / 52) + "px";
+    var e = document.getElementById("endbar"); e.style.top = (H * 0.69) + "px"; e.style.fontSize = (H / 40) + "px";
+    var res = document.getElementById("result"); res.style.top = (H * 0.86) + "px"; res.style.fontSize = (H / 62) + "px";
+    slots.forEach(function (s, i) { s.el.style.width = cw + "px"; s.el.style.height = ch + "px"; place(s, i); });
+  }
+  function place(s, i) {
+    var p;
+    if (state === "idle") {
+      var j = i % 3;  // a small messy stack
+      p = { x: deck.x + (j - 1) * 2, y: deck.y - i * 1.2, rot: (j - 1) * 1.5 };
+    } else if (state === "ended") {
+      var sc = 0.62, w = cw * sc, gap = W * 0.01, rowW = 10 * w + 9 * gap, x0 = (W - rowW) / 2;
+      p = { x: x0 + i * (w + gap) - (cw - w) / 2, y: H * 0.34 - (ch - ch * sc) / 2, rot: 0, sc: sc };
+    } else p = pos[i];
+    s.el.style.transform = "translate(" + p.x + "px," + p.y + "px) rotate(" + (p.rot || 0) + "deg) scale(" + (p.sc || 1) + ")";
+    s.el.style.zIndex = state === "idle" ? 20 - i : i;
+  }
+
+  function build() {
+    handEl.innerHTML = ""; slots = [];
+    HAND.forEach(function (c, i) {
+      var el = document.createElement("div");
+      el.className = "slot" + (c.damaged ? " damaged" : "") + (c.r === "legendary" || c.r === "mythic" ? " big" : "");
+      el.style.setProperty("--rc", RC[c.r]);
+      el.innerHTML = '<div class="glow"></div><div class="card">' +
+        '<div class="face back"><div class="rim"></div><div class="coin"><div class="eye"><div class="pupil"></div></div></div></div>' +
+        '<div class="face front"><div class="band">' + c.r.toUpperCase() + '</div><div class="suit ' + c.s + '"></div>' +
+        '<div class="stat">' + c.stat + '</div><div class="unit">' + c.unit + '</div><div class="title">' + c.title + '</div><div class="rank">' + c.rank + '</div></div></div>';
+      el.addEventListener("click", function () { flip(i); });
+      handEl.appendChild(el);
+      slots.push({ el: el, c: c, up: false });
+    });
+    state = "idle"; stage.classList.remove("ended");
+    layout();
+  }
+
+  var fxSeq = 0;
+  function flip(i, silent) {
+    var s = slots[i];
+    if (state === "idle") { deal(); return; }
+    if (!s || s.up) return;
+    s.up = true;
+    var p = state === "ended" ? null : pos[i];
+    if (p && !silent) {
+      var c = toLayout(p.x + cw / 2, p.y + ch / 2);
+      // One title per flip: Panorama plays the flip sound for every card and a burst for rare and up.
+      send("DLP_FX:" + s.c.r + ":" + Math.round(c[0]) + ":" + Math.round(c[1]) + ":" + (++fxSeq), true);
+      if (DEBUG) mark(c[0], c[1]);
+    }
+    s.el.classList.add("flipped");
+    if (s.el.classList.contains("big")) setTimeout(function () { s.el.classList.add("settled"); }, 1600);
+    if (slots.every(function (t) { return t.up; })) setTimeout(end, 900);
+  }
+  // Debug only: draw where Panorama will put the burst, converted back from layout units, to check the math.
+  function mark(lx, ly) {
+    var u = innerHeight / H, m = document.createElement("div");
+    m.className = "mark"; m.style.left = (lx * u) + "px"; m.style.top = (ly * u) + "px";
+    document.body.appendChild(m); setTimeout(function () { m.remove(); }, 4000);
+  }
+  function deal() {
+    if (state !== "idle") return;
+    state = "dealt";
+    slots.forEach(function (s, i) { setTimeout(function () { place(s, i); }, i * 70); });
+  }
+  var ffTimer = null;
+  function fastForward() {
+    if (state === "idle") { deal(); setTimeout(fastForward, 900); return; }
+    var order = slots.map(function (s, i) { return i; }).filter(function (i) { return !slots[i].up; });
+    order.sort(function (a, b) { return rk(slots[a].c.r) - rk(slots[b].c.r); }); // commons first, best last
+    var n = 0;
+    clearInterval(ffTimer);
+    ffTimer = setInterval(function () { if (n >= order.length) { clearInterval(ffTimer); return; } flip(order[n++]); }, 330);
+  }
+  function rk(r) { return ["common", "rare", "epic", "legendary", "mythic"].indexOf(r); }
+  function end() {
+    if (state === "ended") return;
+    clearInterval(ffTimer);
+    slots.forEach(function (s, i) { if (!s.up) { s.up = true; s.el.classList.add("flipped"); } });
+    state = "ended"; stage.classList.add("ended");
+    document.getElementById("sub").textContent = "Your hand";
+    slots.forEach(function (s, i) { place(s, i); });
+  }
+  function skip() { if (state === "idle") state = "dealt"; end(); }
+  function reset() { clearInterval(ffTimer); document.getElementById("sub").textContent = "Reveal probe · click a card to flip it"; build(); }
+
+  // ---------- frame rate test ----------
+  var rec = null;
+  function frameLoop(t) {
+    if (rec) { if (rec.last) rec.d.push(t - rec.last); rec.last = t; }
+    requestAnimationFrame(frameLoop);
+  }
+  requestAnimationFrame(frameLoop);
+  function stats(d) {
+    if (!d.length) return { avg: 0, p95: 0, worst: 0, n: 0 };
+    var sum = d.reduce(function (a, b) { return a + b; }, 0), s = d.slice().sort(function (a, b) { return a - b; });
+    return { avg: 1000 / (sum / d.length), p95: s[Math.floor(s.length * 0.95)], worst: s[s.length - 1], n: d.length };
+  }
+  function measure(mode, ms, fn, done) {
+    rec = { d: [], last: 0 };
+    fn();
+    setTimeout(function () {
+      var r = stats(rec.d); rec = null;
+      var line = "DLP_FPS:" + SIZE + ":" + mode + ":" + r.avg.toFixed(1) + ":" + r.p95.toFixed(1) + ":" + r.worst.toFixed(1) + ":" + r.n + ":" + innerWidth + "x" + innerHeight;
+      send(line);
+      results.push(mode + " " + r.avg.toFixed(0) + " fps, p95 " + r.p95.toFixed(1) + " ms, worst " + r.worst.toFixed(0) + " ms");
+      document.getElementById("result").textContent = SIZE + ": " + results.join("  ·  ");
+      done && done();
+    }, ms);
+  }
+  var results = [];
+  function fpsTest() {
+    results = [];
+    document.getElementById("result").textContent = "Measuring...";
+    reset();
+    setTimeout(function () {
+      measure("deal", 1500, deal, function () {
+        measure("one-by-one", 10 * 260 + 900, function () {
+          var i = 0, t = setInterval(function () { if (i >= 10) { clearInterval(t); return; } flipNoEnd(i++); }, 260);
+        }, function () {
+          unflipAll();
+          setTimeout(function () {
+            measure("all-at-once", 1400, function () { for (var j = 0; j < 10; j++) flipNoEnd(j); }, function () {
+              measure("hover-idle", 1500, function () {}, null);
+            });
+          }, 700);
+        });
+      });
+    }, 400);
+  }
+  function flipNoEnd(i) { var s = slots[i]; if (!s || s.up) return; s.up = true; var p = pos[i], c = toLayout(p.x + cw / 2, p.y + ch / 2);
+    send("DLP_FX:" + s.c.r + ":" + Math.round(c[0]) + ":" + Math.round(c[1]) + ":" + (++fxSeq), true);
+    s.el.classList.add("flipped"); }
+  function unflipAll() { slots.forEach(function (s) { s.up = false; s.el.classList.remove("flipped", "settled"); }); }
+
+  // ---------- title channel size test ----------
+  function checksum(s) { var h = 0; for (var i = 0; i < s.length; i++) h = (h + s.charCodeAt(i) * (i % 7 + 1)) % 65521; return h; }
+  function lenTest() {
+    var sizes = [256, 1024, 4096, 16384, 65536], seq = 0;
+    sizes.forEach(function (n, idx) {
+      setTimeout(function () {
+        var chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789", p = "";
+        for (var i = 0; i < n; i++) p += chars[(i * 7 + idx) % chars.length];
+        send("DLP_LEN:" + n + ":" + checksum(p) + ":" + (++seq) + ":" + p);
+        document.getElementById("result").textContent = "Sent title of " + n + " characters";
+      }, idx * 500);
+    });
+  }
+
+  // ---------- wiring ----------
+  document.getElementById("bDeal").onclick = deal;
+  document.getElementById("bFF").onclick = fastForward;
+  document.getElementById("bSkip").onclick = skip;
+  document.getElementById("bReset").onclick = reset;
+  document.getElementById("bFps").onclick = fpsTest;
+  document.getElementById("bLen").onclick = lenTest;
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") send("DLP_CLOSE:" + Date.now(), true); });
+  var lastRun = null;
+  addEventListener("hashchange", function () {
+    var h = readHash(); fit();
+    var run = h.get("run");
+    if (run && run !== lastRun) { lastRun = run; fpsTest(); }
+    send("DLP_LOG:hash size=" + SIZE + " w=" + W + " h=" + H + " css=" + innerWidth + "x" + innerHeight);
+  });
+  addEventListener("resize", fit);
+  lastRun = readHash().get("run");
+  build(); fit();
+  requestAnimationFrame(function () { requestAnimationFrame(function () {
+    send("DLP_READY:" + Date.now(), true);
+    send("DLP_LOG:page css=" + innerWidth + "x" + innerHeight + " dpr=" + devicePixelRatio + " ua=" + navigator.userAgent.replace(/:/g, " ").slice(0, 120));
+  }); });
+  setInterval(function () { send("DLP_ALIVE:" + Date.now()); }, 2000);
+  if (q.get("auto") === "deal") setTimeout(deal, 300);
+  if (q.get("auto") === "end") setTimeout(function () { deal(); setTimeout(skip, 900); }, 300);
+  if (q.get("auto") === "flip") setTimeout(function () { deal(); setTimeout(function () { [0, 1, 4, 7].forEach(function (i, n) { setTimeout(function () { flip(i); }, n * 120); }); }, 1100); }, 300);
+})();
+</script>
+</body>
+</html>
